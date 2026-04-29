@@ -495,6 +495,40 @@ async function fetchRaceOdds(race) {
   } catch { return null; }
 }
 
+/* /api/program を叩いて 1 レース分の出走表を取得 */
+async function fetchRaceProgram(race) {
+  if (!race || !race.jcd || !race.raceNo) return null;
+  const date = (race.date || "").replace(/-/g, "");
+  try {
+    const resp = await fetch(`/api/program?jcd=${race.jcd}&rno=${race.raceNo}&date=${date}`);
+    if (!resp.ok) return null;
+    const json = await resp.json();
+    if (!json.ok) return null;
+    return json;
+  } catch { return null; }
+}
+
+/* 既存 race.boats に /api/program で取得した実データを上書き (取れた項目のみ) */
+function mergeRealBoats(syntheticBoats, apiBoats) {
+  if (!Array.isArray(apiBoats) || apiBoats.length === 0) return syntheticBoats;
+  return syntheticBoats.map(b => {
+    const real = apiBoats.find(rb => rb.boatNo === b.boatNo);
+    if (!real) return b;
+    return {
+      ...b,
+      racer:          real.racer || b.racer,
+      class:          real.class || b.class,
+      winRate:        real.winRate        ?? b.winRate,
+      placeRate:      real.placeRate      ?? b.placeRate,
+      localWinRate:   real.localWinRate   ?? b.localWinRate,
+      localPlaceRate: real.localPlaceRate ?? b.localPlaceRate,
+      motor2:         real.motor2         ?? b.motor2,
+      boat2:          real.boat2          ?? b.boat2,
+      sourceMode:     "real",
+    };
+  });
+}
+
 /* =========================================================
    2. 予測エンジン (寄与度を返すよう拡張)
    ========================================================= */
@@ -5110,23 +5144,44 @@ function RaceView({ race, evalRes, races, onSelect, selectedId, settings, bankro
   const { pred, sorted, recommended, reasons, skip, skipReasons, maxEV, strategies } = evalRes;
   const winProbsPct = pred.winProbs.map(p => +(p*100).toFixed(1));
 
-  /* 実データ (jcd 付き) のレースを開いたとき、/api/odds を叩いて
-     race.currentWinOdds (前回オッズと比較する基底) を埋める */
+  /* 実データ (jcd 付き) のレースを開いたとき、出走表とオッズを並列取得して反映 */
   useEffect(() => {
     if (!race || !race.jcd) return;
     let cancelled = false;
-    fetchRaceOdds(race).then(odds => {
-      if (cancelled || !odds || !odds.win) return;
-      const arr = race.boats.map(b => +odds.win[String(b.boatNo)] || null);
+    Promise.all([fetchRaceProgram(race), fetchRaceOdds(race)]).then(([prog, odds]) => {
+      if (cancelled) return;
       const ts = new Date().toISOString();
-      setRaces && setRaces(prev => prev.map(r => r.id === race.id ? {
-        ...r,
-        prevOdds: r.currentWinOdds || r.prevOdds || null,
-        currentWinOdds: arr,
-        apiOdds: odds,
-        oddsUpdatedAt: ts,
-        updatedAt: ts,
-      } : r));
+      setRaces && setRaces(prev => prev.map(r => {
+        if (r.id !== race.id) return r;
+        let next = {...r, updatedAt: ts};
+        // 出走表 (選手・勝率・モーター/ボート 2連率) を実データで上書き
+        if (prog && Array.isArray(prog.boats) && prog.boats.length > 0) {
+          next = {
+            ...next,
+            boats: mergeRealBoats(r.boats, prog.boats),
+            weather: prog.weather || r.weather,
+            wind:    prog.wind ?? r.wind,
+            windDir: prog.windDir || r.windDir,
+            wave:    prog.wave ?? r.wave,
+            startTime: prog.startTime || r.startTime,
+            apiProgram: prog,
+            exhibitionUpdatedAt: ts,
+            sourceMode: "real",
+          };
+        }
+        // オッズ (前回比較用に prevOdds に退避してから currentWinOdds 更新)
+        if (odds && odds.win && Object.keys(odds.win).length > 0) {
+          const arr = next.boats.map(b => +odds.win[String(b.boatNo)] || null);
+          next = {
+            ...next,
+            prevOdds: r.currentWinOdds || r.prevOdds || null,
+            currentWinOdds: arr,
+            apiOdds: odds,
+            oddsUpdatedAt: ts,
+          };
+        }
+        return next;
+      }));
     });
     return () => { cancelled = true; };
   }, [race?.id]);

@@ -22,62 +22,79 @@ function parseFloatOrNull(s) {
 }
 
 /**
- * racelist HTML から 6 艇分の row を抽出。
- *   ページは 6 行 × 多数列の表で構成され、各行に艇番(色背景) + 選手情報が並ぶ。
- *   級別 (A1/A2/B1/B2)、勝率の数字パターン、当地勝率パターンを使ってフィールドを推定する。
+ * racelist HTML から 6 艇分の行を抽出。
+ *   実構造 (boatrace.jp): 1艇=1<tr> に「艇番 / 級別 / 選手名 / 登録番号 / 年齢/体重 / F/L/平均ST /
+ *                         全国勝率 / 全国2連対率 / 当地勝率 / 当地2連対率 / モーター2連率 / ボート2連率」が並ぶ。
+ *   行に「A1/A2/B1/B2」を含み、独立した艇番セル (1〜6) が含まれる行のみを対象にする。
+ *   数値抽出: tr 内の <td>テキストから decimal を順に拾い、6つの canonical 統計をスライド窓で当てはめる。
  */
 function parseBoats(html) {
   const $ = cheerio.load(html);
   const boats = [];
-  // racelist のメインテーブルから艇番1〜6の行を順に拾う。class 名で識別が難しい場合があるため
-  // 「行内に '1 ' or '2 ' などの艇番が含まれ、A1/A2/B1/B2 のいずれかが含まれる行」をターゲットにする。
-  const tablerows = $("table tr").toArray();
-  for (const tr of tablerows) {
+  const seen = new Set();
+
+  $("tr").each((_, tr) => {
     const text = $(tr).text();
-    // 級別が含まれない行は skip
-    const cls = (text.match(/(A1|A2|B1|B2)/) || [])[1];
-    if (!cls) continue;
-    // 艇番 (1〜6 の独立した数字)
+    const cls = (text.match(/\b(A1|A2|B1|B2)\b/) || [])[1];
+    if (!cls) return;
+
     const tds = $(tr).find("td").toArray().map(td => $(td).text().trim());
-    if (tds.length < 4) continue;
+    if (tds.length < 4) return;
+
+    // 艇番: <td> テキストが 1〜6 の単独数字
     let boatNo = null;
     for (const t of tds) {
-      const n = +t;
-      if (Number.isInteger(n) && n >= 1 && n <= 6 && t === String(n)) { boatNo = n; break; }
+      if (/^[1-6]$/.test(t)) { boatNo = +t; break; }
     }
-    if (!boatNo) continue;
+    if (!boatNo || seen.has(boatNo)) return;
 
-    // 数値群を拾う: 全国勝率 / 2連対率 / 当地勝率 / 当地2連対率 / モーター2連率 / ボート2連率
-    // 出走表は数値が複数行のセルにまたがるため、tr 内の数値テキストを順序で取得。
+    // 全 decimal を順序通りに収集 (各 td の 0+ 個の decimal を flat 化)
     const nums = [];
-    $(tr).find("td").each((_, td) => {
-      const txt = $(td).text();
-      const ms = txt.match(/-?\d+\.\d+|\d+\.\d|\d{1,3}\.\d{2}/g) || [];
-      for (const m of ms) nums.push(parseFloatOrNull(m));
-    });
+    for (const t of tds) {
+      const ms = t.match(/-?\d+\.\d+/g) || [];
+      for (const m of ms) {
+        const v = parseFloatOrNull(m);
+        if (v !== null) nums.push(v);
+      }
+    }
 
-    // 選手名: 漢字ひらがなを含む 2〜6 文字
+    // 期待する 6 stats: [winRate(0-9), placeRate(0-100), localWinRate(0-9),
+    //                  localPlaceRate(0-100), motor2(0-100), boat2(0-100)]
+    // ST や F/L 値などが先頭にあるため、6 連続するこのパターンを sliding window で探す。
+    function fits(start) {
+      const a = nums.slice(start, start + 6);
+      if (a.length !== 6) return false;
+      return a[0] >= 0 && a[0] <= 9 &&
+             a[1] >= 0 && a[1] <= 100 &&
+             a[2] >= 0 && a[2] <= 9 &&
+             a[3] >= 0 && a[3] <= 100 &&
+             a[4] >= 0 && a[4] <= 100 &&
+             a[5] >= 0 && a[5] <= 100;
+    }
+    let idx = -1;
+    for (let i = 0; i + 6 <= nums.length; i++) {
+      if (fits(i)) { idx = i; break; }
+    }
+    const stats = idx >= 0 ? nums.slice(idx, idx + 6) : [null, null, null, null, null, null];
+
+    // 選手名: 漢字 (and ヶ・々) を 2〜6 文字 + 空白 + 2〜6 文字
     let racer = "";
-    const nameMatch = text.match(/[一-龯々ヶ]{1,4}\s?[一-龯々ヶ]{1,4}/);
-    if (nameMatch) racer = nameMatch[0].replace(/\s+/g, " ");
+    const nameMatch = text.match(/[一-龯々ヶ]{1,4}[\s　]+[一-龯々ヶ]{1,4}/);
+    if (nameMatch) racer = nameMatch[0].replace(/[\s　]+/g, " ").trim();
 
+    seen.add(boatNo);
     boats.push({
-      boatNo,
-      racer,
-      class: cls,
-      winRate:      nums[0] != null && nums[0] >= 0 && nums[0] <= 9   ? nums[0] : null,
-      placeRate:    nums[1] != null && nums[1] >= 0 && nums[1] <= 100 ? nums[1] : null,
-      localWinRate: nums[2] != null && nums[2] >= 0 && nums[2] <= 9   ? nums[2] : null,
-      localPlaceRate:nums[3] != null && nums[3] >= 0 && nums[3] <= 100 ? nums[3] : null,
-      motor2:       nums[4] != null && nums[4] >= 0 && nums[4] <= 100 ? nums[4] : null,
-      boat2:        nums[5] != null && nums[5] >= 0 && nums[5] <= 100 ? nums[5] : null,
+      boatNo, racer, class: cls,
+      winRate:        stats[0],
+      placeRate:      stats[1],
+      localWinRate:   stats[2],
+      localPlaceRate: stats[3],
+      motor2:         stats[4],
+      boat2:          stats[5],
     });
-    if (boats.length >= 6) break;
-  }
-  // boatNo の重複を除去 (最初に見つかったものを採用)
-  const seen = new Set();
-  return boats.filter(b => { if (seen.has(b.boatNo)) return false; seen.add(b.boatNo); return true; })
-              .sort((a, b) => a.boatNo - b.boatNo);
+  });
+
+  return boats.sort((a, b) => a.boatNo - b.boatNo);
 }
 
 /** ヘッダ部 (天候・風・波) を拾う best-effort */
@@ -115,7 +132,7 @@ export default async function handler(req, res) {
 
     // 出走表は当日朝に確定し、当日中はあまり変わらないので長めキャッシュ。
     setCache(res, 600, 1800);
-    return res.status(200).json({
+    const body = {
       ok: true,
       jcd, name: VENUE_NAMES[jcd], raceNo: +rno, date,
       ...meta,
@@ -123,7 +140,9 @@ export default async function handler(req, res) {
       counts: { boats: boats.length },
       fetchedAt: new Date().toISOString(),
       source: "boatrace.jp 公開出走表",
-    });
+    };
+    if (req.query.debug === "1") body.debug = { htmlExcerpt: html.slice(0, 3000) };
+    return res.status(200).json(body);
   } catch (e) {
     return fail(res, 500, String(e.message || e), { stack: e.stack });
   }

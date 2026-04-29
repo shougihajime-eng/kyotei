@@ -23,22 +23,31 @@ const URLS = {
 
 /**
  * 単勝 ページから艇番→オッズを抽出
- * 「1〜6 の各行に <td>艇番</td> <td>オッズ</td>」の構造を想定。
- * 実装は防御的に: <td> の数値ペアから 1〜6 のキーを推定する。
+ *   実構造: <tr><td>艇番(1-6)</td><td>選手名</td><td>単勝オッズ</td><td>複勝オッズ</td></tr>
+ *   行ごとに、艇番セルと「単勝オッズらしい decimal」を拾うことで取得する。
+ *   選手名のような非数値セルは挟まっていても無視する。
  */
 function parseWinOdds(html) {
   const $ = cheerio.load(html);
   const out = {};
-  // 単勝オッズは class 名に "is-fs" 系が含まれることが多い。
-  // 防御的に: テーブル内の数値セルを順に見て、1〜6 の値が見つかったら次のセルをオッズとして拾う。
-  $("table").each((_, tbl) => {
-    const cells = $(tbl).find("td").toArray().map(td => $(td).text().trim());
-    for (let i = 0; i < cells.length - 1; i++) {
-      const a = cells[i], b = cells[i + 1];
-      const ai = +a, bi = parseFloat(b);
-      if (Number.isInteger(ai) && ai >= 1 && ai <= 6 && /^\d+(\.\d+)?$/.test(b) && bi >= 1 && bi < 10000) {
-        // 既にあるならスキップ (重複ヒット防止)
-        if (out[String(ai)] == null) out[String(ai)] = bi;
+  $("tr").each((_, tr) => {
+    // 行全体のテキスト (艇番抽出用) と、td の値リスト
+    const cells = $(tr).find("td").toArray().map(td => $(td).text().trim());
+    if (cells.length < 2) return;
+    // 艇番 (単独で 1〜6)
+    let boatNo = null;
+    for (const c of cells) {
+      if (/^[1-6]$/.test(c)) { boatNo = c; break; }
+    }
+    if (!boatNo) return;
+    // この行で最初に出てくる decimal で、1.0 以上 9999 未満の値 = 単勝オッズ
+    for (const c of cells) {
+      if (/^\d+\.\d+$/.test(c)) {
+        const v = parseFloat(c);
+        if (v >= 1.0 && v < 10000 && out[boatNo] == null) {
+          out[boatNo] = v;
+          break;
+        }
       }
     }
   });
@@ -46,33 +55,71 @@ function parseWinOdds(html) {
 }
 
 /**
- * 連単 (2連単 / 3連単) のオッズを抽出
- *   テーブルセルの中に "数字-数字(-数字)" のキーを持つテキストと、
- *   隣接するオッズ数値が並ぶ構造を想定し、ペアにして拾う。
+ * 連単 (2連単 / 3連単) のマトリクス型オッズページからオッズを抽出
+ *
+ *   2連単 (odds2tf): 6行 × 6列の matrix。row=1着, col=2着。同番セルは "-" 表示で空。
+ *   3連単 (odds3t):  1着ごとに 6つのテーブル(?)、または 1着セクション内に 5x4 のサブmatrix。
+ *
+ *   ここでは「全テーブルの全行で 1着行ヘッダ + 数値群」を試す best-effort 方式。
+ *   失敗時は空 {} を返す。フロントエンド (predict) が確率からオッズを合成して fallback。
  */
 function parseComboOdds(html, depth /* 2 or 3 */) {
   const $ = cheerio.load(html);
   const out = {};
-  const re = depth === 2 ? /^([1-6])-([1-6])$/ : /^([1-6])-([1-6])-([1-6])$/;
-  // 全 td を走査、combo っぽいキーの直後/同セル内の数値をオッズと見なす
-  $("td, span").each((_, el) => {
-    const t = $(el).text().trim();
-    if (!re.test(t)) return;
-    // 同セルにオッズが含まれるケース: combo + 数値を separate で扱う必要があるため、隣接要素を見る
-    let oddsText = "";
-    const sib = $(el).next();
-    if (sib && sib.length) oddsText = sib.text().trim();
-    if (!/^\d+(\.\d+)?$/.test(oddsText)) {
-      // closest tr 内の数値セルから拾う
-      const tr = $(el).closest("tr");
-      const nums = tr.find("td").toArray().map(td => $(td).text().trim()).filter(s => /^\d+(\.\d+)?$/.test(s));
-      if (nums.length > 0) oddsText = nums[0];
-    }
-    const v = parseFloat(oddsText);
-    if (Number.isFinite(v) && v >= 1 && v < 100000) {
-      if (out[t] == null) out[t] = v;
-    }
+
+  $("table").each((_, tbl) => {
+    // テーブルの先頭行に 1〜6 の列ヘッダがあるか
+    const headTr = $(tbl).find("tr").first();
+    const headCells = headTr.find("th, td").toArray().map(td => $(td).text().trim());
+    const colBoats = []; // index → 2着艇番
+    headCells.forEach(c => { if (/^[1-6]$/.test(c)) colBoats.push(c); });
+
+    if (colBoats.length < 4) return; // 列ヘッダが揃わないテーブルは対象外
+
+    // 残りの行を走査
+    $(tbl).find("tr").slice(1).each((rIdx, tr) => {
+      const cells = $(tr).find("th, td").toArray().map(td => $(td).text().trim());
+      // 行頭セルから 1着艇番を拾う
+      let firstBoat = null;
+      for (const c of cells) {
+        if (/^[1-6]$/.test(c)) { firstBoat = c; break; }
+      }
+      if (!firstBoat) return;
+
+      // この行の decimal セル列を順に拾い、列順 (colBoats) と対応付ける
+      const decimals = cells
+        .map(c => /^\d+\.\d+$/.test(c) ? parseFloat(c) : null)
+        .filter(v => v !== null);
+
+      if (depth === 2) {
+        // 2連単: row=1着 / col=2着 (同番は除外)
+        // colBoats から firstBoat を除いた順序で decimals に対応する想定
+        const seconds = colBoats.filter(b => b !== firstBoat);
+        for (let i = 0; i < Math.min(decimals.length, seconds.length); i++) {
+          const v = decimals[i];
+          if (v >= 1.0 && v < 100000) out[`${firstBoat}-${seconds[i]}`] = v;
+        }
+      } else {
+        // 3連単: 1着固定の中で 2着×3着 のサブmatrix。
+        //   ここでは「行内 decimal 数 = 2着候補数 × 3着候補数」となる前提で best-effort に展開。
+        //   セルが正しくマッピングできない場合は何もせずスキップ。
+        const seconds = colBoats.filter(b => b !== firstBoat);
+        if (decimals.length === seconds.length * (colBoats.length - 2)) {
+          // (seconds.length) × (colBoats.length-2 = 3着候補) 想定
+          let k = 0;
+          for (const s of seconds) {
+            const thirds = colBoats.filter(b => b !== firstBoat && b !== s);
+            for (const t of thirds) {
+              if (k >= decimals.length) break;
+              const v = decimals[k++];
+              if (v >= 1.0 && v < 1000000) out[`${firstBoat}-${s}-${t}`] = v;
+            }
+          }
+        }
+      }
+    });
   });
+
   return out;
 }
 
@@ -97,14 +144,24 @@ export default async function handler(req, res) {
 
     // 直前オッズは 20 秒キャッシュ (上流負荷軽減と直前更新の両立)
     setCache(res, 20, 60);
-    return res.status(200).json({
+    const counts = { win: Object.keys(win).length, exacta: Object.keys(exacta).length, trifecta: Object.keys(trifecta).length };
+    const body = {
       ok: true,
       jcd, name: VENUE_NAMES[jcd], raceNo: +rno, date,
       win, exacta, trifecta,
-      counts: { win: Object.keys(win).length, exacta: Object.keys(exacta).length, trifecta: Object.keys(trifecta).length },
+      counts,
       fetchedAt: new Date().toISOString(),
       source: "boatrace.jp 公開オッズページ",
-    });
+    };
+    if (req.query.debug === "1") {
+      // 解析失敗時の診断用に HTML 抜粋を含める
+      body.debug = {
+        winHtmlExcerpt:      winHtml ? winHtml.slice(0, 1500)      : null,
+        exactaHtmlExcerpt:   exHtml  ? exHtml.slice(0, 1500)       : null,
+        trifectaHtmlExcerpt: trHtml  ? trHtml.slice(0, 1500)       : null,
+      };
+    }
+    return res.status(200).json(body);
   } catch (e) {
     return fail(res, 500, String(e.message || e), { stack: e.stack });
   }
