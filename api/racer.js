@@ -15,44 +15,63 @@ const URL_FN = (toban) => `https://www.boatrace.jp/owpc/pc/data/racersearch/prof
 
 const fwToHw = (s) => s.replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
 
+/* 名前を綺麗にする — 「（出場予定）」「ボートレーサー検索へ」等の余分を削る */
+function cleanName(s) {
+  if (!s) return s;
+  let n = s.replace(/[（(][^）)]*[）)]/g, ""); // 括弧と中身を除去
+  n = n.replace(/ボートレーサー.*$/, "");      // 「ボートレーサー検索へ」等
+  n = n.replace(/\s+/g, " ").trim();
+  return n.slice(0, 24);
+}
+
 function parseProfile(html) {
   const $ = cheerio.load(html);
   const text = fwToHw($("body").text().replace(/[ 　\s]+/g, " "));
   const out = { stats: {} };
 
-  // 氏名 (h2 や h3 のタイトル付近)
+  // 氏名 (h2 や .heading2_titleNm)
   const nameEl = $("h2, h3, .heading2_titleNm").first();
   if (nameEl.length) {
-    const nameTxt = nameEl.text().replace(/\s+/g, " ").trim();
-    if (/[一-龯]/.test(nameTxt)) out.name = nameTxt.slice(0, 30);
+    const nameTxt = cleanName(nameEl.text());
+    if (/[一-龯]/.test(nameTxt)) out.name = nameTxt;
   }
 
-  // 級別 (A1/A2/B1/B2)
+  // 級別
   const cls = (text.match(/\b(A1|A2|B1|B2)\b/) || [])[1];
   if (cls) out.class = cls;
 
-  // 支部 / 出身地
+  // 支部 / 出身地 (登録番号付近にあることが多い)
   const m1 = text.match(/支部[\s　]*([一-龯]+)/);
-  if (m1) out.branch = m1[1];
+  if (m1) out.branch = m1[1].slice(0, 8);
   const m2 = text.match(/出身地[\s　]*([一-龯]+)/);
-  if (m2) out.birthplace = m2[1];
+  if (m2) out.birthplace = m2[1].slice(0, 8);
 
-  // 年齢 / 体重
+  // 年齢 / 体重 / 身長
   const m3 = text.match(/(\d{2,3})\s*歳/);
   if (m3) out.age = +m3[1];
   const m4 = text.match(/(\d{2,3}\.\d)\s*kg/);
   if (m4) out.weight = +m4[1];
 
-  // 直近成績: "勝率 X.XX" "2連率 XX.XX%" などのパターン
-  const re = (label) => {
-    const r = new RegExp(`${label}[\\s　]*(\\d+(?:\\.\\d+)?)`);
-    const m = text.match(r);
-    return m ? +m[1] : null;
-  };
-  out.stats.winRate = re("勝率");
-  out.stats.placeRate2 = re("2連[対率]?");
-  out.stats.placeRate3 = re("3連[対率]?");
-
+  // 直近成績テーブル: 「全国」「当地」セクションの行を抽出
+  // boatrace.jp のプロフィールは 「期別成績」 の表があり、勝率 / 2連率 / 3連率 が並ぶ
+  const stats = {};
+  // パターン: "全国 ... X.XX XX.XX% XX.XX%" の数列から win/2連/3連 を順に拾う
+  const segNat = text.match(/全国[\s　]*[\d.%\s]{20,80}/);
+  if (segNat) {
+    const nums = segNat[0].match(/\d+(?:\.\d+)?/g)?.map(Number) || [];
+    if (nums[0] != null && nums[0] >= 0 && nums[0] <= 9) stats.winRate = nums[0];
+    if (nums[1] != null && nums[1] >= 0 && nums[1] <= 100) stats.placeRate2 = nums[1];
+    if (nums[2] != null && nums[2] >= 0 && nums[2] <= 100) stats.placeRate3 = nums[2];
+  }
+  // 当地 (会場別) はオプショナル
+  const segLoc = text.match(/当地[\s　]*[\d.%\s]{20,80}/);
+  if (segLoc) {
+    const nums = segLoc[0].match(/\d+(?:\.\d+)?/g)?.map(Number) || [];
+    if (nums[0] != null && nums[0] >= 0 && nums[0] <= 9) stats.localWinRate = nums[0];
+    if (nums[1] != null && nums[1] >= 0 && nums[1] <= 100) stats.localPlaceRate2 = nums[1];
+    if (nums[2] != null && nums[2] >= 0 && nums[2] <= 100) stats.localPlaceRate3 = nums[2];
+  }
+  out.stats = stats;
   return out;
 }
 
