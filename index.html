@@ -3201,109 +3201,137 @@ function Dashboard({ races, evals, onPick, onGoTab, settings, setSettings, today
                 : dataSource === "loading"       ? "info"
                 : "alert";
 
+  /* 詳細セクションは折りたたみで隠す。デフォルトは「結論カード一本」 */
+  const [showDetails, setShowDetails] = useState(false);
+
   return (
     <div className="space-y-4 mt-4">
-      {/* データソース・バナー (実データ / サンプル / 取得失敗) */}
-      <div className={dsClass} style={{padding:"10px 14px"}}>
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <div className="text-sm">
-            {dataSource === "real-schedule" && <b>📡 実データモード</b>}
-            {dataSource === "loading" && <b>📡 取得中…</b>}
-            {dataSource === "sample" && <b>⚠️ サンプルデータ動作中</b>}
-            <span className="ml-2 text-xs opacity-90">{dataMessage}</span>
-          </div>
-          {apiError && <span className="text-xs hint">⚠ {String(apiError).slice(0,140)}</span>}
-        </div>
-      </div>
-
-      {/* 更新バー (最上部・常に表示) */}
-      <RefreshBar lastRefreshAt={lastRefreshAt}
-        refreshing={refreshing} recalcing={recalcing} refreshMsg={refreshMsg}
-        onRefreshAll={onRefreshAll} onRecalc={onRecalc}
-        onGoResults={() => onGoTab && onGoTab("results")}
-        autoRefresh={settings.autoRefresh}
-        setAutoRefresh={(v)=>setSettings && setSettings({...settings, autoRefresh: v})}/>
-
-      {/* 結論カード: 今、何を買うか (本命/押さえ/穴 + 金額 / 見送りなら見送り) */}
+      {/* === メインビュー: 結論カードのみ (これだけ見れば判断できる) === */}
       <BuyDecisionCard headline={headline} settings={settings}
         lossStreak={lossStreak} money={money} remainingDaily={remainingDaily}
         onPick={onPick} onQuickRecord={onQuickRecord} onGoTab={onGoTab}/>
 
-      {/* 今やること: 行動指示カード */}
-      <MainActionCard races={races} evals={evals} onPick={onPick} onGoTab={onGoTab}/>
-
-      {/* 今日のフォーカス: 買い時アラート */}
-      <TodayFocus races={races} evals={evals} onPick={onPick}/>
-
-      <div className="grid-cards">
-        <Kpi label="本日の購入額" value={`¥${todayPnL.stake.toLocaleString()}`} sub={`残り上限 ¥${remainingDaily.toLocaleString()}`} />
-        <Kpi label="本日の払戻" value={`¥${Math.round(todayPnL.ret).toLocaleString()}`} sub={`本日 ROI ${todayROI}`} />
-        <Kpi label="本日損失上限" value={`¥${settings.dailyLossLimit.toLocaleString()}`} sub={`現在損失 ¥${Math.max(0,Math.round(money.todayLoss)).toLocaleString()}`} highlight={money.dailyLossHit}/>
-        <Kpi label="累計回収率" value={totalROI} sub={`通算 ${totalPnL.count} 件 / 的中 ${totalPnL.hits} 件`} />
-        <Kpi label="連敗カウンタ" value={`${lossStreak} 連敗`} sub={lossStreak>=5?"⚠ 5連敗で強制見送り":(lossStreak>=3?"⚠ 推奨額 50% 減":"通常")} highlight={lossStreak>=3}/>
+      {/* === 小さいフッター: データ状態 + 詳細トグル === */}
+      <div className="flex items-center justify-between flex-wrap gap-2 px-1">
+        <div className="text-xs hint">
+          {dataSource === "real-schedule" && "📡 実データ"}
+          {dataSource === "loading" && "📡 取得中…"}
+          {dataSource === "sample" && "⚠️ サンプル動作中"}
+          {lastRefreshAt && <span className="ml-2 opacity-80">最終更新: {new Date(lastRefreshAt).toLocaleTimeString("ja-JP", {hour:"2-digit", minute:"2-digit"})}</span>}
+          {settings.autoRefresh && <span className="ml-2 opacity-80">自動更新ON</span>}
+        </div>
+        <button className="btn btn-ghost text-xs"
+          onClick={() => setShowDetails(v => !v)}>
+          {showDetails ? "詳細を閉じる ▲" : "詳細を見る ▼"}
+        </button>
       </div>
 
-      <section className="card p-4">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-lg font-bold">注目レース (期待値の高い順)</h2>
-          <span className="hint">サンプルデータ。実データは「データ取込」タブから差し替え</span>
-        </div>
-        <div className="overflow-x-auto scrollbar">
-        <table>
-          <thead><tr>
-            <th>会場</th><th>R</th><th>発走</th>
-            <th>勝負条件AI</th>
-            <th>本命艇 (1着確率)</th><th>最高EV</th><th>過剰人気</th><th>本命危険度</th><th>信頼度</th><th>鮮度</th><th></th>
-          </tr></thead>
-          <tbody>
-            {featured.map(({race,e}) => {
-              const top = e.pred.winProbs.indexOf(Math.max(...e.pred.winProbs));
-              const topBoat = race.boats[top];
-              const m = e.market;
-              const ohClass = m && m.overhypeIndex>=1.30?"ev-neg":(m && m.overhypeIndex>=1.15?"text-amber-400":"");
-              return (
-                <tr key={race.id} className="hover:bg-[#162241]">
-                  <td>{race.venue}
-                    {(e.flags||[]).length>0 && (
-                      <span className="ml-1">
-                        {e.flags.map(f => <span key={f} title={CONTEXT_FLAGS[f]?.label}>{CONTEXT_FLAGS[f]?.icon}</span>)}
+      {/* === 詳細 (折りたたみ) === */}
+      {showDetails && (
+        <>
+          {/* 更新バー */}
+          <RefreshBar lastRefreshAt={lastRefreshAt}
+            refreshing={refreshing} recalcing={recalcing} refreshMsg={refreshMsg}
+            onRefreshAll={onRefreshAll} onRecalc={onRecalc}
+            onGoResults={() => onGoTab && onGoTab("results")}
+            autoRefresh={settings.autoRefresh}
+            setAutoRefresh={(v)=>setSettings && setSettings({...settings, autoRefresh: v})}/>
+
+          {/* データソース・バナー (詳細時のみ。エラー時は別途上に出す) */}
+          <div className={dsClass} style={{padding:"10px 14px"}}>
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="text-sm">
+                {dataSource === "real-schedule" && <b>📡 実データモード</b>}
+                {dataSource === "loading" && <b>📡 取得中…</b>}
+                {dataSource === "sample" && <b>⚠️ サンプルデータ動作中</b>}
+                <span className="ml-2 text-xs opacity-90">{dataMessage}</span>
+              </div>
+              {apiError && <span className="text-xs hint">⚠ {String(apiError).slice(0,140)}</span>}
+            </div>
+          </div>
+
+          <MainActionCard races={races} evals={evals} onPick={onPick} onGoTab={onGoTab}/>
+          <TodayFocus races={races} evals={evals} onPick={onPick}/>
+
+          <div className="grid-cards">
+            <Kpi label="本日の購入額" value={`¥${todayPnL.stake.toLocaleString()}`} sub={`残り上限 ¥${remainingDaily.toLocaleString()}`} />
+            <Kpi label="本日の払戻" value={`¥${Math.round(todayPnL.ret).toLocaleString()}`} sub={`本日 ROI ${todayROI}`} />
+            <Kpi label="本日損失上限" value={`¥${settings.dailyLossLimit.toLocaleString()}`} sub={`現在損失 ¥${Math.max(0,Math.round(money.todayLoss)).toLocaleString()}`} highlight={money.dailyLossHit}/>
+            <Kpi label="累計回収率" value={totalROI} sub={`通算 ${totalPnL.count} 件 / 的中 ${totalPnL.hits} 件`} />
+            <Kpi label="連敗カウンタ" value={`${lossStreak} 連敗`} sub={lossStreak>=5?"⚠ 5連敗で強制見送り":(lossStreak>=3?"⚠ 推奨額 50% 減":"通常")} highlight={lossStreak>=3}/>
+          </div>
+        </>
+      )}
+
+      {/* API エラーは詳細関係なく常に上に出す */}
+      {apiError && !showDetails && (
+        <div className="alert text-xs">⚠ データ取得に問題: {String(apiError).slice(0,200)} <button className="ml-2 underline" onClick={onRefreshAll}>再試行</button></div>
+      )}
+
+      {/* 注目レース表は詳細展開時のみ表示 */}
+      {showDetails && (
+        <section className="card p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg font-bold">注目レース (期待値の高い順)</h2>
+            <span className="hint">参考情報。判断は上の結論カードに集約されています</span>
+          </div>
+          <div className="overflow-x-auto scrollbar">
+          <table>
+            <thead><tr>
+              <th>会場</th><th>R</th><th>発走</th>
+              <th>勝負条件AI</th>
+              <th>本命艇 (1着確率)</th><th>最高EV</th><th>過剰人気</th><th>本命危険度</th><th>信頼度</th><th>鮮度</th><th></th>
+            </tr></thead>
+            <tbody>
+              {featured.map(({race,e}) => {
+                const top = e.pred.winProbs.indexOf(Math.max(...e.pred.winProbs));
+                const topBoat = race.boats[top];
+                const m = e.market;
+                const ohClass = m && m.overhypeIndex>=1.30?"ev-neg":(m && m.overhypeIndex>=1.15?"text-amber-400":"");
+                return (
+                  <tr key={race.id} className="hover:bg-[#162241]">
+                    <td>{race.venue}
+                      {(e.flags||[]).length>0 && (
+                        <span className="ml-1">
+                          {e.flags.map(f => <span key={f} title={CONTEXT_FLAGS[f]?.label}>{CONTEXT_FLAGS[f]?.icon}</span>)}
+                        </span>
+                      )}
+                    </td>
+                    <td>{race.raceNo}R</td><td className="num">{race.startTime}</td>
+                    <td>
+                      {e.conditionGate && (
+                        <span className={"pill " + (
+                          e.conditionGate.level==="GO"      ? "badge-buy" :
+                          e.conditionGate.level==="CAUTION" ? "badge-warn" :
+                          e.conditionGate.level==="SKIP"    ? "badge-ooana" : "badge-skip"
+                        )}>
+                          {e.conditionGate.icon} {e.conditionGate.level}
+                        </span>
+                      )}
+                    </td>
+                    <td>{top+1}号艇 {topBoat.racer} <span className="hint">({(e.pred.winProbs[top]*100).toFixed(1)}%)</span></td>
+                    <td className={"num " + (e.maxEV>=1.1?"ev-pos":(e.maxEV<1?"ev-neg":""))}>{e.maxEV.toFixed(2)}</td>
+                    <td className={"num " + ohClass}>{m ? m.overhypeIndex.toFixed(2)+"×" : "—"}</td>
+                    <td>{m && (
+                      <span className={"pill " + (m.dangerLevel==="高"?"badge-ooana":(m.dangerLevel==="中"?"badge-warn":"badge-buy"))}>
+                        {m.dangerLevel}
                       </span>
-                    )}
-                  </td>
-                  <td>{race.raceNo}R</td><td className="num">{race.startTime}</td>
-                  <td>
-                    {e.conditionGate && (
-                      <span className={"pill " + (
-                        e.conditionGate.level==="GO"      ? "badge-buy" :
-                        e.conditionGate.level==="CAUTION" ? "badge-warn" :
-                        e.conditionGate.level==="SKIP"    ? "badge-ooana" : "badge-skip"
-                      )}>
-                        {e.conditionGate.icon} {e.conditionGate.level}
-                      </span>
-                    )}
-                  </td>
-                  <td>{top+1}号艇 {topBoat.racer} <span className="hint">({(e.pred.winProbs[top]*100).toFixed(1)}%)</span></td>
-                  <td className={"num " + (e.maxEV>=1.1?"ev-pos":(e.maxEV<1?"ev-neg":""))}>{e.maxEV.toFixed(2)}</td>
-                  <td className={"num " + ohClass}>{m ? m.overhypeIndex.toFixed(2)+"×" : "—"}</td>
-                  <td>{m && (
-                    <span className={"pill " + (m.dangerLevel==="高"?"badge-ooana":(m.dangerLevel==="中"?"badge-warn":"badge-buy"))}>
-                      {m.dangerLevel}
-                    </span>
-                  )}</td>
-                  <td><span className={"pill conf-"+e.confidence.level}>{e.confidence.level}</span></td>
-                  <td><span className={"pill " + (
-                    e.freshness.level==="最新"?"badge-buy":
-                    e.freshness.level==="やや古い"?"badge-warn":
-                    e.freshness.level==="古い"?"badge-chuana":"badge-ooana"
-                  )}>{e.freshness.level}</span></td>
-                  <td><button className="btn btn-ghost" onClick={()=>onPick(race.id)}>分析を見る →</button></td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-        </div>
-      </section>
+                    )}</td>
+                    <td><span className={"pill conf-"+e.confidence.level}>{e.confidence.level}</span></td>
+                    <td><span className={"pill " + (
+                      e.freshness.level==="最新"?"badge-buy":
+                      e.freshness.level==="やや古い"?"badge-warn":
+                      e.freshness.level==="古い"?"badge-chuana":"badge-ooana"
+                    )}>{e.freshness.level}</span></td>
+                    <td><button className="btn btn-ghost" onClick={()=>onPick(race.id)}>分析を見る →</button></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          </div>
+        </section>
+      )}
     </div>
   );
 }
@@ -3793,92 +3821,144 @@ function RefreshBar({ lastRefreshAt, refreshing, recalcing, refreshMsg, onRefres
   );
 }
 
-/* ========== 結論カード: 「今、何を買うか」を1画面で示す ========== */
+/* ========== 結論カード: 「買う or 見送り」を全画面で示す ==========
+   設計思想: 開いた瞬間に「答え」だけが目に入る。考えなくても判断できる。
+   ・買う場合: 巨大な "🟢 買う" + 本命/押さえ/穴 の3ボックス + 合計 + 1ボタン
+   ・見送り場合: 巨大な "🔴 見送り" + 1行の理由 + 次の判定
+============================================================ */
 function BuyDecisionCard({ headline, settings, lossStreak, money, remainingDaily, onPick, onQuickRecord, onGoTab }) {
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
+
   if (!headline) {
     return (
-      <section className="card p-5 text-center mb-4" style={{borderWidth:2, borderColor:"#475569"}}>
-        <div className="text-xs hint uppercase tracking-widest mb-2">💡 結論: 今、何を買うか</div>
-        <div className="text-2xl font-black mt-2">対象レースなし</div>
-        <div className="hint text-sm mt-2">「データ取込」で出走表を投入するか、サンプルデータで動作を確認してください</div>
+      <section style={{padding:"40px 24px", borderRadius:20, textAlign:"center",
+        background:"linear-gradient(135deg,#1e293b,#0f1830)", border:"3px solid #475569", color:"#fff"}}>
+        <div style={{fontSize:64}}>🤖</div>
+        <div style={{fontSize:36, fontWeight:900, marginTop:8}}>本日対象なし</div>
+        <div className="hint text-sm mt-2 opacity-80">レース情報の取得待ち / 開催終了</div>
       </section>
     );
   }
+
   const { race, ev, timing } = headline;
   const rec = buildBuyRecommendation(race, ev, settings, lossStreak, money, remainingDaily);
   const verdict = rec.verdict;
-  const theme = ({
-    buy:     { bg:"linear-gradient(135deg,#065f46,#053527)", border:"#10b981", title:"🟢 買う", color:"#a7f3d0" },
-    caution: { bg:"linear-gradient(135deg,#854d0e,#3a2d0a)", border:"#f59e0b", title:"🟡 慎重に検討", color:"#fde68a" },
-    wait:    { bg:"linear-gradient(135deg,#1e3a8a,#0e2440)", border:"#3b82f6", title:"⏳ 確認待ち", color:"#bfdbfe" },
-    skip:    { bg:"linear-gradient(135deg,#7f1d1d,#3b1d1d)", border:"#ef4444", title:"🔴 見送り", color:"#fecaca" },
-    neutral: { bg:"linear-gradient(135deg,#1e293b,#0f1830)", border:"#475569", title:"判定中", color:"#e2e8f0" },
-  })[verdict];
   const showItems = (verdict === "buy" || verdict === "caution") && rec.items.length > 0 && rec.total > 0;
-  const profileLabel = (RISK_ALLOC[rec.profile] || RISK_ALLOC.balanced).label;
+  // 表示上は2状態に集約: 「買う」 (showItems=true) または 「見送り」 (それ以外)
+  const isBuy = showItems && !rec.lock;
+
+  const theme = isBuy
+    ? { bg:"linear-gradient(135deg,#065f46,#053527)", border:"#10b981", title:"🟢 買う", color:"#a7f3d0" }
+    : { bg:"linear-gradient(135deg,#7f1d1d,#3b1d1d)", border:"#ef4444", title:"🔴 見送り", color:"#fecaca" };
+
+  // 見送り理由を 1 行で
+  const skipReason =
+    rec.lock                                  ? "強制見送り (損失上限 / 連敗 / 日次予算到達)"
+    : verdict === "skip"                      ? "勝負条件外 — 買うべきレースではありません"
+    : verdict === "wait"                      ? "データ不足・確認待ち — 直前情報を取込んでください"
+    : verdict === "caution"                   ? "EV閾値を満たす買い目がないため見送り"
+    : verdict === "buy" && rec.raceCap <= 0   ? "1日予算 / 1レース上限が 0 のため買い目を出せません"
+    : verdict === "buy" && !showItems         ? "推奨買い目が0件 (条件未達)"
+    : "判定中";
+
   function quickRecordAll() {
-    if (busy || !showItems || rec.lock) return;
+    if (busy || !isBuy) return;
     setBusy(true);
     const n = onQuickRecord(race, rec.items);
-    setMsg(`✅ ${settings.virtualMode ? "仮想記録" : "購入候補に記録"}しました (${n}件 / 合計 ¥${rec.total.toLocaleString()})`);
+    setMsg(`✅ 記録完了 (${n}件 / 合計 ¥${rec.total.toLocaleString()})`);
     setTimeout(() => { setMsg(""); setBusy(false); }, 3500);
   }
+
   return (
-    <section className="mb-4" style={{padding:"22px 22px 18px", borderRadius:18,
-      background: theme.bg, border:`3px solid ${theme.border}`, color:"#fff"}}>
-      <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
-        <div className="text-xs uppercase tracking-widest opacity-80">💡 結論: 今、何を買うか</div>
-        <div className="text-xs opacity-90">
-          {race.venue} {race.raceNo}R ({race.startTime}発走
-          {timing.minutesToStart != null && timing.minutesToStart > 0 ? ` / あと${Math.round(timing.minutesToStart)}分` : ""})
+    <section style={{padding:"28px 24px 22px", borderRadius:20,
+      background: theme.bg, border:`3px solid ${theme.border}`, color:"#fff",
+      boxShadow:`0 0 32px -8px ${theme.border}`}}>
+
+      {/* 上部: レース情報 (小さく) */}
+      <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
+        <div className="text-sm opacity-90">
+          <b>{race.venue} {race.raceNo}R</b>
+          <span className="ml-2 opacity-80">{race.startTime}発走</span>
+          {timing.minutesToStart != null && timing.minutesToStart > 0 && (
+            <span className="ml-2 opacity-80">あと{Math.round(timing.minutesToStart)}分</span>
+          )}
         </div>
+        {settings.virtualMode && <span className="pill" style={{background:"rgba(0,0,0,0.3)", color:"#fff", fontSize:11}}>🧪 仮想モード</span>}
       </div>
-      <div style={{fontSize:"min(40px,9vw)", fontWeight:900, lineHeight:1.15, color:theme.color}}>{theme.title}</div>
-      <div className="text-xs opacity-80 mt-1">
-        リスク感覚: <b>{profileLabel}</b> / 1日残り予算 ¥{(remainingDaily||0).toLocaleString()} / 1レース上限 ¥{(rec.raceCap||0).toLocaleString()}
+
+      {/* メインの判定表示 (極大) */}
+      <div style={{fontSize:"min(64px,14vw)", fontWeight:900, lineHeight:1.05,
+        color:theme.color, letterSpacing:"-0.02em", marginTop:4}}>
+        {theme.title}
       </div>
-      {!showItems && (
-        <div className="mt-3" style={{fontSize:15, opacity:0.95}}>
-          {verdict === "skip"    && "勝負条件外 — 買い目は提示しません。"}
-          {verdict === "wait"    && "データ不足・鮮度不足。直前情報を取込んでから再判定してください。"}
-          {verdict === "caution" && "条件は弱め。EV閾値以上の候補がないため、見送り推奨。"}
-          {verdict === "neutral" && "判定中"}
-          {verdict === "buy" && rec.lock && "強制見送り中 (損失上限 / 連敗 / 日次上限)。"}
-          {verdict === "buy" && !rec.lock && rec.raceCap <= 0 && "1日予算/1レース上限 が 0 のため記録できません。資金管理を確認してください。"}
-        </div>
-      )}
-      {showItems && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3">
-          {rec.items.map((it, i) => (
-            <div key={i} className="p-3 rounded-lg" style={{background:"rgba(0,0,0,0.28)"}}>
-              <div className="text-xs opacity-80">{it.role} ({(it.allocPct*100).toFixed(0)}%)</div>
-              <div className="font-mono font-bold" style={{fontSize:24, marginTop:2}}>{it.combo}</div>
-              <div className="text-xs opacity-90 mt-1">{it.kind} / オッズ {it.odds.toFixed(1)} / EV {it.ev.toFixed(2)}</div>
-              <div className="font-bold mt-1" style={{fontSize:20}}>¥{(it.stake||0).toLocaleString()}</div>
-            </div>
-          ))}
-        </div>
-      )}
-      <div className="mt-4 flex flex-wrap items-center gap-2" style={{paddingTop:14, borderTop:"1px solid rgba(255,255,255,0.18)"}}>
-        {showItems && (
-          <>
-            <div className="text-sm opacity-90">合計推奨額 <b style={{fontSize:22}}>¥{rec.total.toLocaleString()}</b></div>
-            <button className="btn btn-primary" disabled={rec.lock || rec.total<=0 || busy}
-              style={{opacity: busy ? 0.65 : 1}}
-              onClick={quickRecordAll}>
-              {busy ? "✅ 記録中…" : `✅ ${settings.virtualMode ? "この買い目で仮想記録" : "この買い目で購入候補に記録"}`}
+
+      {/* === 買う: 3ボックス + 合計 + 1ボタン === */}
+      {isBuy && (
+        <>
+          <div className="grid grid-cols-3 gap-2 md:gap-3 mt-4">
+            {rec.items.map((it, i) => {
+              const roleColor = i === 0 ? "#dcfce7" : i === 1 ? "#fef3c7" : "#fecaca";
+              return (
+                <div key={i} className="text-center" style={{background:"rgba(0,0,0,0.32)", borderRadius:14, padding:"14px 8px"}}>
+                  <div style={{fontSize:11, opacity:0.85, color:roleColor, fontWeight:700, letterSpacing:"0.05em"}}>{it.role}</div>
+                  <div className="font-mono" style={{fontSize:"min(28px,7vw)", fontWeight:900, marginTop:4, lineHeight:1.1}}>{it.combo}</div>
+                  <div style={{fontSize:11, opacity:0.75, marginTop:2}}>{it.kind} {it.odds.toFixed(1)}倍</div>
+                  <div className="num" style={{fontSize:"min(22px,5.5vw)", fontWeight:800, marginTop:6}}>¥{(it.stake||0).toLocaleString()}</div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="text-center mt-4" style={{fontSize:14, opacity:0.85}}>合計</div>
+          <div className="text-center" style={{fontSize:"min(38px,9vw)", fontWeight:900, color:theme.color}}>
+            ¥{rec.total.toLocaleString()}
+          </div>
+
+          <div className="mt-4 flex justify-center">
+            <button onClick={quickRecordAll} disabled={busy}
+              style={{background:"#fff", color:"#0b1220", padding:"14px 28px",
+                borderRadius:14, fontWeight:800, fontSize:18, border:"none", cursor:"pointer",
+                opacity: busy ? 0.65 : 1, minWidth:240, boxShadow:"0 4px 12px rgba(0,0,0,0.25)"}}>
+              {busy ? "✅ 記録中…" : "✅ この買い目で記録"}
             </button>
-          </>
-        )}
-        <button className="btn btn-ghost" onClick={() => onPick(race.id)}>このレースの詳細 →</button>
-        {!showItems && (
-          <button className="btn btn-ghost" onClick={() => onGoTab && onGoTab("weekly")}>📅 週次レポートで成績を見る →</button>
-        )}
-        {rec.lock && <span className="pill badge-skip">強制見送り</span>}
+          </div>
+        </>
+      )}
+
+      {/* === 見送り: 理由 1 行 + 詳細リンク === */}
+      {!isBuy && (
+        <>
+          <div className="mt-3 text-center" style={{fontSize:18, fontWeight:600, opacity:0.95, lineHeight:1.5}}>
+            {skipReason}
+          </div>
+          <div className="mt-4 flex justify-center">
+            <button onClick={() => onGoTab && onGoTab("weekly")}
+              style={{background:"rgba(255,255,255,0.15)", color:"#fff", padding:"12px 22px",
+                borderRadius:12, fontWeight:700, fontSize:14, border:"1px solid rgba(255,255,255,0.3)", cursor:"pointer"}}>
+              📅 週次成績を見る
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* 完了トースト */}
+      {msg && (
+        <div className="mt-4 text-center" style={{
+          background:"#fff", color:"#065f46", padding:"10px 16px", borderRadius:10,
+          fontWeight:700, fontSize:14
+        }}>{msg}</div>
+      )}
+
+      {/* 最下段: 小さく付帯情報 (詳細リンクのみ・他はノイズ削除) */}
+      <div className="mt-4 flex justify-end" style={{paddingTop:10, borderTop:"1px solid rgba(255,255,255,0.15)"}}>
+        <button onClick={() => onPick(race.id)} style={{
+          background:"transparent", color:"rgba(255,255,255,0.7)", fontSize:12,
+          border:"none", cursor:"pointer", textDecoration:"underline"
+        }}>
+          このレースの詳細を見る →
+        </button>
       </div>
-      {msg && <div className="ok mt-3" style={{color:"#0b1220"}}>{msg}</div>}
     </section>
   );
 }
