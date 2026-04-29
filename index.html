@@ -3092,7 +3092,7 @@ function OddsMovementView({ race, oddsMovement, sorted }) {
                 <li key={i}><b>{v.boatNo}号艇</b> EV {v.prevEV.toFixed(2)}→<span className="ev-neg">{v.currEV.toFixed(2)}</span> (オッズ {v.prev}→{v.curr})</li>
               ))}
             </ul>}
-          <div className="hint text-xs mt-2">EV ≧ 1.10 だった買い目が EV<1.0 に転落 — 「直前で妙味が消えた」買い目です。買わない方が良い。</div>
+          <div className="hint text-xs mt-2">EV ≧ 1.10 だった買い目が EV&lt;1.0 に転落 — 「直前で妙味が消えた」買い目です。買わない方が良い。</div>
         </div>
         <div className="p-3 rounded bg-[#053527] border border-emerald-700">
           <div className="text-sm font-bold text-emerald-300">✅ 妙味が維持されている買い目 (単勝)</div>
@@ -4459,7 +4459,7 @@ function MarketDivergenceView({ race, market }) {
       {/* 妙味なし買い目 */}
       {market.noValueTickets.length > 0 && (
         <div className="mt-4">
-          <h4 className="text-sm font-bold mb-2 text-rose-400">⛔ 妙味なし買い目 (EV<0.95)</h4>
+          <h4 className="text-sm font-bold mb-2 text-rose-400">⛔ 妙味なし買い目 (EV&lt;0.95)</h4>
           <div className="overflow-x-auto scrollbar">
             <table>
               <thead><tr><th>種別</th><th>買い目</th><th>確率</th><th>オッズ</th><th>EV</th></tr></thead>
@@ -4574,7 +4574,7 @@ function RaceFlagsEditor({ race, raceFlags, setRaceFlags, flagLog }) {
           )}
           {/* 信頼度・スキップへの影響を文章で */}
           <div className="info text-xs mt-3">
-            {current.includes("shouka") && <div>💤 消化レース: AI信頼度 -20 / EV<1.20 で見送り推奨を強化</div>}
+            {current.includes("shouka") && <div>💤 消化レース: AI信頼度 -20 / EV&lt;1.20 で見送り推奨を強化</div>}
             {current.includes("yusho") && <div>🏆 優勝戦: AI信頼度 +8 / 攻め型のEV閾値を1.20以上に引上げ・大穴(オッズ50倍超)を除外</div>}
             {current.includes("junyusho") && <div>🥈 準優勝戦: 攻め型を中穴中心 (EV≧1.15、オッズ7倍以上) に再構築</div>}
             {current.includes("volatile") && <div>🌊 荒れやすい会場: 信頼度 -8 / 上位艇スコア -8%, 下位艇 +5〜10%</div>}
