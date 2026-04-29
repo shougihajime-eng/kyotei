@@ -4272,7 +4272,7 @@ function DataSourceView({ races, setRaces }) {
       <section className="card p-4">
         <h3 className="font-bold mb-3">直前オッズの取り込み (JSON)</h3>
         <div className="hint text-xs mb-2">
-          形式: <code>{'{ "R001": { "1": 1.4, "2": 5.2, ... }, "R002": {...} }</code>
+          形式: <code>{'{ "R001": { "1": 1.4, "2": 5.2, ... }, "R002": {...} }'}</code>
           <br/>取り込み後、<b>前回オッズ vs 今回オッズ</b>の変動が20%以上ある場合は警告が出ます。
         </div>
         <textarea className="input" rows="6" value={json} onChange={e=>setJson(e.target.value)} placeholder='{ "R001": {"1": 1.4, "2": 5.2, ...} }'/>
