@@ -22,75 +22,74 @@ function parseFloatOrNull(s) {
 }
 
 /**
- * racelist HTML から 6 艇分の行を抽出。
- *   実構造 (boatrace.jp): 1艇=1<tr> に「艇番 / 級別 / 選手名 / 登録番号 / 年齢/体重 / F/L/平均ST /
- *                         全国勝率 / 全国2連対率 / 当地勝率 / 当地2連対率 / モーター2連率 / ボート2連率」が並ぶ。
- *   行に「A1/A2/B1/B2」を含み、独立した艇番セル (1〜6) が含まれる行のみを対象にする。
- *   数値抽出: tr 内の <td>テキストから decimal を順に拾い、6つの canonical 統計をスライド窓で当てはめる。
+ * racelist HTML から 6 艇分のデータを抽出。
+ *
+ *   実構造 (boatrace.jp): 1艇 = 4 行の連続する <tr>。
+ *     1行目 (stats): "１ 4075 / A1 中野 次郎 東京/東京 44歳/54.5kg F1 L0 0.13
+ *                     6.38 42.40 60.80 7.10 53.13 72.92 71 40.00 50.00 61 0.00 0.00 7 12 7 7 7R"
+ *     2行目: 進入コース履歴 (4 整数)
+ *     3行目: 平均ST 履歴 (.19 .17 .23 .09 形式)
+ *     4行目: 着順履歴 (全角数字)
+ *
+ *   1行目だけで全データが取れる。級別 (A1/A2/B1/B2) を含む行で識別。
+ *   艇番は全角 "１"-"６" (boatrace.jp の表示仕様) なので半角化が必要。
+ *
+ *   stats 行の decimal は次の 12 個が固定順:
+ *     [体重, 平均ST, 全国勝率, 全国2連率, 全国3連率,
+ *      当地勝率, 当地2連率, 当地3連率,
+ *      モーター2連率, モーター3連率, ボート2連率, ボート3連率]
+ *   → 必要なのは index [2, 3, 5, 6, 8, 10]。
  */
 function parseBoats(html) {
   const $ = cheerio.load(html);
   const boats = [];
   const seen = new Set();
 
+  // 全角数字 → 半角
+  const fwToHw = (s) => s.replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
+
   $("tr").each((_, tr) => {
-    const text = $(tr).text();
+    const rawText = $(tr).text();
+    const text = rawText.replace(/[ 　\s]+/g, " ").trim();
     const cls = (text.match(/\b(A1|A2|B1|B2)\b/) || [])[1];
     if (!cls) return;
 
-    const tds = $(tr).find("td").toArray().map(td => $(td).text().trim());
-    if (tds.length < 4) return;
+    // 行頭の文字を半角化、1〜6 でなければスキップ
+    const head = text.charAt(0);
+    const hwHead = fwToHw(head);
+    if (!/^[1-6]$/.test(hwHead)) return;
+    const boatNo = +hwHead;
+    if (seen.has(boatNo)) return;
 
-    // 艇番: <td> テキストが 1〜6 の単独数字
-    let boatNo = null;
-    for (const t of tds) {
-      if (/^[1-6]$/.test(t)) { boatNo = +t; break; }
-    }
-    if (!boatNo || seen.has(boatNo)) return;
+    // 全 decimal を順序通りに収集 (整数は除外)
+    const decimals = (text.match(/\d+\.\d+/g) || []).map(s => +s);
+    if (decimals.length < 11) return; // 11個未満なら別レイアウトとみなしスキップ
 
-    // 全 decimal を順序通りに収集 (各 td の 0+ 個の decimal を flat 化)
-    const nums = [];
-    for (const t of tds) {
-      const ms = t.match(/-?\d+\.\d+/g) || [];
-      for (const m of ms) {
-        const v = parseFloatOrNull(m);
-        if (v !== null) nums.push(v);
-      }
-    }
+    // canonical positions
+    const winRate        = decimals[2];
+    const placeRate      = decimals[3];
+    const localWinRate   = decimals[5];
+    const localPlaceRate = decimals[6];
+    const motor2         = decimals[8];
+    const boat2          = decimals[10];
 
-    // 期待する 6 stats: [winRate(0-9), placeRate(0-100), localWinRate(0-9),
-    //                  localPlaceRate(0-100), motor2(0-100), boat2(0-100)]
-    // ST や F/L 値などが先頭にあるため、6 連続するこのパターンを sliding window で探す。
-    function fits(start) {
-      const a = nums.slice(start, start + 6);
-      if (a.length !== 6) return false;
-      return a[0] >= 0 && a[0] <= 9 &&
-             a[1] >= 0 && a[1] <= 100 &&
-             a[2] >= 0 && a[2] <= 9 &&
-             a[3] >= 0 && a[3] <= 100 &&
-             a[4] >= 0 && a[4] <= 100 &&
-             a[5] >= 0 && a[5] <= 100;
-    }
-    let idx = -1;
-    for (let i = 0; i + 6 <= nums.length; i++) {
-      if (fits(i)) { idx = i; break; }
-    }
-    const stats = idx >= 0 ? nums.slice(idx, idx + 6) : [null, null, null, null, null, null];
+    // 妥当性チェック
+    if (!(winRate >= 0 && winRate <= 9 &&
+          placeRate >= 0 && placeRate <= 100 &&
+          localWinRate >= 0 && localWinRate <= 9 &&
+          localPlaceRate >= 0 && localPlaceRate <= 100 &&
+          motor2 >= 0 && motor2 <= 100 &&
+          boat2 >= 0 && boat2 <= 100)) return;
 
-    // 選手名: 漢字 (and ヶ・々) を 2〜6 文字 + 空白 + 2〜6 文字
+    // 選手名: 漢字 2-4 + 空白 + 漢字 1-4 で最初に現れるもの
     let racer = "";
-    const nameMatch = text.match(/[一-龯々ヶ]{1,4}[\s　]+[一-龯々ヶ]{1,4}/);
-    if (nameMatch) racer = nameMatch[0].replace(/[\s　]+/g, " ").trim();
+    const nameMatch = text.match(/[一-龯々ヶ]{1,4}\s+[一-龯々ヶ]{1,4}/);
+    if (nameMatch) racer = nameMatch[0];
 
     seen.add(boatNo);
     boats.push({
       boatNo, racer, class: cls,
-      winRate:        stats[0],
-      placeRate:      stats[1],
-      localWinRate:   stats[2],
-      localPlaceRate: stats[3],
-      motor2:         stats[4],
-      boat2:          stats[5],
+      winRate, placeRate, localWinRate, localPlaceRate, motor2, boat2,
     });
   });
 
