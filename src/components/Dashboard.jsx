@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import BuyDecisionCard from "./BuyDecisionCard.jsx";
 import RefreshBar from "./RefreshBar.jsx";
+import NewsPanel from "./NewsPanel.jsx";
 import { yen } from "../lib/format.js";
 
 /**
@@ -48,6 +49,9 @@ export default function Dashboard({
 
       {/* 1週間損益 */}
       <WeeklyTotalBadge weekly={weekly} />
+
+      {/* 公式ニュース */}
+      <NewsPanel />
 
       {/* レース一覧へのリンク (薄いボタン) */}
       <div className="text-center">
