@@ -92,19 +92,25 @@ function parseComboOdds(html, depth /* 2 or 3 */) {
   // 行の 2着 を depth=3 のときに記憶 (rowspan continuation)
   const carry2nd = { "1": null, "2": null, "3": null, "4": null, "5": null, "6": null };
 
+  // トークン化: 数字 (整数 or decimal) のみを順序付きで返す
+  // ※ 大穴オッズは "1263" のように decimal が無いことがある (boatrace.jp の表示仕様)
+  function tokenize(txt) {
+    const normalized = txt.replace(/[ 　\s]+/g, " ").trim();
+    return normalized.split(" ").filter(t => /^\d+(\.\d+)?$/.test(t));
+  }
+
   $(tbl).find("tr").each((rIdx, tr) => {
-    if (rIdx === 0) return; // ヘッダ
-    const txt = $(tr).text().replace(/[　\s]+/g, " ").trim();
+    if (rIdx === 0) return; // ヘッダ行
+    const txt = $(tr).text();
     if (!txt) return;
-    // 行内に選手名 (漢字) があるとヘッダ扱いの可能性 → スキップ
+    // 選手名 (漢字) を含む行はヘッダ — スキップ
     if (/[一-龯]/.test(txt)) return;
 
-    // トークン化: 単独整数 1-6 か decimal のみ
-    const tokens = txt.split(" ").filter(t => /^[1-6]$/.test(t) || /^\d+\.\d+$/.test(t));
+    const tokens = tokenize(txt);
 
     if (depth === 2) {
-      // 12 トークン期待: [2着, odds] × 6
-      if (tokens.length < 12) return;
+      // 期待: 12 トークン = [2着, odds] × 6
+      if (tokens.length !== 12) return;
       for (let k = 0; k < 6; k++) {
         const second = tokens[2*k];
         const odds = parseFloat(tokens[2*k + 1]);
@@ -116,7 +122,7 @@ function parseComboOdds(html, depth /* 2 or 3 */) {
     } else {
       // depth === 3
       if (tokens.length === 18) {
-        // 6 トリプレット: [2着, 3着, odds] × 6 (この行で 2着 が変わる)
+        // 6 トリプレット: [2着, 3着, odds] × 6 — この行で 2着 が変わる
         for (let k = 0; k < 6; k++) {
           const second = tokens[3*k];
           const third  = tokens[3*k + 1];
@@ -129,7 +135,7 @@ function parseComboOdds(html, depth /* 2 or 3 */) {
           carry2nd[first] = second;
         }
       } else if (tokens.length === 12) {
-        // 6 ペア: [3着, odds] × 6 (2着 は前行から carryover)
+        // 6 ペア: [3着, odds] × 6 (2着 は前行から rowspan continuation)
         for (let k = 0; k < 6; k++) {
           const third = tokens[2*k];
           const odds  = parseFloat(tokens[2*k + 1]);
@@ -141,7 +147,7 @@ function parseComboOdds(html, depth /* 2 or 3 */) {
           out[`${first}-${second}-${third}`] = odds;
         }
       }
-      // それ以外の行 (空行や注釈) は黙ってスキップ
+      // それ以外 (空行や注釈) は黙ってスキップ
     }
   });
 
