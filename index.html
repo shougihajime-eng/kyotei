@@ -7012,4 +7012,35 @@ class ErrorBoundary extends React.Component {
         <div style={{padding:24, fontFamily:"sans-serif"}}>
           <div className="warn" style={{maxWidth:700, margin:"0 auto"}}>
             <h2 style={{fontWeight:700, fontSize:18, marginBottom:8}}>⚠️ 表示エラーが発生しました</h2>
-            <div style={{fontSize:13, m
+            <div style={{fontSize:13, marginBottom:8}}>
+              アプリの一部でエラーが起きました。サンプルデータの再生成、もしくは画面リロードで復旧する場合があります。
+            </div>
+            <details style={{fontSize:12, opacity:0.8}}>
+              <summary>エラーメッセージ (開発者向け)</summary>
+              <pre style={{whiteSpace:"pre-wrap", marginTop:8}}>{String(this.state.error?.stack || this.state.error)}</pre>
+            </details>
+            <div style={{marginTop:12}}>
+              <button className="btn btn-primary" onClick={()=>{
+                try { localStorage.removeItem("kyoteiAssistantStateV3"); } catch(e){}
+                location.reload();
+              }}>localStorage をクリアしてリロード</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// boot-screen を消す前にルートをクリア
+const rootEl = document.getElementById("root");
+const bootScreen = document.getElementById("boot-screen");
+if (bootScreen && rootEl) rootEl.removeChild(bootScreen);
+
+ReactDOM.createRoot(rootEl).render(
+  <ErrorBoundary><App /></ErrorBoundary>
+);
+</script>
+</body>
+</html>
