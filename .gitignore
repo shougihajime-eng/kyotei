@@ -7,3 +7,4 @@ node_modules/
 .git_broken/
 .git_old2/
 .git_v23/
+.git_intermediate/

@@ -1,2 +1,0 @@
-0000000000000000000000000000000000000000 00adae16c3baa1085039a379237477af4bc3a6e8 shougi-hajime <shougi.hajime@gmail.com> 1777435896 +0000	commit (initial): Initial commit: 競艇 期待値分析アシスタント v23 — 買わないAI
-00adae16c3baa1085039a379237477af4bc3a6e8 eb58f4def5c626c89cb794f3e5a8ea9e76fdd600 shougi-hajime <shougi.hajime@gmail.com> 1777437001 +0000	commit: Fix: remove data-type=module + strengthen Babel error handling (v24)
