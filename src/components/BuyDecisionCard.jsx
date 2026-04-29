@@ -88,8 +88,32 @@ export default function BuyDecisionCard({ race, evalRes, recommendation, onRecor
       {/* 5因子の理由 (本命のみ表示) */}
       <FactorRow factors={recommendation.items[0]?.factors} />
 
+      {/* 直前情報による補正があれば表示 */}
+      <ConditionRow reasons={recommendation.items[0]?.conditionReasons} />
+
       {msg && <div className="mt-3 text-center font-bold">{msg}</div>}
     </section>
+  );
+}
+
+function ConditionRow({ reasons }) {
+  if (!reasons || reasons.length === 0) return null;
+  return (
+    <div className="mt-4 pt-3" style={{ borderTop: "1px solid rgba(255,255,255,0.18)" }}>
+      <div className="text-xs opacity-75 mb-2 text-center">予想に影響した直前情報</div>
+      <div className="flex flex-col items-center gap-1">
+        {reasons.map((r, i) => (
+          <div key={i} className="text-xs"
+            style={{
+              background: r.kind === "pos" ? "rgba(16,185,129,0.18)" : "rgba(239,68,68,0.18)",
+              color: r.kind === "pos" ? "#a7f3d0" : "#fecaca",
+              padding: "4px 10px", borderRadius: 999,
+            }}>
+            {r.kind === "pos" ? "✓ " : "✗ "}{r.text}
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 

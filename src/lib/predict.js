@@ -61,20 +61,60 @@ function softmax(arr, temp = 1) {
   return exps.map((e) => e / sum);
 }
 
-/* 1艇のスコアを計算 (0-1) */
+/* 直前情報からの補正係数を計算 (0.85〜1.15) + 理由のリスト */
+export function computeConditionMod(boat) {
+  let mod = 1.0;
+  const reasons = [];
+  // 部品交換: 実戦未確認のため減点
+  const parts = Array.isArray(boat.partsExchange) ? boat.partsExchange : [];
+  if (parts.some((p) => /ペラ|プロペラ|エンジン/.test(p))) {
+    mod *= 0.90;
+    reasons.push({ kind: "neg", text: `部品交換 (${parts.join("/")}) — 実戦未確認 −10%` });
+  } else if (parts.length > 0) {
+    mod *= 0.95;
+    reasons.push({ kind: "neg", text: `部品交換 (${parts.join("/")}) −5%` });
+  }
+  // チルト: 大きい値は外艇に有利、1号艇には不利
+  if (boat.tilt != null && !isNaN(boat.tilt)) {
+    if (boat.tilt >= 1.5) {
+      if (boat.boatNo >= 4) { mod *= 1.05; reasons.push({ kind: "pos", text: `チルト ${boat.tilt} 外艇有利 +5%` }); }
+      else if (boat.boatNo === 1) { mod *= 0.97; reasons.push({ kind: "neg", text: `チルト ${boat.tilt} 1号艇不利 −3%` }); }
+    } else if (boat.tilt <= -0.5) {
+      if (boat.boatNo === 1) { mod *= 1.03; reasons.push({ kind: "pos", text: `チルト ${boat.tilt} 出足型 1号艇有利 +3%` }); }
+    }
+  }
+  // 展示気配メモ: ポジ/ネガ語のキーワードで補正
+  const note = boat.exhibitionNote || "";
+  if (note) {
+    if (/良い|良し|良$|伸び|出足良|気配良|上昇|ターン良/.test(note)) {
+      mod *= 1.05;
+      reasons.push({ kind: "pos", text: `気配メモ「${note}」+5%` });
+    } else if (/重い|悪|下降|伸びない|出足悪|気配悪/.test(note)) {
+      mod *= 0.95;
+      reasons.push({ kind: "neg", text: `気配メモ「${note}」−5%` });
+    }
+  }
+  return { mod: Math.max(0.80, Math.min(1.20, mod)), reasons };
+}
+
+/* 1艇のスコアを計算 (0-1) — 整備状況補正込み */
 function scoreBoat(boat) {
   const fIn = normInAdvantage(boat.boatNo);
   const fMot = normMotor(boat.motor2);
   const fEx = normExhibition(boat.exTime);
   const fSt = normStartPower(boat.ST);
-  const score =
+  const baseScore =
     fIn * FACTOR_WEIGHTS.inAdvantage +
     fMot * FACTOR_WEIGHTS.motor +
     fEx * FACTOR_WEIGHTS.exhibition +
     fSt * FACTOR_WEIGHTS.startPower;
+  const cond = computeConditionMod(boat);
   return {
     boatNo: boat.boatNo,
-    score,
+    score: baseScore * cond.mod,
+    baseScore,
+    conditionMod: cond.mod,
+    conditionReasons: cond.reasons,
     factors: { inAdvantage: fIn, motor: fMot, exhibition: fEx, startPower: fSt },
   };
 }
@@ -119,6 +159,8 @@ export function evaluateRace(race) {
       odds,
       ev,
       factors: s.factors,
+      conditionMod: s.conditionMod,
+      conditionReasons: s.conditionReasons,
       grade: ev >= 1.30 ? "S" : ev >= 1.10 ? "A" : ev >= 0.95 ? "B" : "C",
     };
   });
@@ -190,6 +232,8 @@ export function buildBuyRecommendation(ev, riskProfile, perRaceCap, forcedSkip) 
       ev: t.ev,
       stake,
       factors: t.factors,
+      conditionMod: t.conditionMod,
+      conditionReasons: t.conditionReasons || [],
     };
   }).filter((it) => it.stake > 0);
 

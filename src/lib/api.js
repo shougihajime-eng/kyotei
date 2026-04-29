@@ -34,3 +34,10 @@ export async function fetchRaceResult(jcd, rno, dateStr) {
   const j = await fetchJSON(`/api/result?jcd=${jcd}&rno=${rno}&date=${dateStr}`);
   return j.ok ? j : null;
 }
+
+/* 直前情報 (チルト / 部品交換 / 展示気配 / 気象) — 予想ロジックに反映 */
+export async function fetchBeforeInfo(jcd, rno, dateStr) {
+  if (!jcd || !rno || !dateStr) return null;
+  const j = await fetchJSON(`/api/beforeinfo?jcd=${jcd}&rno=${rno}&date=${dateStr}`);
+  return j.ok ? j : null;
+}

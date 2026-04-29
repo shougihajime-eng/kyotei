@@ -150,3 +150,38 @@ export function mergeOdds(race, odds) {
     apiOdds: odds,
   };
 }
+
+/**
+ * /api/beforeinfo のレスポンスで直前情報を上書き。
+ *  - チルト / 部品交換 / 展示気配メモ / スタート展示 ST を boats にマージ
+ *  - 気象は race level
+ */
+export function mergeBeforeInfo(race, info) {
+  if (!info?.boats) return race;
+  const merged = race.boats.map((b) => {
+    const i = info.boats.find((x) => x.boatNo === b.boatNo);
+    if (!i) return b;
+    return {
+      ...b,
+      // 既存値を優先し、直前情報の方が新しい場合のみ上書き
+      exTime: i.exTime ?? b.exTime,
+      tilt: i.tilt ?? b.tilt,
+      partsExchange: i.partsExchange?.length ? i.partsExchange : b.partsExchange,
+      exhibitionNote: i.note || b.exhibitionNote || "",
+      ST: i.startEx ?? b.ST,
+      sourceMode: "real",
+    };
+  });
+  const w = info.weather || {};
+  return {
+    ...race,
+    boats: merged,
+    weather: w.weather || race.weather,
+    wind: w.wind ?? race.wind,
+    windDir: w.windDir || race.windDir,
+    wave: w.wave ?? race.wave,
+    temp: w.temp ?? race.temp,
+    waterTemp: w.waterTemp ?? race.waterTemp,
+    apiBeforeInfo: info,
+  };
+}

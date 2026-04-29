@@ -8,11 +8,11 @@ import Settings from "./components/Settings.jsx";
 import Onboarding from "./components/Onboarding.jsx";
 
 import { loadState, saveState, clearState } from "./lib/storage.js";
-import { fetchTodaySchedule, fetchRaceProgram, fetchRaceOdds, fetchRaceResult } from "./lib/api.js";
+import { fetchTodaySchedule, fetchRaceProgram, fetchRaceOdds, fetchRaceResult, fetchBeforeInfo } from "./lib/api.js";
 import { evaluateRace, buildBuyRecommendation } from "./lib/predict.js";
 import { defaultSettings, summarizeToday, moneyState, perRaceCap } from "./lib/money.js";
 import { todayDate, todayKey, startEpoch } from "./lib/format.js";
-import { generateSampleRaces, buildRacesFromSchedule, mergeProgram, mergeOdds } from "./lib/sample.js";
+import { generateSampleRaces, buildRacesFromSchedule, mergeProgram, mergeOdds, mergeBeforeInfo } from "./lib/sample.js";
 
 const REFRESH_COOLDOWN_MS = 60 * 1000;
 
@@ -126,12 +126,15 @@ export default function App() {
     const enriched = await Promise.all(candidates.map(async (r) => {
       const e = startEpoch(r.date, r.startTime);
       const finished = e != null && now > e + 5 * 60 * 1000;
-      const [prog, odds, result] = await Promise.all([
+      // 直前情報は発走前 30 分以内 + 発走後 10 分のみ取得 (それ以外は不要 / 未公開)
+      const fetchBefore = e != null && now > e - 30 * 60 * 1000 && now < e + 10 * 60 * 1000;
+      const [prog, odds, before, result] = await Promise.all([
         fetchRaceProgram(r.jcd, r.raceNo, dateK),
         fetchRaceOdds(r.jcd, r.raceNo, dateK),
+        fetchBefore ? fetchBeforeInfo(r.jcd, r.raceNo, dateK) : Promise.resolve(null),
         finished ? fetchRaceResult(r.jcd, r.raceNo, dateK) : Promise.resolve(null),
       ]);
-      return { id: r.id, prog, odds, result };
+      return { id: r.id, prog, odds, before, result };
     }));
 
     const enrichedMap = Object.fromEntries(enriched.map((e) => [e.id, e]));
@@ -139,8 +142,9 @@ export default function App() {
       const enr = enrichedMap[r.id];
       if (!enr) return r;
       let next = r;
-      if (enr.prog) next = mergeProgram(next, enr.prog);
-      if (enr.odds) next = mergeOdds(next, enr.odds);
+      if (enr.prog)   next = mergeProgram(next, enr.prog);
+      if (enr.odds)   next = mergeOdds(next, enr.odds);
+      if (enr.before) next = mergeBeforeInfo(next, enr.before);
       if (enr.result?.first) next = { ...next, apiResult: enr.result };
       return next;
     });
