@@ -77,12 +77,41 @@
   }
 
   async function loadAll() {
+    var results = [];
     for (var i = 0; i < LIBS.length; i++) {
-      await loadOne(LIBS[i]);
+      var ok = await loadOne(LIBS[i]);
+      results.push({ name: LIBS[i].name, ok: ok });
     }
+    // どれが読み込めて、どれが失敗したかをデバッグ用に表示
+    console.log('[CDN load results]', results);
+    window._cdnResults = results;
+
+    // 必須ライブラリが揃っているか厳格チェック
+    var critical = ['React','ReactDOM','Babel','Recharts'];
+    var missing = critical.filter(function(name){
+      return !results.find(function(r){ return r.name === name && r.ok; });
+    });
+    if (missing.length > 0) {
+      console.error('Missing critical libraries:', missing);
+      return; // 診断スクリプトがエラー画面を出す
+    }
+
     // Babel が読み込めたら、ページ内の <script type="text/babel"> を手動コンパイル
-    if (window.Babel && Babel.transformScriptTags) {
-      Babel.transformScriptTags();
+    try {
+      if (window.Babel && Babel.transformScriptTags) {
+        Babel.transformScriptTags();
+        console.log('[Babel] transformScriptTags executed');
+      } else {
+        console.error('[Babel] not available even after load');
+      }
+    } catch (e) {
+      console.error('[Babel] transformScriptTags failed:', e);
+      var errBox = document.getElementById('global-error');
+      var errMsg = document.getElementById('global-error-msg');
+      if (errBox && errMsg) {
+        errMsg.textContent = 'Babel コンパイルに失敗しました\n\n' + (e.stack || e.message || e);
+        errBox.style.display = 'block';
+      }
     }
   }
   loadAll();
@@ -243,7 +272,7 @@
 })();
 </script>
 
-<script type="text/babel" data-presets="react" data-type="module">
+<script type="text/babel" data-presets="react">
 const { useState, useEffect, useMemo } = React;
 const { LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, CartesianGrid, ReferenceLine, AreaChart, Area, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis } = Recharts;
 
@@ -2792,7 +2821,7 @@ function Header({ onShowWelcome }) {
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-cyan-400 flex items-center justify-center font-bold">EV</div>
           <div>
-            <div className="font-bold">競艇 期待値分析アシスタント <span className="text-xs text-cyan-400">v23 — 買わないAI</span></div>
+            <div className="font-bold">競艇 期待値分析アシスタント <span className="text-xs text-cyan-400">v24 — 買わないAI</span></div>
             <div className="text-xs text-slate-400">勝てる条件だけ選び、危ないレースを避けるAI</div>
           </div>
         </div>
@@ -6967,7 +6996,7 @@ function AboutView() {
 function Footer() {
   return (
     <footer className="max-w-7xl mx-auto px-4 py-6 hint text-center">
-      © Kyotei EV Assistant v23 — 買うAIではなく、買わないAI / 自動購入なし / 最終判断は人間が行います
+      © Kyotei EV Assistant v24 — 買うAIではなく、買わないAI / 自動購入なし / 最終判断は人間が行います
     </footer>
   );
 }
@@ -6983,35 +7012,4 @@ class ErrorBoundary extends React.Component {
         <div style={{padding:24, fontFamily:"sans-serif"}}>
           <div className="warn" style={{maxWidth:700, margin:"0 auto"}}>
             <h2 style={{fontWeight:700, fontSize:18, marginBottom:8}}>⚠️ 表示エラーが発生しました</h2>
-            <div style={{fontSize:13, marginBottom:8}}>
-              アプリの一部でエラーが起きました。サンプルデータの再生成、もしくは画面リロードで復旧する場合があります。
-            </div>
-            <details style={{fontSize:12, opacity:0.8}}>
-              <summary>エラーメッセージ (開発者向け)</summary>
-              <pre style={{whiteSpace:"pre-wrap", marginTop:8}}>{String(this.state.error?.stack || this.state.error)}</pre>
-            </details>
-            <div style={{marginTop:12}}>
-              <button className="btn btn-primary" onClick={()=>{
-                try { localStorage.removeItem("kyoteiAssistantStateV3"); } catch(e){}
-                location.reload();
-              }}>localStorage をクリアしてリロード</button>
-            </div>
-          </div>
-        </div>
-      );
-    }
-    return this.props.children;
-  }
-}
-
-// boot-screen を消す前にルートをクリア
-const rootEl = document.getElementById("root");
-const bootScreen = document.getElementById("boot-screen");
-if (bootScreen && rootEl) rootEl.removeChild(bootScreen);
-
-ReactDOM.createRoot(rootEl).render(
-  <ErrorBoundary><App /></ErrorBoundary>
-);
-</script>
-</body>
-</html>
+            <div style={{fontSize:13, m
