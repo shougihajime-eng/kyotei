@@ -29,6 +29,9 @@ export default function RaceDetail({ race, evalRes, recommendation, onRecord, on
       {/* 直前情報サマリ */}
       <BeforeInfoSummary race={race} />
 
+      {/* 予想に影響した記事 */}
+      <RelatedNews evalRes={evalRes} />
+
       {/* 6艇のスコア表 */}
       <section className="card p-4">
         <h3 className="font-bold text-sm mb-3">6艇の評価 (EV 順)</h3>
@@ -156,6 +159,50 @@ function OddsGapTable({ evalRes, race }) {
           </div>
         </div>
       )}
+    </section>
+  );
+}
+
+/* 予想に影響した記事 — このレース (会場 / 選手名) に関連するニュース */
+function RelatedNews({ evalRes }) {
+  const items = evalRes?.relatedNews || [];
+  if (items.length === 0) {
+    return (
+      <section className="card p-4">
+        <h3 className="font-bold text-sm mb-2">📰 予想に影響した記事</h3>
+        <div className="text-xs opacity-70">関連記事なし</div>
+      </section>
+    );
+  }
+  return (
+    <section className="card p-4">
+      <h3 className="font-bold text-sm mb-2">📰 予想に影響した記事 ({items.length})</h3>
+      <ul className="space-y-2">
+        {items.map((it) => (
+          <li key={it.id} className="border-b border-[#1f2a44] pb-2 last:border-b-0">
+            <a href={it.link} target="_blank" rel="noopener noreferrer"
+              className="block hover:bg-[#162241] rounded p-1">
+              <div className="text-sm font-bold text-cyan-300">{it.title}</div>
+              <div className="text-xs opacity-60 mt-1">
+                {it.date || "—"} · {it.source}
+                {it.keywords?.length > 0 && (
+                  <span className="ml-2">
+                    {it.keywords.slice(0, 4).map((k) => (
+                      <span key={k} className="pill ml-1"
+                        style={{ background: "rgba(34,211,238,0.15)", color: "#a5f3fc", fontSize: 10 }}>
+                        {k.replace(/^[a-z]+:/, "")}
+                      </span>
+                    ))}
+                  </span>
+                )}
+              </div>
+              {it.summary && (
+                <div className="text-xs opacity-70 mt-1">{it.summary.slice(0, 100)}{it.summary.length > 100 ? "…" : ""}</div>
+              )}
+            </a>
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }

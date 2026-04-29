@@ -29,6 +29,16 @@ export default function App() {
   const [refreshing, setRefreshing] = useState(false);
   const [refreshMsg, setRefreshMsg] = useState("");
   const [lastRefreshAt, setLastRefreshAt] = useState(null);
+  /* news: マウント時に 1 回だけ取得 (キャッシュ s-maxage=600s なので軽量) */
+  const [news, setNews] = useState([]);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/news").then(r => r.ok ? r.json() : null).then(j => {
+      if (cancelled || !j?.items) return;
+      setNews(j.items);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [settings.onboardingDone]);
 
   /* === Persist on change === */
   useEffect(() => {
@@ -42,9 +52,9 @@ export default function App() {
 
   const evals = useMemo(() => {
     const map = {};
-    for (const r of races) map[r.id] = evaluateRace(r);
+    for (const r of races) map[r.id] = evaluateRace(r, news);
     return map;
-  }, [races]);
+  }, [races, news]);
 
   const recommendations = useMemo(() => {
     const map = {};

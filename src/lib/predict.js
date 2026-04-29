@@ -243,8 +243,44 @@ export function venueAptitudeMod(boat) {
   return { mod: 1.0, reason: null };
 }
 
-/* レース全体を評価し、各艇の EV と推奨グレードを返す */
-export function evaluateRace(race) {
+/* このレースに関連するニュースを抽出 (会場名 / 選手名のキーワード一致) */
+export function relatedNews(race, newsItems) {
+  if (!Array.isArray(newsItems) || newsItems.length === 0) return [];
+  const venueKey = `venue:${race.venue}`;
+  const racers = (race.boats || []).map((b) => b.racer).filter(Boolean);
+  return newsItems.filter((it) => {
+    if (it.keywords?.includes(venueKey)) return true;
+    // 選手名 (姓 or 全体) の一致
+    if (racers.some((r) => r && it.title && it.title.includes(r.split(" ")[0]))) return true;
+    return false;
+  }).slice(0, 5);
+}
+
+/* ニュースが言及した「会場全体への影響」をスコア倍率で返す
+   ・ポジティブキーワード (G1 / 優勝 / SG 等) → 全艇 +1% (注目度)
+   ・ネガティブキーワード (欠場 / 事故 / 中止) → 全艇 -1% (慎重)
+   注: 個別選手の好不調はキーワードに含まれにくいので、現状は会場単位の軽微補正に留める */
+export function newsImpactMod(race, newsItems) {
+  const related = relatedNews(race, newsItems);
+  if (related.length === 0) return { mod: 1.0, reasons: [], related: [] };
+  let pos = 0, neg = 0;
+  const reasons = [];
+  for (const it of related) {
+    for (const k of (it.keywords || [])) {
+      if (k.startsWith("pos:")) pos += 1;
+      if (k.startsWith("neg:")) neg += 1;
+    }
+  }
+  let mod = 1.0;
+  if (pos >= 2) { mod *= 1.01; reasons.push({ kind: "pos", text: `関連記事 ${pos} 件 ポジ語含む +1%` }); }
+  else if (pos >= 1) { /* 軽微すぎるので no-op */ }
+  if (neg >= 2) { mod *= 0.99; reasons.push({ kind: "neg", text: `関連記事 ${neg} 件 ネガ語含む −1%` }); }
+  return { mod, reasons, related };
+}
+
+/* レース全体を評価し、各艇の EV と推奨グレードを返す
+   newsItems: /api/news の items[]。指定されればキーワード反映。 */
+export function evaluateRace(race, newsItems) {
   if (!race?.boats || race.boats.length === 0) {
     return { ok: false, reason: "no boats", tickets: [] };
   }
@@ -261,6 +297,15 @@ export function evaluateRace(race) {
   const probs = softmax(scores.map((s) => s.score), 0.30);
   const winOdds = pickWinOdds(race, probs);
 
+  // ニュース影響補正 (会場単位の軽微補正)
+  const newsImp = newsImpactMod(race, newsItems);
+  if (newsImp.mod !== 1.0) {
+    scores.forEach((s) => {
+      s.score *= newsImp.mod;
+      s.conditionMod *= newsImp.mod;
+      s.conditionReasons.push(...newsImp.reasons);
+    });
+  }
   // 展開予想 + オッズ乖離分析
   const development = predictDevelopment(race, scores, probs);
   const oddsGaps = analyzeOddsGap(probs, winOdds);
@@ -304,6 +349,7 @@ export function evaluateRace(race) {
     oddsGaps,
     oddsMovement,
     dangerousFavorites,
+    relatedNews: newsImp.related,
     summary: {
       bestBoat: ranked[0]?.boatNo ?? null,
       bestEV: maxEV,
