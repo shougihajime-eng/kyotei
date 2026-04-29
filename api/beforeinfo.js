@@ -45,15 +45,18 @@ function parseBoats(html) {
   $("tr").each((_, tr) => {
     const rawText = $(tr).text();
     const text = rawText.replace(/[ 　\s]+/g, " ").trim();
-    // 級別がない行はスキップ
-    if (!/\b(A1|A2|B1|B2)\b/.test(text)) return;
 
-    // 艇番: 行頭の全角 1〜6
+    // 艇番: 行頭の全角 1〜6 (直前情報ページは級別を含まないため、艇番だけで判定)
     const head = text.charAt(0);
     const hw = fwToHw(head);
     if (!/^[1-6]$/.test(hw)) return;
     const boatNo = +hw;
     if (seen.has(boatNo)) return;
+
+    // 行に decimal が無ければデータ未掲載 (発走前で直前情報がまだ公開されていない可能性)
+    const decimalsTest = (text.match(/-?\d+\.\d+/g) || []);
+    if (decimalsTest.length === 0) return;
+
     seen.add(boatNo);
 
     // 数値の収集 (decimal を順に)
@@ -161,13 +164,19 @@ export default async function handler(req, res) {
     };
     if (req.query.debug === "1") {
       const $ = cheerio.load(html);
+      const rows = $("tr").toArray();
       body.debug = {
         htmlLength: html.length,
-        bodySnippet: $("body").text().replace(/\s+/g, " ").slice(0, 1500),
-        rowsHavingClass: $("tr").toArray()
-          .filter((tr) => /\b(A1|A2|B1|B2)\b/.test($(tr).text()))
-          .slice(0, 8)
-          .map((tr) => $(tr).text().replace(/\s+/g, " ").trim().slice(0, 250)),
+        bodySnippet: $("body").text().replace(/\s+/g, " ").slice(0, 1200),
+        // 全 <tr> の最初の文字が全角 1〜6 のもの
+        boatRows: rows
+          .map((tr) => $(tr).text().replace(/\s+/g, " ").trim())
+          .filter((t) => /^[０-９]/.test(t.charAt(0)))
+          .slice(0, 12)
+          .map((t) => t.slice(0, 300)),
+        // 全 <tr> の最初 30 件 (構造把握用)
+        firstRows: rows.slice(0, 30).map((tr) =>
+          $(tr).text().replace(/\s+/g, " ").trim().slice(0, 200)),
       };
     }
     return res.status(200).json(body);
