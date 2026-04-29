@@ -4,3 +4,6 @@ node_modules/
 .env
 .env.local
 *.log
+.git_broken/
+.git_old2/
+.git_v23/
