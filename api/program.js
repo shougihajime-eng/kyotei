@@ -141,7 +141,34 @@ export default async function handler(req, res) {
       fetchedAt: new Date().toISOString(),
       source: "boatrace.jp 公開出走表",
     };
-    if (req.query.debug === "1") body.debug = { htmlExcerpt: html.slice(0, 3000) };
+    if (req.query.debug === "1") {
+      // テーブル構造を要約 (boat rowを特定するため)
+      const $$ = cheerio.load(html);
+      const tables = $$("table").toArray();
+      body.debug = {
+        htmlLength: html.length,
+        tableCount: tables.length,
+        tables: tables.map((t, ti) => {
+          const trs = $$(t).find("tr").toArray();
+          return {
+            tableIdx: ti,
+            trCount: trs.length,
+            // 各 tr のテキスト (空白圧縮、200字)
+            rowsText: trs.slice(0, 20).map(tr => $$(tr).text().replace(/\s+/g, " ").trim().slice(0, 200)),
+            // 級別 + 艇番らしき行の HTML を 1件だけ
+            boatRowHtml: (() => {
+              for (const tr of trs) {
+                const txt = $$(tr).text();
+                if (/(A1|A2|B1|B2)/.test(txt) && /\b[1-6]\b/.test(txt)) {
+                  return $$.html(tr).slice(0, 2500);
+                }
+              }
+              return null;
+            })(),
+          };
+        }),
+      };
+    }
     return res.status(200).json(body);
   } catch (e) {
     return fail(res, 500, String(e.message || e), { stack: e.stack });
