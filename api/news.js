@@ -23,7 +23,10 @@ const FEEDS = [
   { id: "campaign", name: "キャンペーン",     url: "https://www.boatrace.jp/owpc/pc/site/campaign_info/feed/rss.xml" },
 ];
 
-/* RSS XML をパース (cheerio の xmlMode で <item> を抽出) */
+/* RSS / Atom XML をパース (cheerio の xmlMode)
+   - RSS 2.0: <rss>→<channel>→<item> (link はテキスト)
+   - Atom:    <feed>→<entry>      (link は <link href="..."/>)
+   両方を試す */
 async function fetchRssFeed(feed) {
   let xml;
   try { xml = await fetchHtml(feed.url); }
@@ -31,6 +34,8 @@ async function fetchRssFeed(feed) {
 
   const $ = cheerio.load(xml, { xmlMode: true });
   const items = [];
+
+  // ① RSS 2.0 <item>
   $("item").each((_, el) => {
     const $el = $(el);
     const title = $el.find("title").first().text().replace(/\s+/g, " ").trim();
@@ -44,15 +49,41 @@ async function fetchRssFeed(feed) {
       if (!isNaN(d.getTime())) date = d.toISOString().slice(0, 10);
     }
     items.push({
-      id: link,
-      title,
-      source: `boatrace.jp ${feed.name}`,
-      date,
-      link,
-      summary: description.slice(0, 240),
+      id: link, title, source: `boatrace.jp ${feed.name}`,
+      date, link, summary: description.slice(0, 240),
       keywords: extractKeywords(title + " " + description),
     });
   });
+
+  // ② Atom <entry>
+  $("entry").each((_, el) => {
+    const $el = $(el);
+    const title = $el.find("title").first().text().replace(/\s+/g, " ").trim();
+    // <link href="..." rel="alternate" /> から URL を取得
+    let link = "";
+    $el.find("link").each((_, l) => {
+      const rel = $(l).attr("rel");
+      const href = $(l).attr("href");
+      if (href && (!rel || rel === "alternate")) {
+        if (!link) link = href;
+      }
+    });
+    const published = $el.find("published").first().text().trim()
+                   || $el.find("updated").first().text().trim();
+    const summary = $el.find("summary").first().text().replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+    if (!title || !link) return;
+    let date = null;
+    if (published) {
+      const d = new Date(published);
+      if (!isNaN(d.getTime())) date = d.toISOString().slice(0, 10);
+    }
+    items.push({
+      id: link, title, source: `boatrace.jp ${feed.name}`,
+      date, link, summary: summary.slice(0, 240),
+      keywords: extractKeywords(title + " " + summary),
+    });
+  });
+
   return { ok: true, source: feed.name, items };
 }
 

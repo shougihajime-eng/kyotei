@@ -18,10 +18,17 @@ const fwToHw = (s) => s.replace(/[０-９]/g, (c) => String.fromCharCode(c.charC
 /* 名前を綺麗にする — 「（出場予定）」「ボートレーサー検索へ」等の余分を削る */
 function cleanName(s) {
   if (!s) return s;
-  let n = s.replace(/[（(][^）)]*[）)]/g, ""); // 括弧と中身を除去
-  n = n.replace(/ボートレーサー.*$/, "");      // 「ボートレーサー検索へ」等
-  n = n.replace(/\s+/g, " ").trim();
-  return n.slice(0, 24);
+  // ① 全空白を半角空白に正規化
+  let n = s.replace(/[\s　]+/g, " ").trim();
+  // ② 括弧と中身を除去
+  n = n.replace(/[（(][^）)]*[）)]/g, "");
+  // ③ 余計なテキスト類 (順次)
+  n = n.replace(/ボートレーサー[^\n]*$/, "");
+  n = n.replace(/検索[^\n]*$/, "");
+  n = n.replace(/プロフィール[^\n]*$/, "");
+  n = n.replace(/(出場予定|出走予定|データ|レーサー一覧)/g, "");
+  // ④ 再正規化 + 切り詰め
+  return n.replace(/\s+/g, " ").trim().slice(0, 20);
 }
 
 function parseProfile(html) {
