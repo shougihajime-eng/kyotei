@@ -2466,6 +2466,88 @@ function recommendStake(bankroll, settings, lossStreak, ticketEV, ticketProb, st
 }
 
 /* =========================================================
+   結論カード用ヘルパー: 「今、何を買うか」 1 レース分の意思決定を作る
+   ========================================================= */
+function pickHeadlineRace(races, evals) {
+  const annotated = races.map(r => {
+    const ev = evals[r.id]; if (!ev) return null;
+    const timing = calcRaceTiming(r, ev);
+    return { race: r, ev, timing, mins: timing.minutesToStart };
+  }).filter(Boolean);
+  if (annotated.length === 0) return null;
+  const upcoming = annotated.filter(x => !x.timing.finished);
+  const pool = upcoming.length ? upcoming : annotated;
+  const score = (lvl) => ({ "GO":4, "CAUTION":3, "WAIT":2, "SKIP":1 }[lvl] || 0);
+  pool.sort((a, b) => {
+    const la = score(a.ev?.conditionGate?.level);
+    const lb = score(b.ev?.conditionGate?.level);
+    if (la !== lb) return lb - la;
+    return (a.mins ?? 9999) - (b.mins ?? 9999);
+  });
+  return pool[0] || null;
+}
+
+/* リスク感覚別の本命/押さえ/穴 配分比 (合計1) */
+const RISK_ALLOC = {
+  steady:     { 本命: 0.70, 押さえ: 0.30, 穴狙い: 0.00, label: "堅め (本命中心)" },
+  balanced:   { 本命: 0.50, 押さえ: 0.35, 穴狙い: 0.15, label: "標準 (本命+押さえ+少し穴)" },
+  aggressive: { 本命: 0.35, 押さえ: 0.30, 穴狙い: 0.35, label: "穴狙い (配当重視)" },
+};
+
+function buildBuyRecommendation(race, evalRes, settings, lossStreak, money, remainingDaily) {
+  if (!race || !evalRes) return null;
+  const gate = evalRes.conditionGate?.level;
+  const verdict = (gate === "SKIP" || (evalRes.skip && gate !== "GO")) ? "skip"
+                : (gate === "WAIT" || evalRes.awaiting) ? "wait"
+                : (gate === "CAUTION") ? "caution"
+                : (gate === "GO") ? "buy" : "neutral";
+  const profile = settings.riskProfile || "balanced";
+  const alloc = RISK_ALLOC[profile] || RISK_ALLOC.balanced;
+  const strategies = evalRes.strategies || {};
+  const lock = !!money?.forcedSkip;
+  // 1レース上限 = min(perRaceLimit, 残り日次予算)
+  const raceCap = Math.max(0, Math.min(settings.perRaceLimit || 0, remainingDaily || 0));
+
+  function pickFrom(name, role) {
+    const s = strategies[name]; if (!s || !(s.picks || []).length) return null;
+    const t = s.picks[0];
+    return { role, kind: t.kind, combo: t.combo, prob: t.prob, odds: t.odds, ev: t.ev, strategy: name };
+  }
+  const honmei = pickFrom("steady",     "本命");
+  const osae   = pickFrom("balanced",   "押さえ");
+  const ana    = pickFrom("aggressive", "穴狙い");
+
+  // 見送り/確認待ち/強制スキップなら買い目なし
+  if (verdict === "skip" || verdict === "wait" || lock || raceCap <= 0) {
+    return { verdict, items: [], total: 0, gate, lock, profile, raceCap, alloc };
+  }
+
+  const candidates = [];
+  if (honmei && alloc.本命 > 0) candidates.push({ ...honmei, allocPct: alloc.本命 });
+  if (osae && alloc.押さえ > 0 && (!honmei || osae.combo !== honmei.combo)) candidates.push({ ...osae, allocPct: alloc.押さえ });
+  if (ana && alloc.穴狙い > 0 && ana.ev >= 1.20
+      && (!honmei || ana.combo !== honmei.combo)
+      && (!osae   || ana.combo !== osae.combo)) candidates.push({ ...ana, allocPct: alloc.穴狙い });
+
+  // EV閾値を満たさない候補は配分から除外
+  const live = candidates.filter(c => c.ev >= settings.evMin);
+  const sumAlloc = live.reduce((a, b) => a + b.allocPct, 0) || 1;
+  // raceCap をリスク配分に従って割り振り、100円単位に丸める
+  live.forEach(c => {
+    const portion = c.allocPct / sumAlloc;
+    c.stake = Math.floor((raceCap * portion) / 100) * 100;
+  });
+  // 端数で raceCap を超えないようチェック (丸め誤差吸収)
+  let total = live.reduce((a, b) => a + b.stake, 0);
+  while (total > raceCap && live.length > 0) {
+    const last = live[live.length - 1];
+    if (last.stake <= 100) break;
+    last.stake -= 100; total -= 100;
+  }
+  return { verdict, items: live, total, gate, lock, profile, raceCap, alloc };
+}
+
+/* =========================================================
    4. アプリ本体
    ========================================================= */
 const TODAY = new Date().toISOString().slice(0,10);
@@ -2485,6 +2567,9 @@ function App() {
     martingaleBlocked: true,
     virtualMode: true, // 初期は仮想購入モード ON (推奨)
     virtualStartDate: new Date().toISOString().slice(0,10),
+    riskProfile: "balanced", // 堅め/標準/穴狙い のリスク感覚
+    assetInputDone: false,   // 初回の資産入力ウィザードが完了したか
+    autoRefresh: true,       // 自動更新 (60秒間隔)
   });
   const [bets, setBets] = useState([]);
   const [decisions, setDecisions] = useState({});
@@ -2496,6 +2581,52 @@ function App() {
   const [raceFlags, setRaceFlags] = useState({}); // { raceId: ["yusho","fixed_lane",...] }
   const [raceComments, setRaceComments] = useState({}); // { raceId: { boatNo: "コメント" } }
   const [welcomeSeen, setWelcomeSeen] = useState(false);
+
+  /* === 更新 / 自動再計算 / ボタンフィードバック用 state === */
+  const [lastRefreshAt, setLastRefreshAt] = useState(new Date().toISOString());
+  const [recalcTick, setRecalcTick] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+  const [recalcing, setRecalcing] = useState(false);
+  const [refreshMsg, setRefreshMsg] = useState("");
+
+  /* 全レース 鮮度更新 (鮮度のみ書き換え)。実データ取得は将来拡張 */
+  function refreshAll(opts={}) {
+    if (refreshing) return;
+    setRefreshing(true);
+    if (!opts.silent) setRefreshMsg("🔄 最新データに更新中…");
+    setTimeout(() => {
+      const ts = new Date().toISOString();
+      setRaces(prev => prev.map(r => ({...r,
+        updatedAt: ts, exhibitionUpdatedAt: ts, oddsUpdatedAt: ts,
+      })));
+      setLastRefreshAt(ts);
+      setRecalcTick(t => t+1);
+      setRefreshing(false);
+      if (!opts.silent) {
+        setRefreshMsg(`✅ 最新データに更新しました (${new Date(ts).toLocaleTimeString("ja-JP")})`);
+        setTimeout(() => setRefreshMsg(""), 3000);
+      }
+    }, 250); // 押下フィードバックを担保するため最低250ms
+  }
+  function manualRecalc() {
+    if (recalcing) return;
+    setRecalcing(true);
+    setRefreshMsg("🧮 予想を再計算中…");
+    setTimeout(() => {
+      setRecalcTick(t => t+1);
+      setRecalcing(false);
+      setRefreshMsg(`✅ 予想を再計算しました (${new Date().toLocaleTimeString("ja-JP")})`);
+      setTimeout(() => setRefreshMsg(""), 3000);
+    }, 200);
+  }
+
+  /* 起動時に必ず最新化 + 自動更新ループ (settings.autoRefresh が ON のあいだ 60 秒ごと) */
+  useEffect(() => { refreshAll({silent:true}); }, []); // 初回起動時に1回
+  useEffect(() => {
+    if (!settings.autoRefresh) return;
+    const id = setInterval(() => { refreshAll({silent:true}); }, 60*1000);
+    return () => clearInterval(id);
+  }, [settings.autoRefresh]);
 
   useEffect(() => {
     try {
@@ -2541,7 +2672,8 @@ function App() {
       map[r.id] = ev;
     });
     return map;
-  }, [races, settings.evMin, weights, raceFlags, raceComments, winningConditions, results]);
+    // recalcTick: 手動「予想を再計算」ボタンで確実に再評価させるための依存
+  }, [races, settings.evMin, weights, raceFlags, raceComments, winningConditions, results, recalcTick]);
 
   const todayPnL = useMemo(() => {
     return bets.filter(b => b.date === TODAY).reduce((acc,b)=>{
@@ -2611,10 +2743,46 @@ function App() {
     return "";
   }
 
+  /* ダッシュボードからの「この買い目で記録」一括記録 */
+  function quickRecordRecommendation(race, items) {
+    if (!race || !items || !items.length) return 0;
+    const stamp = new Date().toISOString();
+    setBets(prev => [
+      ...prev,
+      ...items.filter(it => it.stake > 0).map(it => ({
+        id: Math.random().toString(36).slice(2,10),
+        date: race.date, raceId: race.id, venue: race.venue, raceNo: race.raceNo,
+        kind: it.kind, combo: it.combo,
+        stake: it.stake, odds: it.odds, prob: it.prob, ev: it.ev,
+        strategy: it.strategy || it.role,
+        result: "pending",
+        virtual: !!settings.virtualMode,
+        recordedAt: stamp,
+      })),
+    ]);
+    // 各候補の decision 状態も即時反映
+    const newDec = {...decisions};
+    items.filter(it => it.stake > 0).forEach(it => {
+      const key = `${race.id}|${it.kind}|${it.combo}|${it.strategy || it.role}`;
+      newDec[key] = "bought";
+    });
+    setDecisions(newDec);
+    return items.filter(it => it.stake > 0).length;
+  }
+
   return (
     <div className="min-h-screen">
       <Header onShowWelcome={()=>setWelcomeSeen(false)} />
-      {!welcomeSeen && <WelcomeGuide onClose={()=>{ setWelcomeSeen(true); setTab("dashboard"); }} setTab={setTab}/>}
+      {/* 初回: 資産・予算・リスク感覚を入力するウィザード (これが最優先) */}
+      {!settings.assetInputDone && (
+        <OnboardingWizard settings={settings} setSettings={setSettings}
+          onClose={()=>{ /* 閉じるだけでも assetInputDone は確定で立つ */
+            setSettings(prev => ({...prev, assetInputDone: true}));
+          }}/>
+      )}
+      {settings.assetInputDone && !welcomeSeen && (
+        <WelcomeGuide onClose={()=>{ setWelcomeSeen(true); setTab("dashboard"); }} setTab={setTab}/>
+      )}
       <Banner />
       {/* 仮想購入モードバナー */}
       <div className="max-w-7xl mx-auto px-4 mt-3">
@@ -2643,8 +2811,17 @@ function App() {
           <Dashboard races={races} evals={evals}
             onPick={(id)=>{ setSelectedRaceId(id); setTab("race"); }}
             onGoTab={setTab}
-            settings={settings} todayPnL={todayPnL} totalPnL={totalPnL}
-            remainingDaily={remainingDaily} lossStreak={lossStreak} money={money}/>
+            settings={settings} setSettings={setSettings}
+            todayPnL={todayPnL} totalPnL={totalPnL}
+            remainingDaily={remainingDaily} lossStreak={lossStreak} money={money}
+            lastRefreshAt={lastRefreshAt}
+            refreshing={refreshing} recalcing={recalcing} refreshMsg={refreshMsg}
+            onRefreshAll={refreshAll} onRecalc={manualRecalc}
+            onQuickRecord={quickRecordRecommendation}/>
+        )}
+        {tab === "weekly" && (
+          <WeeklyReportView bets={bets} results={results} races={races}
+            settings={settings} onGoTab={setTab}/>
         )}
         {tab === "race" && (
           <RaceView race={races.find(r=>r.id===selectedRaceId)}
@@ -2848,9 +3025,10 @@ function Banner() {
 
 function Nav({ tab, setTab }) {
   const items = [
+    {k:"dashboard", n:"🏠 ダッシュボード"},
+    {k:"weekly",    n:"📅 週次レポート"},
     {k:"winning",   n:"🎯 勝負条件AI"},
     {k:"flow",      n:"📋 運用フロー"},
-    {k:"dashboard", n:"ダッシュボード"},
     {k:"race",      n:"レース予想"},
     {k:"ranking",   n:"期待値ランキング"},
     {k:"results",   n:"📝 結果入力"},
@@ -2878,7 +3056,8 @@ function Nav({ tab, setTab }) {
 }
 
 /* ========== ダッシュボード ========== */
-function Dashboard({ races, evals, onPick, onGoTab, settings, todayPnL, totalPnL, remainingDaily, lossStreak, money }) {
+function Dashboard({ races, evals, onPick, onGoTab, settings, setSettings, todayPnL, totalPnL, remainingDaily, lossStreak, money,
+  lastRefreshAt, refreshing, recalcing, refreshMsg, onRefreshAll, onRecalc, onQuickRecord }) {
   const featured = useMemo(()=>{
     return races.map(r => ({race:r, e:evals[r.id]}))
       .sort((a,b)=> b.e.maxEV - a.e.maxEV).slice(0, 8);
@@ -2887,9 +3066,24 @@ function Dashboard({ races, evals, onPick, onGoTab, settings, todayPnL, totalPnL
   const todayROI = todayPnL.stake>0 ? (todayPnL.ret/todayPnL.stake*100).toFixed(1)+"%" : "—";
   const totalROI = totalPnL.stake>0 ? (totalPnL.ret/totalPnL.stake*100).toFixed(1)+"%" : "—";
 
+  const headline = useMemo(() => pickHeadlineRace(races, evals), [races, evals]);
+
   return (
     <div className="space-y-4 mt-4">
-      {/* 今やること: 行動指示カード (最上部・最重要) */}
+      {/* 更新バー (最上部・常に表示) */}
+      <RefreshBar lastRefreshAt={lastRefreshAt}
+        refreshing={refreshing} recalcing={recalcing} refreshMsg={refreshMsg}
+        onRefreshAll={onRefreshAll} onRecalc={onRecalc}
+        onGoResults={() => onGoTab && onGoTab("results")}
+        autoRefresh={settings.autoRefresh}
+        setAutoRefresh={(v)=>setSettings && setSettings({...settings, autoRefresh: v})}/>
+
+      {/* 結論カード: 今、何を買うか (本命/押さえ/穴 + 金額 / 見送りなら見送り) */}
+      <BuyDecisionCard headline={headline} settings={settings}
+        lossStreak={lossStreak} money={money} remainingDaily={remainingDaily}
+        onPick={onPick} onQuickRecord={onQuickRecord} onGoTab={onGoTab}/>
+
+      {/* 今やること: 行動指示カード */}
       <MainActionCard races={races} evals={evals} onPick={onPick} onGoTab={onGoTab}/>
 
       {/* 今日のフォーカス: 買い時アラート */}
@@ -3329,6 +3523,217 @@ function OperationFlowView({ races, evals, results, raceComments, bets, onPick }
         </div>
       </section>
     </div>
+  );
+}
+
+/* ========== 初回 資産入力ウィザード ========== */
+function OnboardingWizard({ settings, setSettings, onClose }) {
+  const [bankroll,    setBankroll]    = useState(settings.bankroll || 50000);
+  const [dailyLimit,  setDailyLimit]  = useState(settings.dailyLimit || 10000);
+  const [perRace,     setPerRace]     = useState(settings.perRaceLimit || 2000);
+  const [risk,        setRisk]        = useState(settings.riskProfile || "balanced");
+  const [virt,        setVirt]        = useState(settings.virtualMode !== false);
+  const ratio = bankroll > 0 ? (dailyLimit/bankroll*100).toFixed(1) : "—";
+  function save() {
+    setSettings({...settings,
+      bankroll: +bankroll || 0,
+      dailyLimit: +dailyLimit || 0,
+      perRaceLimit: +perRace || 0,
+      dailyLossLimit: Math.min(settings.dailyLossLimit || 5000, +dailyLimit*0.6 || 5000),
+      riskProfile: risk,
+      virtualMode: !!virt,
+      assetInputDone: true,
+    });
+    onClose();
+  }
+  return (
+    <div style={{position:"fixed", inset:0, background:"rgba(11,18,32,0.92)", zIndex:60,
+      display:"flex", alignItems:"center", justifyContent:"center", padding:16, backdropFilter:"blur(4px)"}}>
+      <div className="card" style={{maxWidth:560, width:"100%", padding:24, border:"2px solid #22d3ee"}}>
+        <div className="text-center mb-3">
+          <div style={{fontSize:48, lineHeight:1}}>💼</div>
+          <h2 className="text-xl font-bold mt-2">あなたのお金の設定 (はじめに 1度だけ)</h2>
+          <div className="hint text-sm mt-1">この情報をもとに「いくらまで使うか / 何を買うか」を毎レース計算します</div>
+        </div>
+        <div className="space-y-3 text-sm">
+          <div>
+            <label className="hint">現在の資産 (円)</label>
+            <input className="input mt-1 num" type="number" value={bankroll} onChange={e=>setBankroll(e.target.value)} placeholder="例 50000"/>
+          </div>
+          <div>
+            <label className="hint">1日に使ってよい予算 (円) — 推奨: 資産の 5〜10%</label>
+            <input className="input mt-1 num" type="number" value={dailyLimit} onChange={e=>setDailyLimit(e.target.value)} placeholder="例 5000"/>
+            <div className="hint text-xs mt-1">資産比 約 {ratio}%</div>
+          </div>
+          <div>
+            <label className="hint">1レースあたりの上限 (円) — 推奨: 1日予算の 1/3 程度</label>
+            <input className="input mt-1 num" type="number" value={perRace} onChange={e=>setPerRace(e.target.value)} placeholder="例 2000"/>
+          </div>
+          <div>
+            <label className="hint">リスク感覚 (本命 / 押さえ / 穴 への配分)</label>
+            <div className="grid grid-cols-3 gap-2 mt-1">
+              {[
+                {k:"steady",     icon:"🛡️", title:"堅め",   desc:"本命70 / 押さえ30"},
+                {k:"balanced",   icon:"⚖️", title:"標準",   desc:"50 / 35 / 15"},
+                {k:"aggressive", icon:"🎯", title:"穴狙い", desc:"35 / 30 / 35"},
+              ].map(o => (
+                <button key={o.k} className={"p-2 rounded-lg border-2 text-left " + (risk===o.k ? "border-cyan-400 bg-[#0e2440]" : "border-[#243154] bg-[#0f1830]")}
+                  onClick={()=>setRisk(o.k)}>
+                  <div style={{fontSize:22}}>{o.icon}</div>
+                  <div className="font-bold text-sm">{o.title}</div>
+                  <div className="hint text-xs">{o.desc}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="info text-xs">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={virt} onChange={e=>setVirt(e.target.checked)}/>
+              最初は <b>仮想購入モード</b> で記録だけ取る (推奨: 1週間)
+            </label>
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 mt-4">
+          <button className="btn btn-ghost" onClick={onClose}>後で設定</button>
+          <button className="btn btn-success" onClick={save}>✅ 確定して開始</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ========== 更新バー (3つの目立つボタン + 自動更新トグル + 完了トースト) ========== */
+function RefreshBar({ lastRefreshAt, refreshing, recalcing, refreshMsg, onRefreshAll, onRecalc, onGoResults, autoRefresh, setAutoRefresh }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => { const id = setInterval(() => setNow(Date.now()), 5000); return () => clearInterval(id); }, []);
+  const ageSec = lastRefreshAt ? Math.max(0, Math.round((now - new Date(lastRefreshAt).getTime())/1000)) : null;
+  const ageLabel = ageSec == null ? "未取得"
+                 : ageSec < 5 ? "たった今"
+                 : ageSec < 60 ? `${ageSec}秒前`
+                 : `${Math.round(ageSec/60)}分前`;
+  return (
+    <section className="card p-3 mb-3" style={{borderWidth:2, borderColor:"#22d3ee"}}>
+      <div className="flex flex-wrap items-center gap-2 justify-between">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs uppercase tracking-widest opacity-80">🔄 更新</span>
+          <span className={"hint text-xs " + ((ageSec!=null && ageSec>180) ? "ev-neg" : "")}>
+            最終更新 {ageLabel}
+            {refreshing && " — 取得中…"}
+            {recalcing  && " — 再計算中…"}
+          </span>
+        </div>
+        <div className="flex gap-2 flex-wrap items-center">
+          <button className="btn btn-primary text-sm" disabled={refreshing}
+            style={{minWidth:160, opacity: refreshing ? 0.65 : 1}}
+            onClick={onRefreshAll}>
+            {refreshing ? "🔄 更新中…" : "🔄 最新データに更新"}
+          </button>
+          <button className="btn btn-success text-sm" disabled={recalcing}
+            style={{minWidth:140, opacity: recalcing ? 0.65 : 1}}
+            onClick={onRecalc}>
+            {recalcing ? "🧮 再計算中…" : "🧮 予想を再計算"}
+          </button>
+          <button className="btn btn-ghost text-sm" onClick={onGoResults}>🏁 結果を取得</button>
+          <label className="flex items-center gap-1 text-xs hint cursor-pointer ml-1">
+            <input type="checkbox" checked={!!autoRefresh} onChange={e => setAutoRefresh(e.target.checked)}/>
+            自動更新 (60秒毎)
+          </label>
+        </div>
+      </div>
+      {refreshMsg && (
+        <div className={"mt-2 text-sm " + (refreshMsg.startsWith("✅") ? "ok" : "info")}>{refreshMsg}</div>
+      )}
+    </section>
+  );
+}
+
+/* ========== 結論カード: 「今、何を買うか」を1画面で示す ========== */
+function BuyDecisionCard({ headline, settings, lossStreak, money, remainingDaily, onPick, onQuickRecord, onGoTab }) {
+  const [msg, setMsg] = useState("");
+  const [busy, setBusy] = useState(false);
+  if (!headline) {
+    return (
+      <section className="card p-5 text-center mb-4" style={{borderWidth:2, borderColor:"#475569"}}>
+        <div className="text-xs hint uppercase tracking-widest mb-2">💡 結論: 今、何を買うか</div>
+        <div className="text-2xl font-black mt-2">対象レースなし</div>
+        <div className="hint text-sm mt-2">「データ取込」で出走表を投入するか、サンプルデータで動作を確認してください</div>
+      </section>
+    );
+  }
+  const { race, ev, timing } = headline;
+  const rec = buildBuyRecommendation(race, ev, settings, lossStreak, money, remainingDaily);
+  const verdict = rec.verdict;
+  const theme = ({
+    buy:     { bg:"linear-gradient(135deg,#065f46,#053527)", border:"#10b981", title:"🟢 買う", color:"#a7f3d0" },
+    caution: { bg:"linear-gradient(135deg,#854d0e,#3a2d0a)", border:"#f59e0b", title:"🟡 慎重に検討", color:"#fde68a" },
+    wait:    { bg:"linear-gradient(135deg,#1e3a8a,#0e2440)", border:"#3b82f6", title:"⏳ 確認待ち", color:"#bfdbfe" },
+    skip:    { bg:"linear-gradient(135deg,#7f1d1d,#3b1d1d)", border:"#ef4444", title:"🔴 見送り", color:"#fecaca" },
+    neutral: { bg:"linear-gradient(135deg,#1e293b,#0f1830)", border:"#475569", title:"判定中", color:"#e2e8f0" },
+  })[verdict];
+  const showItems = (verdict === "buy" || verdict === "caution") && rec.items.length > 0 && rec.total > 0;
+  const profileLabel = (RISK_ALLOC[rec.profile] || RISK_ALLOC.balanced).label;
+  function quickRecordAll() {
+    if (busy || !showItems || rec.lock) return;
+    setBusy(true);
+    const n = onQuickRecord(race, rec.items);
+    setMsg(`✅ ${settings.virtualMode ? "仮想記録" : "購入候補に記録"}しました (${n}件 / 合計 ¥${rec.total.toLocaleString()})`);
+    setTimeout(() => { setMsg(""); setBusy(false); }, 3500);
+  }
+  return (
+    <section className="mb-4" style={{padding:"22px 22px 18px", borderRadius:18,
+      background: theme.bg, border:`3px solid ${theme.border}`, color:"#fff"}}>
+      <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+        <div className="text-xs uppercase tracking-widest opacity-80">💡 結論: 今、何を買うか</div>
+        <div className="text-xs opacity-90">
+          {race.venue} {race.raceNo}R ({race.startTime}発走
+          {timing.minutesToStart != null && timing.minutesToStart > 0 ? ` / あと${Math.round(timing.minutesToStart)}分` : ""})
+        </div>
+      </div>
+      <div style={{fontSize:"min(40px,9vw)", fontWeight:900, lineHeight:1.15, color:theme.color}}>{theme.title}</div>
+      <div className="text-xs opacity-80 mt-1">
+        リスク感覚: <b>{profileLabel}</b> / 1日残り予算 ¥{(remainingDaily||0).toLocaleString()} / 1レース上限 ¥{(rec.raceCap||0).toLocaleString()}
+      </div>
+      {!showItems && (
+        <div className="mt-3" style={{fontSize:15, opacity:0.95}}>
+          {verdict === "skip"    && "勝負条件外 — 買い目は提示しません。"}
+          {verdict === "wait"    && "データ不足・鮮度不足。直前情報を取込んでから再判定してください。"}
+          {verdict === "caution" && "条件は弱め。EV閾値以上の候補がないため、見送り推奨。"}
+          {verdict === "neutral" && "判定中"}
+          {verdict === "buy" && rec.lock && "強制見送り中 (損失上限 / 連敗 / 日次上限)。"}
+          {verdict === "buy" && !rec.lock && rec.raceCap <= 0 && "1日予算/1レース上限 が 0 のため記録できません。資金管理を確認してください。"}
+        </div>
+      )}
+      {showItems && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3">
+          {rec.items.map((it, i) => (
+            <div key={i} className="p-3 rounded-lg" style={{background:"rgba(0,0,0,0.28)"}}>
+              <div className="text-xs opacity-80">{it.role} ({(it.allocPct*100).toFixed(0)}%)</div>
+              <div className="font-mono font-bold" style={{fontSize:24, marginTop:2}}>{it.combo}</div>
+              <div className="text-xs opacity-90 mt-1">{it.kind} / オッズ {it.odds.toFixed(1)} / EV {it.ev.toFixed(2)}</div>
+              <div className="font-bold mt-1" style={{fontSize:20}}>¥{(it.stake||0).toLocaleString()}</div>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="mt-4 flex flex-wrap items-center gap-2" style={{paddingTop:14, borderTop:"1px solid rgba(255,255,255,0.18)"}}>
+        {showItems && (
+          <>
+            <div className="text-sm opacity-90">合計推奨額 <b style={{fontSize:22}}>¥{rec.total.toLocaleString()}</b></div>
+            <button className="btn btn-primary" disabled={rec.lock || rec.total<=0 || busy}
+              style={{opacity: busy ? 0.65 : 1}}
+              onClick={quickRecordAll}>
+              {busy ? "✅ 記録中…" : `✅ ${settings.virtualMode ? "この買い目で仮想記録" : "この買い目で購入候補に記録"}`}
+            </button>
+          </>
+        )}
+        <button className="btn btn-ghost" onClick={() => onPick(race.id)}>このレースの詳細 →</button>
+        {!showItems && (
+          <button className="btn btn-ghost" onClick={() => onGoTab && onGoTab("weekly")}>📅 週次レポートで成績を見る →</button>
+        )}
+        {rec.lock && <span className="pill badge-skip">強制見送り</span>}
+      </div>
+      {msg && <div className="ok mt-3" style={{color:"#0b1220"}}>{msg}</div>}
+    </section>
   );
 }
 
@@ -5061,6 +5466,37 @@ function MoneyView({ settings, setSettings, lossStreak, setLossStreak, money }) 
           {field("assumeOdds","ケリー基準で仮定する平均配当倍率", {step:0.5})}
         </div>
         <hr className="div"/>
+        <div>
+          <label className="hint">リスク感覚 (本命 / 押さえ / 穴 への配分比)</label>
+          <div className="grid grid-cols-3 gap-2 mt-2">
+            {[
+              {k:"steady",     icon:"🛡️", title:"堅め",   desc:"本命70 / 押さえ30"},
+              {k:"balanced",   icon:"⚖️", title:"標準",   desc:"50 / 35 / 15"},
+              {k:"aggressive", icon:"🎯", title:"穴狙い", desc:"35 / 30 / 35"},
+            ].map(o => (
+              <button key={o.k}
+                className={"p-2 rounded-lg border-2 text-left " + ((settings.riskProfile||"balanced")===o.k ? "border-cyan-400 bg-[#0e2440]" : "border-[#243154] bg-[#0f1830]")}
+                onClick={()=>setSettings({...settings, riskProfile: o.k})}>
+                <div style={{fontSize:22}}>{o.icon}</div>
+                <div className="font-bold text-sm">{o.title}</div>
+                <div className="hint text-xs">{o.desc}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+        <hr className="div"/>
+        <div className="flex items-center gap-3 flex-wrap">
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input type="checkbox" checked={!!settings.autoRefresh}
+              onChange={e=>setSettings({...settings, autoRefresh: e.target.checked})}/>
+            <b>自動更新</b> (60秒間隔でデータ・予想を再計算)
+          </label>
+          <button className="btn btn-ghost text-xs"
+            onClick={()=>setSettings({...settings, assetInputDone: false})}>
+            初回ウィザードを再表示
+          </button>
+        </div>
+        <hr className="div"/>
         <div className="flex items-center gap-3 flex-wrap">
           <label className="hint">連敗カウンタ:</label>
           <input className="input" style={{maxWidth:120}} type="number" value={lossStreak} onChange={e=>setLossStreak(+e.target.value)}/>
@@ -6093,6 +6529,236 @@ function ConditionAnalysisView({ races, results, bets }) {
         </section>
       </>
       )}
+    </div>
+  );
+}
+
+/* =========================================================
+   週次レポート (直近7日の集計 + 推奨アクション)
+   ========================================================= */
+function WeeklyReportView({ bets, results, races, settings, onGoTab }) {
+  const today = new Date();
+  const weekAgo = new Date(today.getTime() - 7*24*60*60*1000);
+  const weekAgoStr = weekAgo.toISOString().slice(0,10);
+  const todayStr = today.toISOString().slice(0,10);
+  const inRange = (d) => d && d >= weekAgoStr && d <= todayStr;
+
+  const weekBets = useMemo(() => bets.filter(b => inRange(b.date)), [bets]);
+  const weekResults = useMemo(() => results.filter(r => inRange(r.date)), [results]);
+
+  function summarize(arr) {
+    const s = { stake:0, ret:0, count:arr.length, hits:0 };
+    arr.forEach(b => {
+      s.stake += b.stake;
+      if (b.result === "hit") { s.ret += b.stake*b.odds; s.hits += 1; }
+    });
+    s.pnl = s.ret - s.stake;
+    s.roi = s.stake > 0 ? s.ret / s.stake : 0;
+    s.hitRate = s.count > 0 ? s.hits / s.count : 0;
+    return s;
+  }
+
+  const settled = weekBets.filter(b => b.result === "hit" || b.result === "miss");
+  const realBets = settled.filter(b => !b.virtual);
+  const virtBets = settled.filter(b => b.virtual);
+  const realSum = summarize(realBets);
+  const virtSum = summarize(virtBets);
+
+  const predHit = weekResults.filter(r => r.snapshot && r.snapshot.predTop === r.first).length;
+  const predHitRate = weekResults.length > 0 ? predHit / weekResults.length : 0;
+
+  /* 「買ったレース」 vs 「見送ったレース」の本命的中率 */
+  const judgmentCheck = useMemo(() => {
+    const map = { bought: { n:0, hit:0 }, skipped: { n:0, hit:0 } };
+    weekResults.forEach(r => {
+      const had = bets.some(b => b.raceId === r.raceId);
+      const k = had ? "bought" : "skipped";
+      map[k].n += 1;
+      if (r.snapshot && r.snapshot.predTop === r.first) map[k].hit += 1;
+    });
+    return map;
+  }, [weekResults, bets]);
+
+  /* 日別収支 */
+  const daily = useMemo(() => {
+    const m = {};
+    settled.forEach(b => {
+      m[b.date] = m[b.date] || { date: b.date, stake:0, ret:0, count:0, hits:0 };
+      m[b.date].stake += b.stake;
+      m[b.date].count += 1;
+      if (b.result === "hit") { m[b.date].ret += b.stake*b.odds; m[b.date].hits += 1; }
+    });
+    return Object.values(m).sort((a,b)=>a.date.localeCompare(b.date)).map(d => ({
+      ...d, pnl: Math.round(d.ret - d.stake),
+      roi: d.stake>0 ? +(d.ret/d.stake*100).toFixed(0) : 0,
+    }));
+  }, [settled]);
+
+  /* 会場別 ROI */
+  const byVenue = useMemo(() => {
+    const m = {};
+    weekBets.forEach(b => {
+      m[b.venue] = m[b.venue] || { venue: b.venue, stake:0, ret:0, count:0, hits:0 };
+      m[b.venue].stake += b.stake;
+      m[b.venue].count += 1;
+      if (b.result === "hit") { m[b.venue].ret += b.stake*b.odds; m[b.venue].hits += 1; }
+    });
+    return Object.values(m)
+      .map(v => ({ ...v, roi: v.stake > 0 ? v.ret/v.stake : 0 }))
+      .sort((a,b) => b.roi - a.roi);
+  }, [weekBets]);
+
+  /* リスク感覚 (戦略タグ) 別 ROI */
+  const byStrategy = useMemo(() => {
+    const m = {};
+    weekBets.forEach(b => {
+      const k = b.strategy || "—";
+      m[k] = m[k] || { key:k, stake:0, ret:0, count:0, hits:0 };
+      m[k].stake += b.stake; m[k].count += 1;
+      if (b.result === "hit") { m[k].ret += b.stake*b.odds; m[k].hits += 1; }
+    });
+    return Object.values(m).map(v => ({ ...v, roi: v.stake > 0 ? v.ret/v.stake : 0 }));
+  }, [weekBets]);
+
+  /* 推奨アクション */
+  const recommendation = useMemo(() => {
+    const sum = settings.virtualMode ? virtSum : realSum;
+    if (sum.count < 10) return { tone: "info", text: "サンプル不足。最低10件の購入結果を貯めてから判断してください。" };
+    if (sum.roi >= 1.10) return { tone: "good", text: settings.virtualMode
+      ? "✅ 仮想ROI 110%以上 — 本運用に進める段階。仮想モードを解除してOK"
+      : "✅ 本運用ROI 110%以上 — 良い水準を維持しています" };
+    if (sum.roi >= 0.95) return { tone: "warn", text: "△ ROIが横ばい。重み調整・条件絞り込みを試して様子見" };
+    return { tone: "bad", text: "❌ ROI 95%未満 — 購入条件を厳格化 (EV閾値↑ / リスク感覚を堅めに / 不調会場除外)" };
+  }, [realSum, virtSum, settings.virtualMode]);
+
+  return (
+    <div className="space-y-4 mt-4">
+      <section className="card p-4">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <h2 className="text-lg font-bold">📅 週次レポート (直近7日)</h2>
+          <span className="hint text-xs">{weekAgoStr} 〜 {todayStr}</span>
+        </div>
+        <div className="hint text-xs mt-1">仮想と本運用は分けて集計します。本運用ROI / 仮想ROI / 見送り判断の正誤 をひと目で確認できます。</div>
+      </section>
+
+      <div className="grid-cards">
+        <Kpi label="集計レース数" value={`${weekResults.length}件`} sub={`購入 ${weekBets.length}件`}/>
+        <Kpi label="本命的中率" value={weekResults.length>0 ? `${(predHitRate*100).toFixed(1)}%` : "—"} sub={`${predHit}/${weekResults.length}件`}/>
+        <Kpi label="購入的中率" value={settled.length>0 ? `${((settled.filter(b=>b.result==="hit").length/settled.length)*100).toFixed(1)}%` : "—"} sub={`確定 ${settled.length}件`}/>
+        <Kpi label="本運用 ROI" value={realSum.stake>0 ? `${(realSum.roi*100).toFixed(1)}%` : "—"}
+          sub={realSum.stake>0 ? `収支 ¥${realSum.pnl>=0?"+":""}${Math.round(realSum.pnl).toLocaleString()}` : "—"}
+          highlight={realSum.stake>0 && realSum.roi<1}/>
+        <Kpi label="仮想 ROI" value={virtSum.stake>0 ? `${(virtSum.roi*100).toFixed(1)}%` : "—"}
+          sub={virtSum.stake>0 ? `仮想${virtSum.count}件 / 的中${virtSum.hits}件` : "—"}/>
+        <Kpi label="累計購入額 (本)" value={`¥${realSum.stake.toLocaleString()}`} sub={`払戻 ¥${Math.round(realSum.ret).toLocaleString()}`}/>
+      </div>
+
+      <section className="card p-4">
+        <h3 className="font-bold mb-2">推奨アクション</h3>
+        <div className={recommendation.tone==="good"?"ok":recommendation.tone==="bad"?"warn":recommendation.tone==="warn"?"alert":"info"}>
+          {recommendation.text}
+        </div>
+        <div className="mt-3 flex gap-2 flex-wrap">
+          <button className="btn btn-ghost text-xs" onClick={()=>onGoTab&&onGoTab("analysis")}>🔬 条件別分析を開く →</button>
+          <button className="btn btn-ghost text-xs" onClick={()=>onGoTab&&onGoTab("weights")}>🎚️ 重み調整を開く →</button>
+          <button className="btn btn-ghost text-xs" onClick={()=>onGoTab&&onGoTab("ledger")}>収支管理を開く →</button>
+        </div>
+      </section>
+
+      <section className="card p-4">
+        <h3 className="font-bold mb-3">日別の収支</h3>
+        {daily.length === 0 ? <div className="hint">この期間の購入結果はまだありません</div> :
+          <div className="overflow-x-auto scrollbar">
+            <table>
+              <thead><tr><th>日付</th><th>購入</th><th>的中</th><th>購入額</th><th>払戻</th><th>収支</th><th>ROI</th></tr></thead>
+              <tbody>{daily.map(d => (
+                <tr key={d.date}>
+                  <td className="num">{d.date}</td>
+                  <td className="num">{d.count}</td>
+                  <td className="num">{d.hits}</td>
+                  <td className="num">¥{d.stake.toLocaleString()}</td>
+                  <td className="num">¥{Math.round(d.ret).toLocaleString()}</td>
+                  <td className={"num " + (d.pnl>=0?"ev-pos":"ev-neg")}>¥{d.pnl>=0?"+":""}{d.pnl.toLocaleString()}</td>
+                  <td className={"num " + (d.roi>=100?"ev-pos":"ev-neg")}>{d.roi}%</td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        }
+      </section>
+
+      <section className="card p-4">
+        <h3 className="font-bold mb-3">見送り判断の正誤</h3>
+        <div className="hint text-xs mb-2">「見送ったレースの本命的中率」が「買ったレース」を大きく上回っているなら、見送り判定が誤って稼ぎ損ねている可能性があります。</div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="info">
+            <b>買ったレース</b><br/>
+            {judgmentCheck.bought.n}件中 本命的中 {judgmentCheck.bought.hit}件
+            ({judgmentCheck.bought.n>0 ? ((judgmentCheck.bought.hit/judgmentCheck.bought.n)*100).toFixed(0) : "—"}%)
+          </div>
+          <div className="info">
+            <b>見送ったレース</b><br/>
+            {judgmentCheck.skipped.n}件中 本命的中 {judgmentCheck.skipped.hit}件
+            ({judgmentCheck.skipped.n>0 ? ((judgmentCheck.skipped.hit/judgmentCheck.skipped.n)*100).toFixed(0) : "—"}%)
+          </div>
+        </div>
+      </section>
+
+      {byVenue.length > 0 && (
+        <section className="card p-4">
+          <h3 className="font-bold mb-3">会場別 ROI (購入したものだけ)</h3>
+          <div className="overflow-x-auto scrollbar">
+            <table>
+              <thead><tr><th>会場</th><th>購入</th><th>的中</th><th>購入額</th><th>払戻</th><th>ROI</th></tr></thead>
+              <tbody>
+                {byVenue.map(v => (
+                  <tr key={v.venue}>
+                    <td className="font-bold">{v.venue}</td>
+                    <td className="num">{v.count}</td>
+                    <td className="num">{v.hits}</td>
+                    <td className="num">¥{v.stake.toLocaleString()}</td>
+                    <td className="num">¥{Math.round(v.ret).toLocaleString()}</td>
+                    <td className={"num " + (v.roi>=1?"ev-pos":"ev-neg")}>{(v.roi*100).toFixed(0)}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {byStrategy.length > 0 && (
+        <section className="card p-4">
+          <h3 className="font-bold mb-3">戦略 (本命/押さえ/穴) 別 ROI</h3>
+          <div className="overflow-x-auto scrollbar">
+            <table>
+              <thead><tr><th>戦略</th><th>購入</th><th>的中</th><th>購入額</th><th>払戻</th><th>ROI</th></tr></thead>
+              <tbody>
+                {byStrategy.map(v => (
+                  <tr key={v.key}>
+                    <td className="font-bold">{v.key}</td>
+                    <td className="num">{v.count}</td>
+                    <td className="num">{v.hits}</td>
+                    <td className="num">¥{v.stake.toLocaleString()}</td>
+                    <td className="num">¥{Math.round(v.ret).toLocaleString()}</td>
+                    <td className={"num " + (v.roi>=1?"ev-pos":"ev-neg")}>{v.stake>0?(v.roi*100).toFixed(0)+"%":"—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      <section className="card p-4">
+        <h3 className="font-bold mb-2">読み方</h3>
+        <ul className="list-disc pl-6 text-sm space-y-1">
+          <li><b>本運用ROI が継続的に 100% を超える</b> → AI予想は「買って勝てる」状態。</li>
+          <li><b>仮想ROIが高いのに本運用が低い</b> → 心理バイアス (連敗時の追い金など) を疑う。</li>
+          <li><b>見送りが正しい</b>= 「見送ったレースの本命的中率」 ≦ 「買ったレースの本命的中率」</li>
+          <li><b>会場別/戦略別で偏り</b> → ベスト/ワースト条件を抽出し、悪い側を除外して再運用。</li>
+        </ul>
+      </section>
     </div>
   );
 }
