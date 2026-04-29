@@ -37,43 +37,58 @@ function parseResult(html) {
   let first = null, second = null, third = null;
   const payouts = { tan: {}, place: {}, exacta: {}, trifecta: {}, exactaPlace: {} };
 
-  // ==== 3連単 ====
-  // パターン: "3連単" <combo "[1-6]-[1-6]-[1-6]"> <数値,数値> <"円"> の順
-  // 文脈に依存するため、まずは全文中の trifecta combo + 数値ペアを順次拾う
-  const triRe = /([1-6])-([1-6])-([1-6])\s+([\d,]+)\s*円?/g;
-  let m;
-  while ((m = triRe.exec(halfText)) !== null) {
-    const combo = `${m[1]}-${m[2]}-${m[3]}`;
-    const yen = parseInt(m[4].replace(/,/g, ""), 10);
-    if (Number.isFinite(yen) && yen > 0 && new Set([m[1],m[2],m[3]]).size === 3) {
-      // 最初に見つかった 3連単 を採用 (それが当選 combo)
-      if (!first) {
-        first = +m[1]; second = +m[2]; third = +m[3];
-      }
-      payouts.trifecta[combo] = yen;
-      // 1個取れれば十分 (確定 3連単は 1 通りのみ)
-      break;
+  // 数値抽出: combo の直後 〜 200 字以内の最初の "[\d]{1,3}(?:,\d{3})+" or "\d+" を払戻として採用
+  // ¥ や 円 などのセパレータが混じっても拾える。
+  function extractYenAfter(text, startIdx, maxScan = 200) {
+    const slice = text.slice(startIdx, startIdx + maxScan);
+    const m = slice.match(/(\d{1,3}(?:,\d{3})+|\d+)/);
+    if (!m) return null;
+    const v = parseInt(m[1].replace(/,/g, ""), 10);
+    return Number.isFinite(v) && v > 0 ? v : null;
+  }
+
+  // ==== 3連単 ==== (ラベル→combo→払戻 のシーケンスを探す)
+  const triLabelIdx = halfText.indexOf("3連単");
+  if (triLabelIdx >= 0) {
+    const after = halfText.slice(triLabelIdx, triLabelIdx + 300);
+    const cm = after.match(/([1-6])-([1-6])-([1-6])/);
+    if (cm) {
+      first = +cm[1]; second = +cm[2]; third = +cm[3];
+      // combo の終端位置から払戻を探す
+      const comboEnd = triLabelIdx + cm.index + cm[0].length;
+      const yen = extractYenAfter(halfText, comboEnd, 100);
+      if (yen) payouts.trifecta[`${first}-${second}-${third}`] = yen;
     }
   }
 
-  // ==== 2連単 ====
-  // first / second が決まっていれば、それと一致する 2連単 払戻を拾う
+  // ==== 2連単 ==== first/second が決まっていれば該当 combo の払戻を拾う
   if (first && second) {
-    const exRe = new RegExp(`${first}-${second}\\s+([\\d,]+)\\s*円?`);
-    const exMatch = halfText.match(exRe);
-    if (exMatch) {
-      payouts.exacta[`${first}-${second}`] = parseInt(exMatch[1].replace(/,/g, ""), 10);
+    const exLabelIdx = halfText.indexOf("2連単");
+    if (exLabelIdx >= 0) {
+      const after = halfText.slice(exLabelIdx, exLabelIdx + 300);
+      const target = `${first}-${second}`;
+      const idx = after.indexOf(target);
+      if (idx >= 0) {
+        const comboEnd = exLabelIdx + idx + target.length;
+        const yen = extractYenAfter(halfText, comboEnd, 100);
+        if (yen) payouts.exacta[target] = yen;
+      }
     }
   }
 
-  // ==== 単勝 ====
-  // first 艇番 → 単勝払戻 を拾う。"単勝 N XXX 円" のパターン or テーブル
+  // ==== 単勝 ==== "単勝" ラベルの直後にある first 艇番 + 払戻を拾う
   if (first) {
-    // テーブルから単勝オッズを推定: 単勝 + 艇番 + 円 のパターン
-    const tanRe = new RegExp(`単勝[\\s　]*${first}[\\s　]+([\\d,]+)\\s*円?`);
-    const tanMatch = halfText.match(tanRe);
-    if (tanMatch) {
-      payouts.tan[String(first)] = parseInt(tanMatch[1].replace(/,/g, ""), 10);
+    const tanLabelIdx = halfText.indexOf("単勝");
+    if (tanLabelIdx >= 0) {
+      const after = halfText.slice(tanLabelIdx, tanLabelIdx + 200);
+      // 艇番 first が単独で現れる位置を探す (前後が数字以外)
+      const re = new RegExp(`(?:^|[^0-9])${first}(?:[^0-9-]|$)`);
+      const m = after.match(re);
+      if (m) {
+        const matchEnd = tanLabelIdx + m.index + m[0].length;
+        const yen = extractYenAfter(halfText, matchEnd, 100);
+        if (yen) payouts.tan[String(first)] = yen;
+      }
     }
   }
 
@@ -113,9 +128,23 @@ export default async function handler(req, res) {
     };
     if (req.query.debug === "1") {
       const $$ = cheerio.load(html);
+      const fullText = $$("body").text().replace(/\s+/g, " ");
+      const fwToHw = (s) => s.replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
+      const halfText = fwToHw(fullText);
+      // ラベルごとに周辺 300 字を返す
+      function around(label) {
+        const i = halfText.indexOf(label);
+        if (i < 0) return { found: false };
+        return { found: true, idx: i, snippet: halfText.slice(i, i + 300) };
+      }
       body.debug = {
         htmlLength: html.length,
-        bodyTextSnippet: $$("body").text().replace(/\s+/g, " ").slice(0, 1500),
+        bodyLength: fullText.length,
+        triArea:    around("3連単"),
+        exArea:     around("2連単"),
+        exPlArea:   around("2連複"),
+        tanArea:    around("単勝"),
+        plArea:     around("複勝"),
       };
     }
     return res.status(200).json(body);
