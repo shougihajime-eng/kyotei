@@ -57,67 +57,92 @@ function parseWinOdds(html) {
 /**
  * 連単 (2連単 / 3連単) のマトリクス型オッズページからオッズを抽出
  *
- *   2連単 (odds2tf): 6行 × 6列の matrix。row=1着, col=2着。同番セルは "-" 表示で空。
- *   3連単 (odds3t):  1着ごとに 6つのテーブル(?)、または 1着セクション内に 5x4 のサブmatrix。
+ *   実構造 (boatrace.jp odds2tf / odds3t):
+ *   - 1着の列ヘッダ (1〜6) を持つテーブルが 1〜2 個ある (1個目が連単、2個目は連複なので無視)
+ *   - 各データ行は 6 列分のセルが横並び (各列は同じ 1着固定)
  *
- *   ここでは「全テーブルの全行で 1着行ヘッダ + 数値群」を試す best-effort 方式。
- *   失敗時は空 {} を返す。フロントエンド (predict) が確率からオッズを合成して fallback。
+ *   2連単 (odds2tf):
+ *     データ行 = 6 ペア (2着, オッズ) → 行内テキストに 12 トークン
+ *     5 データ行 × 6 列 = 30 通り (1着 6 × 2着 5)
+ *
+ *   3連単 (odds3t):
+ *     2着が変わる行は 6 トリプレット (2着, 3着, オッズ) → 18 トークン
+ *     2着が同じ (rowspan continuation) 行は 6 ペア (3着, オッズ) → 12 トークン
+ *     20 データ行 × 6 列 = 120 通り (1着 6 × 2着 5 × 3着 4)
+ *
+ *   実装: 各行の text を正規化してトークン化 (整数 1-6 / 単独 decimal)。
+ *   行の長さで「ペア (12)」「トリプレット (18)」を判定し、列順で combo に割り付ける。
  */
 function parseComboOdds(html, depth /* 2 or 3 */) {
   const $ = cheerio.load(html);
   const out = {};
 
-  $("table").each((_, tbl) => {
-    // テーブルの先頭行に 1〜6 の列ヘッダがあるか
-    const headTr = $(tbl).find("tr").first();
-    const headCells = headTr.find("th, td").toArray().map(td => $(td).text().trim());
-    const colBoats = []; // index → 2着艇番
-    headCells.forEach(c => { if (/^[1-6]$/.test(c)) colBoats.push(c); });
+  // ナビゲーションテーブル (締切予定時刻一覧) を除外
+  const dataTables = $("table").toArray().filter(t => {
+    const txt = $(t).text();
+    return !/締切予定時刻/.test(txt) && /([1-6])[^0-9]+\d+\.\d/.test(txt);
+  });
+  if (dataTables.length === 0) return out;
+  // 連単マトリクスは最初のデータテーブル (2 番目以降は連複等)
+  const tbl = dataTables[0];
 
-    if (colBoats.length < 4) return; // 列ヘッダが揃わないテーブルは対象外
+  // 列の 1着 = 1〜6 と固定 (boatrace.jp は左から 1, 2, 3, 4, 5, 6 の順で固定)
+  const COLS = ["1", "2", "3", "4", "5", "6"];
 
-    // 残りの行を走査
-    $(tbl).find("tr").slice(1).each((rIdx, tr) => {
-      const cells = $(tr).find("th, td").toArray().map(td => $(td).text().trim());
-      // 行頭セルから 1着艇番を拾う
-      let firstBoat = null;
-      for (const c of cells) {
-        if (/^[1-6]$/.test(c)) { firstBoat = c; break; }
+  // 行の 2着 を depth=3 のときに記憶 (rowspan continuation)
+  const carry2nd = { "1": null, "2": null, "3": null, "4": null, "5": null, "6": null };
+
+  $(tbl).find("tr").each((rIdx, tr) => {
+    if (rIdx === 0) return; // ヘッダ
+    const txt = $(tr).text().replace(/[　\s]+/g, " ").trim();
+    if (!txt) return;
+    // 行内に選手名 (漢字) があるとヘッダ扱いの可能性 → スキップ
+    if (/[一-龯]/.test(txt)) return;
+
+    // トークン化: 単独整数 1-6 か decimal のみ
+    const tokens = txt.split(" ").filter(t => /^[1-6]$/.test(t) || /^\d+\.\d+$/.test(t));
+
+    if (depth === 2) {
+      // 12 トークン期待: [2着, odds] × 6
+      if (tokens.length < 12) return;
+      for (let k = 0; k < 6; k++) {
+        const second = tokens[2*k];
+        const odds = parseFloat(tokens[2*k + 1]);
+        const first = COLS[k];
+        if (!/^[1-6]$/.test(second) || second === first) continue;
+        if (!Number.isFinite(odds) || odds < 1.0 || odds > 100000) continue;
+        out[`${first}-${second}`] = odds;
       }
-      if (!firstBoat) return;
-
-      // この行の decimal セル列を順に拾い、列順 (colBoats) と対応付ける
-      const decimals = cells
-        .map(c => /^\d+\.\d+$/.test(c) ? parseFloat(c) : null)
-        .filter(v => v !== null);
-
-      if (depth === 2) {
-        // 2連単: row=1着 / col=2着 (同番は除外)
-        // colBoats から firstBoat を除いた順序で decimals に対応する想定
-        const seconds = colBoats.filter(b => b !== firstBoat);
-        for (let i = 0; i < Math.min(decimals.length, seconds.length); i++) {
-          const v = decimals[i];
-          if (v >= 1.0 && v < 100000) out[`${firstBoat}-${seconds[i]}`] = v;
+    } else {
+      // depth === 3
+      if (tokens.length === 18) {
+        // 6 トリプレット: [2着, 3着, odds] × 6 (この行で 2着 が変わる)
+        for (let k = 0; k < 6; k++) {
+          const second = tokens[3*k];
+          const third  = tokens[3*k + 1];
+          const odds   = parseFloat(tokens[3*k + 2]);
+          const first = COLS[k];
+          if (!/^[1-6]$/.test(second) || !/^[1-6]$/.test(third)) continue;
+          if (second === first || third === first || third === second) continue;
+          if (!Number.isFinite(odds) || odds < 1.0 || odds > 1000000) continue;
+          out[`${first}-${second}-${third}`] = odds;
+          carry2nd[first] = second;
         }
-      } else {
-        // 3連単: 1着固定の中で 2着×3着 のサブmatrix。
-        //   ここでは「行内 decimal 数 = 2着候補数 × 3着候補数」となる前提で best-effort に展開。
-        //   セルが正しくマッピングできない場合は何もせずスキップ。
-        const seconds = colBoats.filter(b => b !== firstBoat);
-        if (decimals.length === seconds.length * (colBoats.length - 2)) {
-          // (seconds.length) × (colBoats.length-2 = 3着候補) 想定
-          let k = 0;
-          for (const s of seconds) {
-            const thirds = colBoats.filter(b => b !== firstBoat && b !== s);
-            for (const t of thirds) {
-              if (k >= decimals.length) break;
-              const v = decimals[k++];
-              if (v >= 1.0 && v < 1000000) out[`${firstBoat}-${s}-${t}`] = v;
-            }
-          }
+      } else if (tokens.length === 12) {
+        // 6 ペア: [3着, odds] × 6 (2着 は前行から carryover)
+        for (let k = 0; k < 6; k++) {
+          const third = tokens[2*k];
+          const odds  = parseFloat(tokens[2*k + 1]);
+          const first  = COLS[k];
+          const second = carry2nd[first];
+          if (!second || !/^[1-6]$/.test(third)) continue;
+          if (third === first || third === second) continue;
+          if (!Number.isFinite(odds) || odds < 1.0 || odds > 1000000) continue;
+          out[`${first}-${second}-${third}`] = odds;
         }
       }
-    });
+      // それ以外の行 (空行や注釈) は黙ってスキップ
+    }
   });
 
   return out;
