@@ -495,6 +495,18 @@ async function fetchRaceOdds(race) {
   } catch { return null; }
 }
 
+/* /api/result を叩いて 1 レース分の確定着順 + 払戻を取得 (jcd/rno/date を直接指定) */
+async function fetchRaceResultRemote(jcd, rno, dateKey) {
+  if (!jcd || !rno || !dateKey) return null;
+  try {
+    const resp = await fetch(`/api/result?jcd=${jcd}&rno=${rno}&date=${dateKey}`);
+    if (!resp.ok) return null;
+    const json = await resp.json();
+    if (!json.ok) return null;
+    return json;
+  } catch { return null; }
+}
+
 /* /api/program を叩いて 1 レース分の出走表を取得 */
 async function fetchRaceProgram(race) {
   if (!race || !race.jcd || !race.raceNo) return null;
@@ -2673,7 +2685,7 @@ function App() {
     virtualStartDate: new Date().toISOString().slice(0,10),
     riskProfile: "balanced", // 堅め/標準/穴狙い のリスク感覚
     assetInputDone: false,   // 初回の資産入力ウィザードが完了したか
-    autoRefresh: true,       // 自動更新 (60秒間隔)
+    autoRefresh: false,      // 自動更新 (デフォルト OFF。手動「最新にする」中心)
   });
   const [bets, setBets] = useState([]);
   const [decisions, setDecisions] = useState({});
@@ -2685,6 +2697,11 @@ function App() {
   const [raceFlags, setRaceFlags] = useState({}); // { raceId: ["yusho","fixed_lane",...] }
   const [raceComments, setRaceComments] = useState({}); // { raceId: { boatNo: "コメント" } }
   const [welcomeSeen, setWelcomeSeen] = useState(false);
+  /* === AI予想スナップショット (毎レース自動保存) ===
+       key = "YYYYMMDD_<raceId>" の辞書。
+       毎回の eval 計算で「AIの判断 + 買い目 + 推奨金額」を記録。
+       結果取得時に result/payout/hit/pnl を埋めて確定。 */
+  const [aiPredictions, setAiPredictions] = useState({});
 
   /* === 更新 / 自動再計算 / ボタンフィードバック用 state === */
   const [lastRefreshAt, setLastRefreshAt] = useState(new Date().toISOString());
@@ -2697,42 +2714,172 @@ function App() {
   const [dataMessage, setDataMessage] = useState("起動中…");
   const [apiError, setApiError] = useState(null);
 
-  /* 全レース 取得・更新: /api/today を叩いて real-schedule に置換。失敗時はサンプルにフォールバック */
+  /* === 一括取得: 今日の開催 / 勝負候補レースの出走表 + オッズ + 結果 を1ボタンでまとめて ===
+       クールダウン: 連打防止に最低 60 秒。
+       取得対象を絞る: 「勝負候補レース」 = 締切 60 分前〜30 分後 のレースのみ。
+                       それより遠い未来は出走表だけ、遠い過去は触らない。 */
+  const REFRESH_COOLDOWN_MS = 60 * 1000;
+
   async function refreshAll(opts={}) {
     if (refreshing) return;
-    setRefreshing(true);
-    if (!opts.silent) setRefreshMsg("🔄 最新データに更新中…");
-    const startedAt = Date.now();
-    const result = await fetchTodaySchedule();
-    const elapsed = Date.now() - startedAt;
-    // ボタンフィードバックを担保するため最低 250ms 待つ
-    if (elapsed < 250) await new Promise(r => setTimeout(r, 250 - elapsed));
-
-    const ts = new Date().toISOString();
-    if (result.ok && Array.isArray(result.venues) && result.total_races > 0) {
-      const realRaces = buildRacesFromSchedule(result, result.date);
-      setRaces(realRaces);
-      setDataSource("real-schedule");
-      setDataMessage(`✅ 実データ取得 (${result.total_venues}会場 / ${result.total_races}レース)`);
-      setApiError(null);
-      if (!opts.silent) setRefreshMsg(`✅ 実データに更新 (${new Date(ts).toLocaleTimeString("ja-JP")})`);
-    } else {
-      // サンプルへフォールバック (初回起動時のみ生成、それ以外は鮮度だけ更新)
-      setRaces(prev => {
-        if (!prev || prev.length === 0 || prev.every(r => r.sourceMode !== "sample")) {
-          return generateRaces(new Date().toISOString().slice(0,10));
-        }
-        return prev.map(r => ({...r, updatedAt: ts, exhibitionUpdatedAt: ts, oddsUpdatedAt: ts}));
-      });
-      setDataSource("sample");
-      setDataMessage(`⚠️ 実データ取得に失敗 — サンプル動作中: ${result.error || "unknown"}`);
-      setApiError(result.error || `HTTP ${result.status || "?"}`);
-      if (!opts.silent) setRefreshMsg(`⚠️ 取得失敗: ${result.error || "unknown"}`);
+    // クールダウン
+    const since = lastRefreshAt ? Date.now() - new Date(lastRefreshAt).getTime() : Infinity;
+    if (!opts.silent && !opts.bypassCooldown && since < REFRESH_COOLDOWN_MS) {
+      const left = Math.ceil((REFRESH_COOLDOWN_MS - since) / 1000);
+      setRefreshMsg(`⏳ あと ${left} 秒待ってください (連打防止)`);
+      setTimeout(() => setRefreshMsg(""), 2000);
+      return;
     }
+    setRefreshing(true);
+    setRefreshMsg("🔄 最新データを確認中…");
+
+    const startedAt = Date.now();
+    // ① 今日のスケジュール
+    const sched = await fetchTodaySchedule();
+    const ts = new Date().toISOString();
+
+    let realRaces = [];
+    if (sched.ok && Array.isArray(sched.venues) && sched.total_races > 0) {
+      realRaces = buildRacesFromSchedule(sched, sched.date);
+      setDataSource("real-schedule");
+      setApiError(null);
+    } else {
+      // サンプルへフォールバック
+      realRaces = (races && races.length > 0 && races.every(r => r.sourceMode === "sample"))
+        ? races.map(r => ({...r, updatedAt: ts, exhibitionUpdatedAt: ts, oddsUpdatedAt: ts}))
+        : generateRaces(new Date().toISOString().slice(0,10));
+      setDataSource("sample");
+      setApiError(sched.error || `HTTP ${sched.status || "?"}`);
+    }
+
+    // ② 「勝負候補」を絞り込む — 出走時刻が現在 ±60 分のレースのみ詳細取得
+    const now = Date.now();
+    const dateNum = (s) => {
+      // "YYYY-MM-DD" + "HH:MM" → epoch ms (JST)
+      if (!s) return null;
+      const d = new Date(s);
+      return isNaN(d.getTime()) ? null : d.getTime();
+    };
+    function startEpoch(r) {
+      if (!r.date || !r.startTime) return null;
+      // r.date は YYYY-MM-DD (JST), r.startTime は HH:MM
+      const [hh, mm] = r.startTime.split(":").map(Number);
+      const d = new Date(`${r.date}T${String(hh).padStart(2,"0")}:${String(mm).padStart(2,"0")}:00+09:00`);
+      return isNaN(d.getTime()) ? null : d.getTime();
+    }
+    const candidates = realRaces.filter(r => {
+      const e = startEpoch(r);
+      if (e == null) return false;
+      const diffMin = (e - now) / 60000;
+      // 60分前〜30分後 (発走後しばらくは結果取得対象として残す)
+      return diffMin >= -30 && diffMin <= 60;
+    });
+    // 大量同時 fetch を避けるため最大 12 レース
+    const target = candidates.slice(0, 12);
+    setRefreshMsg(`🔄 最新データを確認中… (勝負候補 ${target.length}/${candidates.length} レース)`);
+
+    // ③ 各候補に対して program + odds + (発走後なら) result を並列取得
+    const enrichedById = {};
+    await Promise.all(target.map(async r => {
+      const dateKey = (r.date || "").replace(/-/g, "");
+      const e = startEpoch(r);
+      const finished = e != null && now > e + 5*60*1000;
+      const tasks = [
+        fetchRaceProgram(r),
+        fetchRaceOdds(r),
+        finished ? fetchRaceResultRemote(r.jcd, r.raceNo, dateKey) : Promise.resolve(null),
+      ];
+      const [prog, odds, result] = await Promise.all(tasks);
+      enrichedById[r.id] = { prog, odds, result, finished };
+    }));
+
+    // ④ realRaces にデータをマージ
+    realRaces = realRaces.map(r => {
+      const enr = enrichedById[r.id];
+      if (!enr) return r;
+      let next = {...r, updatedAt: ts};
+      if (enr.prog && Array.isArray(enr.prog.boats) && enr.prog.boats.length > 0) {
+        next = {
+          ...next,
+          boats: mergeRealBoats(r.boats, enr.prog.boats),
+          weather: enr.prog.weather || r.weather,
+          wind:    enr.prog.wind ?? r.wind,
+          windDir: enr.prog.windDir || r.windDir,
+          wave:    enr.prog.wave ?? r.wave,
+          startTime: enr.prog.startTime || r.startTime,
+          apiProgram: enr.prog,
+          exhibitionUpdatedAt: ts,
+          sourceMode: "real",
+        };
+      }
+      if (enr.odds && enr.odds.win && Object.keys(enr.odds.win).length > 0) {
+        const arr = next.boats.map(b => +enr.odds.win[String(b.boatNo)] || null);
+        next = {
+          ...next,
+          prevOdds: r.currentWinOdds || r.prevOdds || null,
+          currentWinOdds: arr,
+          apiOdds: enr.odds,
+          oddsUpdatedAt: ts,
+        };
+      }
+      if (enr.result && enr.result.ok && enr.result.first) {
+        next.apiResult = enr.result;
+      }
+      return next;
+    });
+
+    setRaces(realRaces);
+    setDataMessage(sched.ok
+      ? `✅ 最新です (${sched.total_venues}会場 / ${sched.total_races}レース / 詳細 ${target.length}件)`
+      : `⚠️ ${sched.error || "取得失敗"} — サンプル動作中`);
+
+    // ⑤ 結果が取得できたレースは aiPredictions に payout/pnl/hit をマージ
+    if (target.length > 0) {
+      setAiPredictions(prev => {
+        const next = {...prev};
+        for (const r of realRaces) {
+          if (!r.apiResult || !r.apiResult.first) continue;
+          const dateKey = (r.date || "").replace(/-/g, "");
+          const key = `${dateKey}_${r.id}`;
+          const existing = next[key];
+          if (!existing) continue;
+          if (existing.result && existing.result.first) continue; // 既に確定
+          const winnerTri = `${r.apiResult.first}-${r.apiResult.second}-${r.apiResult.third}`;
+          const winnerEx  = `${r.apiResult.first}-${r.apiResult.second}`;
+          const winnerWin = `${r.apiResult.first}`;
+          let payout = 0, hit = false;
+          for (const c of (existing.combos || [])) {
+            const yenPer100 = c.kind === "3連単" ? r.apiResult.payouts?.trifecta?.[winnerTri]
+                            : c.kind === "2連単" ? r.apiResult.payouts?.exacta?.[winnerEx]
+                            : c.kind === "単勝"  ? r.apiResult.payouts?.tan?.[winnerWin]
+                            : 0;
+            const matched = c.combo === (c.kind === "3連単" ? winnerTri : c.kind === "2連単" ? winnerEx : winnerWin);
+            if (matched && yenPer100) {
+              payout += (c.stake / 100) * yenPer100;
+              hit = true;
+            }
+          }
+          next[key] = {
+            ...existing,
+            result: {
+              first: r.apiResult.first, second: r.apiResult.second, third: r.apiResult.third,
+              payouts: r.apiResult.payouts, fetchedAt: ts,
+            },
+            payout, hit, pnl: payout - (existing.totalStake || 0),
+          };
+        }
+        return next;
+      });
+    }
+
     setLastRefreshAt(ts);
     setRecalcTick(t => t+1);
+    // ボタンフィードバックを担保
+    const elapsed = Date.now() - startedAt;
+    if (elapsed < 400) await new Promise(r2 => setTimeout(r2, 400 - elapsed));
     setRefreshing(false);
-    if (!opts.silent) setTimeout(() => setRefreshMsg(""), 4000);
+    setRefreshMsg(`✅ 最新です (${new Date(ts).toLocaleTimeString("ja-JP")})`);
+    setTimeout(() => setRefreshMsg(""), 4000);
   }
   function manualRecalc() {
     if (recalcing) return;
@@ -2746,13 +2893,9 @@ function App() {
     }, 200);
   }
 
-  /* 起動時に必ず最新化 + 自動更新ループ (settings.autoRefresh が ON のあいだ 60 秒ごと) */
-  useEffect(() => { refreshAll({silent:true}); }, []); // 初回起動時に1回
-  useEffect(() => {
-    if (!settings.autoRefresh) return;
-    const id = setInterval(() => { refreshAll({silent:true}); }, 60*1000);
-    return () => clearInterval(id);
-  }, [settings.autoRefresh]);
+  /* 起動時に1回だけ取得 (silent + cooldown bypass)。自動更新は手動中心ポリシーに合わせデフォルト OFF。
+     必要なら settings.autoRefresh を有効にすれば締切5分前の候補レースだけ自動更新する用途に拡張可能。 */
+  useEffect(() => { refreshAll({silent:true, bypassCooldown:true}); }, []);
 
   useEffect(() => {
     try {
@@ -2769,6 +2912,7 @@ function App() {
         if (obj.raceFlags) setRaceFlags(obj.raceFlags);
         if (obj.raceComments) setRaceComments(obj.raceComments);
         if (obj.welcomeSeen) setWelcomeSeen(obj.welcomeSeen);
+        if (obj.aiPredictions) setAiPredictions(obj.aiPredictions);
       } else {
         // 旧バージョンからの移行
         const old = localStorage.getItem("kyoteiAssistantStateV2");
@@ -2782,8 +2926,8 @@ function App() {
     } catch(e){}
   }, []);
   useEffect(() => {
-    try { localStorage.setItem("kyoteiAssistantStateV3", JSON.stringify({settings,bets,lossStreak,results,dailyMemos,weights,activePreset,raceFlags,raceComments,welcomeSeen})); } catch(e){}
-  }, [settings, bets, lossStreak, results, dailyMemos, weights, activePreset, raceFlags, raceComments, welcomeSeen]);
+    try { localStorage.setItem("kyoteiAssistantStateV3", JSON.stringify({settings,bets,lossStreak,results,dailyMemos,weights,activePreset,raceFlags,raceComments,welcomeSeen,aiPredictions})); } catch(e){}
+  }, [settings, bets, lossStreak, results, dailyMemos, weights, activePreset, raceFlags, raceComments, welcomeSeen, aiPredictions]);
 
   // 勝てる条件 (winning conditions) の事前分析
   const winningConditions = useMemo(() => analyzeWinningConditions(bets, races, results), [bets, races, results]);
@@ -2821,6 +2965,47 @@ function App() {
 
   const money = moneyState(settings, todayPnL, lossStreak);
   const remainingDaily = Math.max(0, settings.dailyLimit - todayPnL.stake);
+
+  /* === AI判断の自動スナップショット (evals が変わるたびに最新版へ) ===
+       「1週間後にAI通り買ってたら利益が出たか」を検証するための記録。 */
+  useEffect(() => {
+    if (!races || races.length === 0) return;
+    setAiPredictions(prev => {
+      const next = { ...prev };
+      let changed = false;
+      const nowIso = new Date().toISOString();
+      for (const r of races) {
+        const ev = evals[r.id];
+        if (!ev) continue;
+        const dateKey = (r.date || "").replace(/-/g, "");
+        const key = `${dateKey}_${r.id}`;
+        const existing = next[key] || {};
+        const rec = buildBuyRecommendation(r, ev, settings, lossStreak, money, remainingDaily);
+        const isBuy = rec.verdict === "buy" && rec.items.length > 0 && rec.total > 0 && !rec.lock;
+        const combos = isBuy
+          ? rec.items.map(it => ({ kind: it.kind, combo: it.combo, stake: it.stake, odds: it.odds, prob: it.prob, ev: it.ev }))
+          : [];
+        // 結果関連フィールドは保持 (上書きしない)
+        const updated = {
+          ...existing,
+          key, date: r.date, raceId: r.id, venue: r.venue, jcd: r.jcd, raceNo: r.raceNo,
+          startTime: r.startTime,
+          decision: isBuy ? "buy" : "skip",
+          combos,
+          totalStake: isBuy ? rec.total : 0,
+          profile: rec.profile,
+          snapshotAt: nowIso,
+        };
+        // 同じ JSON なら更新スキップ (ループ過剰書き込み防止)
+        const cmp = (o) => JSON.stringify({ d:o.decision, c:o.combos, s:o.totalStake });
+        if (cmp(existing) !== cmp(updated)) {
+          next[key] = updated;
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [races, evals, settings, lossStreak, money, remainingDaily]);
 
   /* レース結果を登録: betsを自動精算し、連敗カウンタを更新し、反省を生成する */
   function applyRaceResult(raceId, first, second, third, payouts, memo) {
@@ -2935,20 +3120,16 @@ function App() {
       <main className="max-w-7xl mx-auto px-4 pb-20">
         {tab === "dashboard" && (
           <Dashboard races={races} evals={evals}
-            onPick={(id)=>{ setSelectedRaceId(id); setTab("race"); }}
-            onGoTab={setTab}
-            settings={settings} setSettings={setSettings}
-            todayPnL={todayPnL} totalPnL={totalPnL}
-            remainingDaily={remainingDaily} lossStreak={lossStreak} money={money}
-            lastRefreshAt={lastRefreshAt}
-            refreshing={refreshing} recalcing={recalcing} refreshMsg={refreshMsg}
-            onRefreshAll={refreshAll} onRecalc={manualRecalc}
+            settings={settings} lossStreak={lossStreak} money={money}
+            remainingDaily={remainingDaily}
             onQuickRecord={quickRecordRecommendation}
-            dataSource={dataSource} dataMessage={dataMessage} apiError={apiError}/>
+            aiPredictions={aiPredictions}
+            refreshing={refreshing} refreshMsg={refreshMsg}
+            onRefreshAll={refreshAll} lastRefreshAt={lastRefreshAt}/>
         )}
         {tab === "weekly" && (
           <WeeklyReportView bets={bets} results={results} races={races}
-            settings={settings} onGoTab={setTab}/>
+            settings={settings} aiPredictions={aiPredictions} onGoTab={setTab}/>
         )}
         {tab === "race" && (
           <RaceView race={races.find(r=>r.id===selectedRaceId)}
@@ -3182,156 +3363,168 @@ function Nav({ tab, setTab }) {
   );
 }
 
-/* ========== ダッシュボード ========== */
-function Dashboard({ races, evals, onPick, onGoTab, settings, setSettings, todayPnL, totalPnL, remainingDaily, lossStreak, money,
-  lastRefreshAt, refreshing, recalcing, refreshMsg, onRefreshAll, onRecalc, onQuickRecord,
-  dataSource, dataMessage, apiError }) {
-  const featured = useMemo(()=>{
-    return races.map(r => ({race:r, e:evals[r.id]}))
-      .sort((a,b)=> b.e.maxEV - a.e.maxEV).slice(0, 8);
-  }, [races, evals]);
-
-  const todayROI = todayPnL.stake>0 ? (todayPnL.ret/todayPnL.stake*100).toFixed(1)+"%" : "—";
-  const totalROI = totalPnL.stake>0 ? (totalPnL.ret/totalPnL.stake*100).toFixed(1)+"%" : "—";
-
+/* ========== ダッシュボード — 4点だけ ==========
+   ① 何を買うか / ② いくら買うか    → BuyDecisionCard
+   ③ 結果どうだったか / ④ 正解は何だったか → RecentResultCard (直近の終了レース)
+   今週累計収支 (AI通りに買っていたら) → WeeklyTotalsBadge (1行)
+   上に手動更新バー (「最新にする」)
+============================================================ */
+function Dashboard({ races, evals, settings, lossStreak, money, remainingDaily,
+  onQuickRecord, aiPredictions, refreshing, refreshMsg, onRefreshAll, lastRefreshAt }) {
   const headline = useMemo(() => pickHeadlineRace(races, evals), [races, evals]);
 
-  /* データソース表示用クラス */
-  const dsClass = dataSource === "real-schedule" ? "ok"
-                : dataSource === "loading"       ? "info"
-                : "alert";
-
-  /* 詳細セクションは折りたたみで隠す。デフォルトは「結論カード一本」 */
-  const [showDetails, setShowDetails] = useState(false);
+  // クールダウン残時間
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => { const id = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(id); }, []);
+  const since = lastRefreshAt ? Math.floor((now - new Date(lastRefreshAt).getTime()) / 1000) : null;
+  const cooldownLeft = since != null && since < 60 ? 60 - since : 0;
+  const lastUpdateLabel = since == null
+    ? "まだ取得していません"
+    : since < 5 ? "たった今"
+    : since < 60 ? `${since}秒前`
+    : `${Math.floor(since/60)}分前`;
+  const buttonLabel = refreshing
+    ? "🔄 最新データを確認中…"
+    : cooldownLeft > 0
+    ? `あと ${cooldownLeft}秒`
+    : "🔄 最新にする";
+  const isDisabled = refreshing || cooldownLeft > 0;
 
   return (
     <div className="space-y-4 mt-4">
-      {/* === メインビュー: 結論カードのみ (これだけ見れば判断できる) === */}
-      <BuyDecisionCard headline={headline} settings={settings}
-        lossStreak={lossStreak} money={money} remainingDaily={remainingDaily}
-        onPick={onPick} onQuickRecord={onQuickRecord} onGoTab={onGoTab}/>
-
-      {/* === 小さいフッター: データ状態 + 詳細トグル === */}
-      <div className="flex items-center justify-between flex-wrap gap-2 px-1">
-        <div className="text-xs hint">
-          {dataSource === "real-schedule" && "📡 実データ"}
-          {dataSource === "loading" && "📡 取得中…"}
-          {dataSource === "sample" && "⚠️ サンプル動作中"}
-          {lastRefreshAt && <span className="ml-2 opacity-80">最終更新: {new Date(lastRefreshAt).toLocaleTimeString("ja-JP", {hour:"2-digit", minute:"2-digit"})}</span>}
-          {settings.autoRefresh && <span className="ml-2 opacity-80">自動更新ON</span>}
+      {/* === 手動更新バー (最上段・目立つ) === */}
+      <div className="card" style={{padding:"12px 14px", borderWidth:2, borderColor:"#22d3ee"}}>
+        <div className="flex items-center gap-3 flex-wrap">
+          <button onClick={onRefreshAll} disabled={isDisabled}
+            style={{background: isDisabled ? "#475569" : "#2563eb", color:"#fff",
+              padding:"10px 22px", borderRadius:10, fontWeight:800, fontSize:15,
+              border:"none", cursor: isDisabled ? "not-allowed" : "pointer",
+              opacity: isDisabled ? 0.65 : 1, minWidth:200}}>
+            {buttonLabel}
+          </button>
+          <div className="text-xs hint">
+            最終更新: <b>{lastUpdateLabel}</b>
+          </div>
         </div>
-        <button className="btn btn-ghost text-xs"
-          onClick={() => setShowDetails(v => !v)}>
-          {showDetails ? "詳細を閉じる ▲" : "詳細を見る ▼"}
-        </button>
+        {refreshMsg && (
+          <div className={"mt-2 text-sm " + (refreshMsg.startsWith("✅") ? "ok" : refreshMsg.startsWith("⚠️") ? "alert" : "info")}
+               style={{padding:"6px 10px"}}>{refreshMsg}</div>
+        )}
       </div>
 
-      {/* === 詳細 (折りたたみ) === */}
-      {showDetails && (
-        <>
-          {/* 更新バー */}
-          <RefreshBar lastRefreshAt={lastRefreshAt}
-            refreshing={refreshing} recalcing={recalcing} refreshMsg={refreshMsg}
-            onRefreshAll={onRefreshAll} onRecalc={onRecalc}
-            onGoResults={() => onGoTab && onGoTab("results")}
-            autoRefresh={settings.autoRefresh}
-            setAutoRefresh={(v)=>setSettings && setSettings({...settings, autoRefresh: v})}/>
+      {/* ① + ② 何を買うか + いくら買うか */}
+      <BuyDecisionCard headline={headline} settings={settings}
+        lossStreak={lossStreak} money={money} remainingDaily={remainingDaily}
+        onQuickRecord={onQuickRecord}/>
 
-          {/* データソース・バナー (詳細時のみ。エラー時は別途上に出す) */}
-          <div className={dsClass} style={{padding:"10px 14px"}}>
-            <div className="flex items-center justify-between flex-wrap gap-2">
-              <div className="text-sm">
-                {dataSource === "real-schedule" && <b>📡 実データモード</b>}
-                {dataSource === "loading" && <b>📡 取得中…</b>}
-                {dataSource === "sample" && <b>⚠️ サンプルデータ動作中</b>}
-                <span className="ml-2 text-xs opacity-90">{dataMessage}</span>
+      {/* ③ + ④ 結果どうだったか + 正解は何だったか (直近の終了レース) */}
+      <RecentResultCard aiPredictions={aiPredictions}/>
+
+      {/* 今週累計 (1週間続けたらお金は増えたか減ったか) */}
+      <WeeklyTotalsBadge aiPredictions={aiPredictions}/>
+    </div>
+  );
+}
+
+/* ========== 直近の結果カード (③ + ④) ========== */
+function RecentResultCard({ aiPredictions }) {
+  const recent = useMemo(() => {
+    const arr = Object.values(aiPredictions || {});
+    // result が確定しているもののうち、最新の取得日時順
+    const settled = arr.filter(p => p.result && p.result.first);
+    if (settled.length === 0) return null;
+    return settled.sort((a, b) => (b.result.fetchedAt || "").localeCompare(a.result.fetchedAt || ""))[0];
+  }, [aiPredictions]);
+
+  if (!recent) return null;
+  const r = recent.result;
+  const correctTrifecta = `${r.first}-${r.second}-${r.third}`;
+  const trifectaPay = r.payouts?.trifecta?.[correctTrifecta] || null;
+
+  // AIの買い目に正解 (3連単) が含まれていたか
+  const aiBoughtCorrect = recent.decision === "buy" && (recent.combos || []).some(c => c.combo === correctTrifecta);
+  const aiPnL = recent.pnl ?? 0;
+
+  return (
+    <section className="card p-5" style={{borderWidth:2, borderColor:"#475569"}}>
+      <div className="hint text-xs mb-2">直前の結果 — {recent.venue} {recent.raceNo}R</div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <div className="hint text-xs">AIの判断</div>
+          {recent.decision === "buy" ? (
+            <>
+              <div className="font-mono" style={{fontSize:18, fontWeight:700, marginTop:4}}>
+                {(recent.combos || []).map(c => c.combo).join(" / ")}
               </div>
-              {apiError && <span className="text-xs hint">⚠ {String(apiError).slice(0,140)}</span>}
-            </div>
-          </div>
+              <div className="num text-xs hint mt-1">¥{(recent.totalStake||0).toLocaleString()}</div>
+              <div className="mt-2" style={{fontSize:16, fontWeight:700, color: aiBoughtCorrect ? "#34d399" : "#f87171"}}>
+                {aiBoughtCorrect ? "🎯 的中" : "❌ 不的中"}
+              </div>
+              <div className="num mt-1" style={{fontSize:18, fontWeight:800, color: aiPnL >= 0 ? "#34d399" : "#f87171"}}>
+                {aiPnL >= 0 ? "+" : ""}¥{Math.round(aiPnL).toLocaleString()}
+              </div>
+            </>
+          ) : (
+            <div style={{fontSize:16, fontWeight:600, marginTop:4, color:"#fecaca"}}>見送り</div>
+          )}
+        </div>
 
-          <MainActionCard races={races} evals={evals} onPick={onPick} onGoTab={onGoTab}/>
-          <TodayFocus races={races} evals={evals} onPick={onPick}/>
-
-          <div className="grid-cards">
-            <Kpi label="本日の購入額" value={`¥${todayPnL.stake.toLocaleString()}`} sub={`残り上限 ¥${remainingDaily.toLocaleString()}`} />
-            <Kpi label="本日の払戻" value={`¥${Math.round(todayPnL.ret).toLocaleString()}`} sub={`本日 ROI ${todayROI}`} />
-            <Kpi label="本日損失上限" value={`¥${settings.dailyLossLimit.toLocaleString()}`} sub={`現在損失 ¥${Math.max(0,Math.round(money.todayLoss)).toLocaleString()}`} highlight={money.dailyLossHit}/>
-            <Kpi label="累計回収率" value={totalROI} sub={`通算 ${totalPnL.count} 件 / 的中 ${totalPnL.hits} 件`} />
-            <Kpi label="連敗カウンタ" value={`${lossStreak} 連敗`} sub={lossStreak>=5?"⚠ 5連敗で強制見送り":(lossStreak>=3?"⚠ 推奨額 50% 減":"通常")} highlight={lossStreak>=3}/>
+        <div>
+          <div className="hint text-xs">正解</div>
+          <div className="font-mono" style={{fontSize:22, fontWeight:800, marginTop:4, color:"#fde68a"}}>
+            {correctTrifecta}
           </div>
-        </>
-      )}
+          {trifectaPay && (
+            <div className="num text-xs hint mt-1">3連単 ¥{trifectaPay.toLocaleString()}</div>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
 
-      {/* API エラーは詳細関係なく常に上に出す */}
-      {apiError && !showDetails && (
-        <div className="alert text-xs">⚠ データ取得に問題: {String(apiError).slice(0,200)} <button className="ml-2 underline" onClick={onRefreshAll}>再試行</button></div>
-      )}
+/* ========== 今週累計バッジ (1週間続けたらお金は増えたか減ったか) ========== */
+function WeeklyTotalsBadge({ aiPredictions }) {
+  const totals = useMemo(() => {
+    const today = new Date();
+    const weekAgoStr = new Date(today.getTime() - 7*24*60*60*1000).toISOString().slice(0,10);
+    const todayStr = today.toISOString().slice(0,10);
+    const arr = Object.values(aiPredictions || {}).filter(p => p.date >= weekAgoStr && p.date <= todayStr);
+    const buys = arr.filter(p => p.decision === "buy" && p.totalStake > 0);
+    const settled = buys.filter(p => p.result && p.result.first);
+    let stake = 0, ret = 0, hits = 0;
+    settled.forEach(p => {
+      stake += p.totalStake;
+      ret   += p.payout || 0;
+      if ((p.payout || 0) > 0) hits += 1;
+    });
+    return { count: buys.length, settled: settled.length, hits, stake, ret, pnl: ret - stake,
+      roi: stake > 0 ? ret / stake : 0 };
+  }, [aiPredictions]);
 
-      {/* 注目レース表は詳細展開時のみ表示 */}
-      {showDetails && (
-        <section className="card p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-bold">注目レース (期待値の高い順)</h2>
-            <span className="hint">参考情報。判断は上の結論カードに集約されています</span>
-          </div>
-          <div className="overflow-x-auto scrollbar">
-          <table>
-            <thead><tr>
-              <th>会場</th><th>R</th><th>発走</th>
-              <th>勝負条件AI</th>
-              <th>本命艇 (1着確率)</th><th>最高EV</th><th>過剰人気</th><th>本命危険度</th><th>信頼度</th><th>鮮度</th><th></th>
-            </tr></thead>
-            <tbody>
-              {featured.map(({race,e}) => {
-                const top = e.pred.winProbs.indexOf(Math.max(...e.pred.winProbs));
-                const topBoat = race.boats[top];
-                const m = e.market;
-                const ohClass = m && m.overhypeIndex>=1.30?"ev-neg":(m && m.overhypeIndex>=1.15?"text-amber-400":"");
-                return (
-                  <tr key={race.id} className="hover:bg-[#162241]">
-                    <td>{race.venue}
-                      {(e.flags||[]).length>0 && (
-                        <span className="ml-1">
-                          {e.flags.map(f => <span key={f} title={CONTEXT_FLAGS[f]?.label}>{CONTEXT_FLAGS[f]?.icon}</span>)}
-                        </span>
-                      )}
-                    </td>
-                    <td>{race.raceNo}R</td><td className="num">{race.startTime}</td>
-                    <td>
-                      {e.conditionGate && (
-                        <span className={"pill " + (
-                          e.conditionGate.level==="GO"      ? "badge-buy" :
-                          e.conditionGate.level==="CAUTION" ? "badge-warn" :
-                          e.conditionGate.level==="SKIP"    ? "badge-ooana" : "badge-skip"
-                        )}>
-                          {e.conditionGate.icon} {e.conditionGate.level}
-                        </span>
-                      )}
-                    </td>
-                    <td>{top+1}号艇 {topBoat.racer} <span className="hint">({(e.pred.winProbs[top]*100).toFixed(1)}%)</span></td>
-                    <td className={"num " + (e.maxEV>=1.1?"ev-pos":(e.maxEV<1?"ev-neg":""))}>{e.maxEV.toFixed(2)}</td>
-                    <td className={"num " + ohClass}>{m ? m.overhypeIndex.toFixed(2)+"×" : "—"}</td>
-                    <td>{m && (
-                      <span className={"pill " + (m.dangerLevel==="高"?"badge-ooana":(m.dangerLevel==="中"?"badge-warn":"badge-buy"))}>
-                        {m.dangerLevel}
-                      </span>
-                    )}</td>
-                    <td><span className={"pill conf-"+e.confidence.level}>{e.confidence.level}</span></td>
-                    <td><span className={"pill " + (
-                      e.freshness.level==="最新"?"badge-buy":
-                      e.freshness.level==="やや古い"?"badge-warn":
-                      e.freshness.level==="古い"?"badge-chuana":"badge-ooana"
-                    )}>{e.freshness.level}</span></td>
-                    <td><button className="btn btn-ghost" onClick={()=>onPick(race.id)}>分析を見る →</button></td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          </div>
-        </section>
-      )}
+  if (totals.count === 0) {
+    return (
+      <div className="card p-3 text-center hint text-xs">
+        💡 AIの予想が毎日自動記録されます。1週間続けるとここに「お金が増えたか減ったか」が出ます。
+      </div>
+    );
+  }
+
+  const pnlColor = totals.pnl >= 0 ? "#34d399" : "#f87171";
+  return (
+    <div className="card p-4" style={{borderWidth:2, borderColor: totals.pnl >= 0 ? "#10b981" : "#ef4444"}}>
+      <div className="hint text-xs uppercase tracking-widest mb-1">AI通りに 1 週間買っていたら</div>
+      <div className="flex items-baseline gap-3 flex-wrap">
+        <div className="num" style={{fontSize:32, fontWeight:900, color: pnlColor}}>
+          {totals.pnl >= 0 ? "+" : ""}¥{Math.round(totals.pnl).toLocaleString()}
+        </div>
+        <div className="hint text-sm">
+          回収率 <b style={{color: pnlColor}}>{totals.stake>0 ? (totals.roi*100).toFixed(0) : "—"}%</b>
+          <span className="mx-2">/</span>
+          {totals.settled}/{totals.count} レース確定 (的中 {totals.hits})
+        </div>
+      </div>
     </div>
   );
 }
@@ -3821,144 +4014,94 @@ function RefreshBar({ lastRefreshAt, refreshing, recalcing, refreshMsg, onRefres
   );
 }
 
-/* ========== 結論カード: 「買う or 見送り」を全画面で示す ==========
-   設計思想: 開いた瞬間に「答え」だけが目に入る。考えなくても判断できる。
-   ・買う場合: 巨大な "🟢 買う" + 本命/押さえ/穴 の3ボックス + 合計 + 1ボタン
-   ・見送り場合: 巨大な "🔴 見送り" + 1行の理由 + 次の判定
+/* ========== 結論カード: 2 状態のみ ==========
+   ① 買う  → レース名 / 買い目 / 金額 / 記録ボタン
+   ② 買わない → そのテキストだけ
+   それ以外 (CAUTION / WAIT / SKIP / 強制見送り / 対象なし) はすべて ② に集約。
 ============================================================ */
-function BuyDecisionCard({ headline, settings, lossStreak, money, remainingDaily, onPick, onQuickRecord, onGoTab }) {
+function BuyDecisionCard({ headline, settings, lossStreak, money, remainingDaily, onQuickRecord }) {
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
 
-  if (!headline) {
+  // 買うべきレースが本当にあるか? (GO + items + total + ロックなし)
+  const rec = headline ? buildBuyRecommendation(headline.race, headline.ev, settings, lossStreak, money, remainingDaily) : null;
+  const isBuy = !!rec && rec.verdict === "buy" && rec.items.length > 0 && rec.total > 0 && !rec.lock;
+
+  // === 見送り (今日は買わない) ===
+  if (!isBuy) {
     return (
-      <section style={{padding:"40px 24px", borderRadius:20, textAlign:"center",
-        background:"linear-gradient(135deg,#1e293b,#0f1830)", border:"3px solid #475569", color:"#fff"}}>
-        <div style={{fontSize:64}}>🤖</div>
-        <div style={{fontSize:36, fontWeight:900, marginTop:8}}>本日対象なし</div>
-        <div className="hint text-sm mt-2 opacity-80">レース情報の取得待ち / 開催終了</div>
+      <section style={{padding:"80px 24px", borderRadius:20, textAlign:"center",
+        background:"linear-gradient(135deg,#7f1d1d,#3b1d1d)",
+        border:"3px solid #ef4444", color:"#fecaca",
+        boxShadow:"0 0 40px -8px #ef4444"}}>
+        <div style={{fontSize:"min(64px,14vw)", fontWeight:900, lineHeight:1.1, letterSpacing:"-0.02em"}}>
+          今日は買わない
+        </div>
       </section>
     );
   }
 
-  const { race, ev, timing } = headline;
-  const rec = buildBuyRecommendation(race, ev, settings, lossStreak, money, remainingDaily);
-  const verdict = rec.verdict;
-  const showItems = (verdict === "buy" || verdict === "caution") && rec.items.length > 0 && rec.total > 0;
-  // 表示上は2状態に集約: 「買う」 (showItems=true) または 「見送り」 (それ以外)
-  const isBuy = showItems && !rec.lock;
+  // === 買う ===
+  const race = headline.race;
+  const combos = rec.items.map(it => it.combo).join(" / ");
 
-  const theme = isBuy
-    ? { bg:"linear-gradient(135deg,#065f46,#053527)", border:"#10b981", title:"🟢 買う", color:"#a7f3d0" }
-    : { bg:"linear-gradient(135deg,#7f1d1d,#3b1d1d)", border:"#ef4444", title:"🔴 見送り", color:"#fecaca" };
-
-  // 見送り理由を 1 行で
-  const skipReason =
-    rec.lock                                  ? "強制見送り (損失上限 / 連敗 / 日次予算到達)"
-    : verdict === "skip"                      ? "勝負条件外 — 買うべきレースではありません"
-    : verdict === "wait"                      ? "データ不足・確認待ち — 直前情報を取込んでください"
-    : verdict === "caution"                   ? "EV閾値を満たす買い目がないため見送り"
-    : verdict === "buy" && rec.raceCap <= 0   ? "1日予算 / 1レース上限が 0 のため買い目を出せません"
-    : verdict === "buy" && !showItems         ? "推奨買い目が0件 (条件未達)"
-    : "判定中";
-
-  function quickRecordAll() {
-    if (busy || !isBuy) return;
+  function record() {
+    if (busy) return;
     setBusy(true);
     const n = onQuickRecord(race, rec.items);
-    setMsg(`✅ 記録完了 (${n}件 / 合計 ¥${rec.total.toLocaleString()})`);
-    setTimeout(() => { setMsg(""); setBusy(false); }, 3500);
+    setMsg(`✅ 記録しました (${n}件)`);
+    setTimeout(() => { setMsg(""); setBusy(false); }, 3000);
   }
 
   return (
-    <section style={{padding:"28px 24px 22px", borderRadius:20,
-      background: theme.bg, border:`3px solid ${theme.border}`, color:"#fff",
-      boxShadow:`0 0 32px -8px ${theme.border}`}}>
+    <section style={{padding:"36px 24px 28px", borderRadius:20,
+      background:"linear-gradient(135deg,#065f46,#053527)",
+      border:"3px solid #10b981", color:"#fff",
+      boxShadow:"0 0 40px -8px #10b981"}}>
 
-      {/* 上部: レース情報 (小さく) */}
-      <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
-        <div className="text-sm opacity-90">
-          <b>{race.venue} {race.raceNo}R</b>
-          <span className="ml-2 opacity-80">{race.startTime}発走</span>
-          {timing.minutesToStart != null && timing.minutesToStart > 0 && (
-            <span className="ml-2 opacity-80">あと{Math.round(timing.minutesToStart)}分</span>
-          )}
-        </div>
-        {settings.virtualMode && <span className="pill" style={{background:"rgba(0,0,0,0.3)", color:"#fff", fontSize:11}}>🧪 仮想モード</span>}
+      <div style={{fontSize:"min(56px,12vw)", fontWeight:900, lineHeight:1.1,
+        color:"#a7f3d0", textAlign:"center", letterSpacing:"-0.02em"}}>
+        今すぐ買う
       </div>
 
-      {/* メインの判定表示 (極大) */}
-      <div style={{fontSize:"min(64px,14vw)", fontWeight:900, lineHeight:1.05,
-        color:theme.color, letterSpacing:"-0.02em", marginTop:4}}>
-        {theme.title}
-      </div>
-
-      {/* === 買う: 3ボックス + 合計 + 1ボタン === */}
-      {isBuy && (
-        <>
-          <div className="grid grid-cols-3 gap-2 md:gap-3 mt-4">
-            {rec.items.map((it, i) => {
-              const roleColor = i === 0 ? "#dcfce7" : i === 1 ? "#fef3c7" : "#fecaca";
-              return (
-                <div key={i} className="text-center" style={{background:"rgba(0,0,0,0.32)", borderRadius:14, padding:"14px 8px"}}>
-                  <div style={{fontSize:11, opacity:0.85, color:roleColor, fontWeight:700, letterSpacing:"0.05em"}}>{it.role}</div>
-                  <div className="font-mono" style={{fontSize:"min(28px,7vw)", fontWeight:900, marginTop:4, lineHeight:1.1}}>{it.combo}</div>
-                  <div style={{fontSize:11, opacity:0.75, marginTop:2}}>{it.kind} {it.odds.toFixed(1)}倍</div>
-                  <div className="num" style={{fontSize:"min(22px,5.5vw)", fontWeight:800, marginTop:6}}>¥{(it.stake||0).toLocaleString()}</div>
-                </div>
-              );
-            })}
+      <div className="space-y-5 mt-8 text-center">
+        <div>
+          <div style={{fontSize:13, color:"#86efac", letterSpacing:"0.06em"}}>レース</div>
+          <div style={{fontSize:"min(34px,8vw)", fontWeight:800, marginTop:6, lineHeight:1.1}}>
+            {race.venue} {race.raceNo}R
           </div>
+        </div>
 
-          <div className="text-center mt-4" style={{fontSize:14, opacity:0.85}}>合計</div>
-          <div className="text-center" style={{fontSize:"min(38px,9vw)", fontWeight:900, color:theme.color}}>
+        <div>
+          <div style={{fontSize:13, color:"#86efac", letterSpacing:"0.06em"}}>買い目</div>
+          <div className="font-mono" style={{fontSize:"min(30px,7vw)", fontWeight:800, marginTop:6, lineHeight:1.2}}>
+            {combos}
+          </div>
+        </div>
+
+        <div>
+          <div style={{fontSize:13, color:"#86efac", letterSpacing:"0.06em"}}>金額</div>
+          <div className="num" style={{fontSize:"min(44px,10vw)", fontWeight:900, marginTop:6, lineHeight:1.05}}>
             ¥{rec.total.toLocaleString()}
           </div>
+        </div>
+      </div>
 
-          <div className="mt-4 flex justify-center">
-            <button onClick={quickRecordAll} disabled={busy}
-              style={{background:"#fff", color:"#0b1220", padding:"14px 28px",
-                borderRadius:14, fontWeight:800, fontSize:18, border:"none", cursor:"pointer",
-                opacity: busy ? 0.65 : 1, minWidth:240, boxShadow:"0 4px 12px rgba(0,0,0,0.25)"}}>
-              {busy ? "✅ 記録中…" : "✅ この買い目で記録"}
-            </button>
-          </div>
-        </>
-      )}
-
-      {/* === 見送り: 理由 1 行 + 詳細リンク === */}
-      {!isBuy && (
-        <>
-          <div className="mt-3 text-center" style={{fontSize:18, fontWeight:600, opacity:0.95, lineHeight:1.5}}>
-            {skipReason}
-          </div>
-          <div className="mt-4 flex justify-center">
-            <button onClick={() => onGoTab && onGoTab("weekly")}
-              style={{background:"rgba(255,255,255,0.15)", color:"#fff", padding:"12px 22px",
-                borderRadius:12, fontWeight:700, fontSize:14, border:"1px solid rgba(255,255,255,0.3)", cursor:"pointer"}}>
-              📅 週次成績を見る
-            </button>
-          </div>
-        </>
-      )}
-
-      {/* 完了トースト */}
-      {msg && (
-        <div className="mt-4 text-center" style={{
-          background:"#fff", color:"#065f46", padding:"10px 16px", borderRadius:10,
-          fontWeight:700, fontSize:14
-        }}>{msg}</div>
-      )}
-
-      {/* 最下段: 小さく付帯情報 (詳細リンクのみ・他はノイズ削除) */}
-      <div className="mt-4 flex justify-end" style={{paddingTop:10, borderTop:"1px solid rgba(255,255,255,0.15)"}}>
-        <button onClick={() => onPick(race.id)} style={{
-          background:"transparent", color:"rgba(255,255,255,0.7)", fontSize:12,
-          border:"none", cursor:"pointer", textDecoration:"underline"
-        }}>
-          このレースの詳細を見る →
+      <div className="mt-8 flex justify-center">
+        <button onClick={record} disabled={busy}
+          style={{background:"#fff", color:"#065f46", padding:"16px 40px",
+            borderRadius:14, fontWeight:800, fontSize:18, border:"none", cursor:"pointer",
+            opacity: busy ? 0.65 : 1, minWidth:240,
+            boxShadow:"0 4px 14px rgba(0,0,0,0.25)"}}>
+          {busy ? "✅ 記録中…" : "✅ 記録する"}
         </button>
       </div>
+
+      {msg && (
+        <div className="mt-4 text-center" style={{
+          color:"#fff", fontWeight:700, fontSize:15,
+        }}>{msg}</div>
+      )}
     </section>
   );
 }
@@ -6802,9 +6945,163 @@ function ConditionAnalysisView({ races, results, bets }) {
 }
 
 /* =========================================================
-   週次レポート (直近7日の集計 + 推奨アクション)
+   週次レポート: AI通りに 1 週間買っていたら、いくら増えた/減ったか
+   - aiPredictions (毎レース自動保存) を 直近7日 集計
+   - 「総投資額 / 総払戻 / 利益損失 / 回収率 / 勝負/的中/正解レース」を表示
    ========================================================= */
-function WeeklyReportView({ bets, results, races, settings, onGoTab }) {
+function WeeklyReportView({ aiPredictions, bets, results, races, settings, onGoTab }) {
+  const today = new Date();
+  const weekAgoStr = new Date(today.getTime() - 7*24*60*60*1000).toISOString().slice(0,10);
+  const todayStr = today.toISOString().slice(0,10);
+  const inRange = (d) => d && d >= weekAgoStr && d <= todayStr;
+
+  const weekPreds = useMemo(() =>
+    Object.values(aiPredictions || {}).filter(p => inRange(p.date)),
+    [aiPredictions]
+  );
+
+  /* === AI通りに買っていたら === */
+  const aiSummary = useMemo(() => {
+    const buys = weekPreds.filter(p => p.decision === "buy" && p.totalStake > 0);
+    const settled = buys.filter(p => p.result && p.result.first);
+    const skip = weekPreds.filter(p => p.decision === "skip");
+    let stake = 0, ret = 0, hits = 0;
+    settled.forEach(p => {
+      stake += p.totalStake;
+      ret   += p.payout || 0;
+      if ((p.payout || 0) > 0) hits += 1;
+    });
+    return {
+      total: weekPreds.length,
+      buyCount: buys.length,
+      settledCount: settled.length,
+      skipCount: skip.length,
+      hits,
+      misses: settled.length - hits,
+      stake, ret, pnl: ret - stake,
+      roi: stake > 0 ? ret / stake : 0,
+      buys, settled,
+    };
+  }, [weekPreds]);
+
+  /* === レース別: 買って正解 / 買って外れ / 見送って正解 (相手が外れていた) === */
+  const lists = useMemo(() => {
+    const buyHit  = aiSummary.settled.filter(p => (p.payout || 0) > 0);
+    const buyMiss = aiSummary.settled.filter(p => !(p.payout > 0));
+    return { buyHit, buyMiss };
+  }, [aiSummary]);
+
+  const pnlColor = aiSummary.pnl >= 0 ? "#34d399" : "#f87171";
+
+  return (
+    <div className="space-y-4 mt-4">
+      {/* === メイン: お金が増えたか減ったか === */}
+      <section className="card p-5" style={{borderWidth:2, borderColor: aiSummary.pnl >= 0 ? "#10b981" : "#ef4444"}}>
+        <div className="hint text-xs uppercase tracking-widest mb-2">AI通りに 1 週間買っていたら ({weekAgoStr} 〜 {todayStr})</div>
+        <div className="flex items-baseline gap-4 flex-wrap">
+          <div>
+            <div className="hint text-xs">利益 / 損失</div>
+            <div className="num" style={{fontSize:"min(48px,11vw)", fontWeight:900, color: pnlColor, lineHeight:1.05}}>
+              {aiSummary.pnl >= 0 ? "+" : ""}¥{Math.round(aiSummary.pnl).toLocaleString()}
+            </div>
+          </div>
+          <div>
+            <div className="hint text-xs">回収率</div>
+            <div className="num" style={{fontSize:"min(36px,8vw)", fontWeight:800, color: pnlColor}}>
+              {aiSummary.stake > 0 ? `${(aiSummary.roi*100).toFixed(0)}%` : "—"}
+            </div>
+          </div>
+        </div>
+        <div className="hint text-xs mt-3">
+          AIが「買う」と判断した <b>{aiSummary.buyCount}</b> レースのうち、結果確定 <b>{aiSummary.settledCount}</b> 件。
+          そのうち的中 <b>{aiSummary.hits}</b> / 外れ <b>{aiSummary.misses}</b>。
+        </div>
+      </section>
+
+      {/* 投資額・払戻・各種 KPI */}
+      <div className="grid-cards">
+        <Kpi label="総投資額" value={`¥${aiSummary.stake.toLocaleString()}`} sub={`勝負レース ${aiSummary.buyCount}件`}/>
+        <Kpi label="総払戻額" value={`¥${Math.round(aiSummary.ret).toLocaleString()}`} sub={`的中 ${aiSummary.hits}件`}/>
+        <Kpi label="勝負レース数" value={`${aiSummary.buyCount}件`} sub={`見送り ${aiSummary.skipCount}件 / 計 ${aiSummary.total}件`}/>
+        <Kpi label="的中レース数" value={`${aiSummary.hits}件`} sub={`的中率 ${aiSummary.settledCount>0 ? ((aiSummary.hits/aiSummary.settledCount)*100).toFixed(0) : "—"}%`}/>
+      </div>
+
+      {/* 買って正解だったレース */}
+      <section className="card p-4">
+        <h3 className="font-bold mb-2">✅ 買って正解だったレース ({lists.buyHit.length})</h3>
+        {lists.buyHit.length === 0 ? <div className="hint text-xs">該当なし</div> : (
+          <div className="overflow-x-auto scrollbar">
+          <table>
+            <thead><tr>
+              <th>日付</th><th>会場/R</th><th>買い目</th><th>投資</th><th>払戻</th><th>収支</th>
+            </tr></thead>
+            <tbody>
+              {lists.buyHit.map(p => (
+                <tr key={p.key}>
+                  <td className="num">{p.date}</td>
+                  <td>{p.venue} {p.raceNo}R</td>
+                  <td className="font-mono text-xs">{(p.combos||[]).map(c=>c.combo).join(" / ")}</td>
+                  <td className="num">¥{(p.totalStake||0).toLocaleString()}</td>
+                  <td className="num">¥{Math.round(p.payout||0).toLocaleString()}</td>
+                  <td className={"num ev-pos"}>+¥{Math.round(p.pnl||0).toLocaleString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          </div>
+        )}
+      </section>
+
+      {/* 買わなかった方がよかったレース */}
+      <section className="card p-4">
+        <h3 className="font-bold mb-2">❌ 買わなかった方がよかったレース ({lists.buyMiss.length})</h3>
+        {lists.buyMiss.length === 0 ? <div className="hint text-xs">該当なし</div> : (
+          <div className="overflow-x-auto scrollbar">
+          <table>
+            <thead><tr>
+              <th>日付</th><th>会場/R</th><th>買い目</th><th>正解</th><th>投資</th><th>収支</th>
+            </tr></thead>
+            <tbody>
+              {lists.buyMiss.map(p => {
+                const correct = p.result ? `${p.result.first}-${p.result.second}-${p.result.third}` : "—";
+                return (
+                  <tr key={p.key}>
+                    <td className="num">{p.date}</td>
+                    <td>{p.venue} {p.raceNo}R</td>
+                    <td className="font-mono text-xs">{(p.combos||[]).map(c=>c.combo).join(" / ")}</td>
+                    <td className="font-mono text-xs">{correct}</td>
+                    <td className="num">¥{(p.totalStake||0).toLocaleString()}</td>
+                    <td className={"num ev-neg"}>−¥{Math.abs(Math.round(p.pnl||-p.totalStake||0)).toLocaleString()}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          </div>
+        )}
+      </section>
+
+      {/* 推奨 */}
+      <section className="card p-4">
+        <h3 className="font-bold mb-2">読み方</h3>
+        <ul className="list-disc pl-6 text-sm space-y-1">
+          <li><b>利益 / 損失</b> がプラスなら「AI通りに買えば勝てる」状態。</li>
+          <li><b>回収率 100% 以上</b> = 公営の控除率の壁を超えている = 勝てるアプリ。</li>
+          <li><b>「買って正解」&gt;&gt;「買って外れ」</b> なら継続。逆なら EV 閾値を上げる / リスク感覚を堅めに。</li>
+          <li>サンプル数が <b>30 件未満</b> のうちは判断保留 (確率的なブレが大きい)。</li>
+        </ul>
+      </section>
+
+      {/* 旧 bets/results ベースのデバッグ用簡易セクションは廃止 (AI通り集計に統一) */}
+    </div>
+  );
+}
+
+/* === (旧) ===
+   bets/results をユーザー手動入力に依存していた WeeklyReportView の参考実装は
+   aiPredictions に置き換えました。手入力結果を見たい場合は「収支管理」「結果入力」タブを参照。
+   ========================================================= */
+function _legacy_WeeklyReportView_unused({ bets, results, races, settings, onGoTab }) {
   const today = new Date();
   const weekAgo = new Date(today.getTime() - 7*24*60*60*1000);
   const weekAgoStr = weekAgo.toISOString().slice(0,10);
