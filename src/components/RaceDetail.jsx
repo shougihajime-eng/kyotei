@@ -20,6 +20,12 @@ export default function RaceDetail({ race, evalRes, recommendation, onRecord, on
       <BuyDecisionCard race={race} recommendation={recommendation}
         onRecord={onRecord} virtualMode={virtualMode} />
 
+      {/* 展開予想 + 危険人気 */}
+      <DevelopmentSummary evalRes={evalRes} />
+
+      {/* オッズ乖離分析 */}
+      <OddsGapTable evalRes={evalRes} race={race} />
+
       {/* 直前情報サマリ */}
       <BeforeInfoSummary race={race} />
 
@@ -77,6 +83,80 @@ export default function RaceDetail({ race, evalRes, recommendation, onRecord, on
         </div>
       </section>
     </div>
+  );
+}
+
+/* 展開予想 + 危険な人気艇 */
+function DevelopmentSummary({ evalRes }) {
+  if (!evalRes?.development) return null;
+  const dev = evalRes.development;
+  const dangers = evalRes.dangerousFavorites || [];
+  return (
+    <section className="card p-4">
+      <h3 className="font-bold text-sm mb-2">📍 展開予想</h3>
+      <div className="alert-info text-sm">
+        <b>{dev.scenario}</b> — {dev.comment}
+      </div>
+      {dangers.length > 0 && (
+        <div className="alert-warn text-sm mt-2">
+          🚨 危険な人気艇: {dangers.map((d) => `${d.boatNo}号艇 (市場 ${(d.marketProb*100).toFixed(0)}% / AI ${(d.aiProb*100).toFixed(0)}%)`).join(", ")}
+        </div>
+      )}
+    </section>
+  );
+}
+
+/* オッズ乖離分析 — 市場との差を表で */
+function OddsGapTable({ evalRes, race }) {
+  const gaps = evalRes?.oddsGaps;
+  if (!gaps || gaps.length === 0) return null;
+  const move = evalRes?.oddsMovement;
+  return (
+    <section className="card p-4">
+      <h3 className="font-bold text-sm mb-2">📊 オッズ乖離分析 (AI 確率 vs 市場確率)</h3>
+      <div className="overflow-x-auto scrollbar">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="text-left opacity-60 border-b border-[#1f2a44]">
+              <th className="py-1">艇</th>
+              <th>AI 確率</th>
+              <th>市場確率</th>
+              <th>差</th>
+              <th>判定</th>
+            </tr>
+          </thead>
+          <tbody>
+            {gaps.map((g) => (
+              <tr key={g.boatNo} className="border-b border-[#1f2a44]/40">
+                <td className="py-1 font-bold">{g.boatNo}</td>
+                <td className="num">{(g.aiProb*100).toFixed(1)}%</td>
+                <td className="num">{(g.marketProb*100).toFixed(1)}%</td>
+                <td className={"num " + (g.gap > 0 ? "text-pos" : g.gap < 0 ? "text-neg" : "")}>
+                  {g.gap >= 0 ? "+" : ""}{(g.gap*100).toFixed(1)}pt
+                </td>
+                <td className="text-xs">{g.verdict}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {move?.hasHistory && (
+        <div className="mt-3 text-xs">
+          <div className="font-bold mb-1">直前オッズ変動</div>
+          <div className="flex flex-wrap gap-1">
+            {move.moves.map((m) => (
+              <span key={m.boatNo} className="pill"
+                style={{
+                  background: m.changePct < 0 ? "rgba(248,113,113,0.18)" : "rgba(52,211,153,0.18)",
+                  color: m.changePct < 0 ? "#fecaca" : "#a7f3d0",
+                }}>
+                {m.boatNo}号艇 {m.prev}→{m.curr} ({m.changePct >= 0 ? "+" : ""}{m.changePct.toFixed(0)}%)
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+    </section>
   );
 }
 

@@ -40,6 +40,7 @@ export default function RaceList({ races, evals, recommendations, onPickRace }) 
                   <th>最高EV</th>
                   <th>買い目</th>
                   <th>金額</th>
+                  <th>展開</th>
                   <th></th>
                 </tr>
               </thead>
@@ -55,6 +56,7 @@ export default function RaceList({ races, evals, recommendations, onPickRace }) 
                     <td className="num text-pos">{row.maxEV.toFixed(2)}</td>
                     <td className="font-mono text-xs">{row.pickedCombos}</td>
                     <td className="num">{row.total > 0 ? yen(row.total) : "—"}</td>
+                    <td className="text-xs opacity-80">{row.ev?.development?.scenario || "—"}</td>
                     <td>
                       <button className="btn btn-ghost text-xs" onClick={() => onPickRace(row.race.id)}>
                         詳細 →

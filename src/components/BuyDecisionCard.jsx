@@ -85,6 +85,9 @@ export default function BuyDecisionCard({ race, evalRes, recommendation, onRecor
         </button>
       </div>
 
+      {/* なぜこの買い目か (narrative) */}
+      <NarrativeRow lines={recommendation.narrative} />
+
       {/* 5因子の理由 (本命のみ表示) */}
       <FactorRow factors={recommendation.items[0]?.factors} />
 
@@ -93,6 +96,23 @@ export default function BuyDecisionCard({ race, evalRes, recommendation, onRecor
 
       {msg && <div className="mt-3 text-center font-bold">{msg}</div>}
     </section>
+  );
+}
+
+function NarrativeRow({ lines }) {
+  if (!lines || lines.length === 0) return null;
+  return (
+    <div className="mt-4 pt-3" style={{ borderTop: "1px solid rgba(255,255,255,0.18)" }}>
+      <div className="text-xs opacity-75 mb-2 text-center">なぜこの買い目か</div>
+      <div className="flex flex-col items-stretch gap-1">
+        {lines.map((line, i) => (
+          <div key={i} className="text-xs"
+            style={{ background: "rgba(0,0,0,0.25)", padding: "6px 12px", borderRadius: 8 }}>
+            {line}
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
