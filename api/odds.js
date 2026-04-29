@@ -154,11 +154,37 @@ export default async function handler(req, res) {
       source: "boatrace.jp 公開オッズページ",
     };
     if (req.query.debug === "1") {
-      // 解析失敗時の診断用に HTML 抜粋を含める
+      // 解析失敗時の診断用: テーブル構造を要約 + 1行目の HTML を返す
+      function summarize(html, name) {
+        if (!html) return null;
+        const $$ = cheerio.load(html);
+        const tables = $$("table").toArray();
+        const trCount = $$("tr").length;
+        const tdCount = $$("td").length;
+        // <table>のうち最初に td を含むもの → 最初の <tr> の outerHTML
+        let firstRowHtml = null;
+        for (const t of tables) {
+          const trs = $$(t).find("tr").toArray();
+          for (const tr of trs) {
+            if ($$(tr).find("td").length > 0) {
+              firstRowHtml = $$.html(tr);
+              break;
+            }
+          }
+          if (firstRowHtml) break;
+        }
+        // body 内のテキストを 200 字
+        const bodyText = $$("body").text().replace(/\s+/g, " ").slice(0, 400);
+        return {
+          name, htmlLength: html.length, tableCount: tables.length, trCount, tdCount,
+          firstRowHtml: firstRowHtml ? firstRowHtml.slice(0, 1500) : null,
+          bodySnippet: bodyText,
+        };
+      }
       body.debug = {
-        winHtmlExcerpt:      winHtml ? winHtml.slice(0, 1500)      : null,
-        exactaHtmlExcerpt:   exHtml  ? exHtml.slice(0, 1500)       : null,
-        trifectaHtmlExcerpt: trHtml  ? trHtml.slice(0, 1500)       : null,
+        win:      summarize(winHtml, "win"),
+        exacta:   summarize(exHtml, "exacta"),
+        trifecta: summarize(trHtml, "trifecta"),
       };
     }
     return res.status(200).json(body);
