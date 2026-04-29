@@ -418,11 +418,81 @@ function generateRaces(date) {
         updatedAt: nowIso,
         exhibitionUpdatedAt: nowIso,
         oddsUpdatedAt: nowIso,
+        sourceMode: "sample",
       });
       id++;
     }
   }
   return races;
+}
+
+/* =========================================================
+   /api/today から取得した本日スケジュールを races[] に変換
+   - 会場 / レース番号 / 発走時刻 は実データ
+   - 出走表 (boats) は当面サンプル合成 (今後 /api/program で置換予定)
+   ========================================================= */
+function buildRacesFromSchedule(scheduleJson, fallbackDate) {
+  if (!scheduleJson || !Array.isArray(scheduleJson.venues) || scheduleJson.venues.length === 0) return [];
+  const dateStr = scheduleJson.date || fallbackDate || new Date().toISOString().slice(0,10).replace(/-/g,"");
+  // YYYYMMDD → YYYY-MM-DD
+  const dateIso = (dateStr.length === 8)
+    ? `${dateStr.slice(0,4)}-${dateStr.slice(4,6)}-${dateStr.slice(6,8)}`
+    : dateStr;
+  const races = [];
+  let id = 1;
+  for (const v of scheduleJson.venues) {
+    for (const rr of (v.races || [])) {
+      const seed = (Number(v.jcd)||0) * 100000 + (rr.raceNo||0) * 10 + Number(dateStr.slice(-4)||0);
+      const boats = generateBoats(seed);
+      const r = seedRand(seed+7);
+      const weather = ["晴","曇","雨"][Math.floor(r()*3)];
+      const wind = +(r()*8).toFixed(1);
+      const windDir = ["追い風","向かい風","横風"][Math.floor(r()*3)];
+      const wave = +(r()*15|0);
+      const nowIso = new Date().toISOString();
+      races.push({
+        id: `R${v.jcd}-${String(rr.raceNo).padStart(2,"0")}`,
+        date: dateIso,
+        venue: v.name,
+        jcd: v.jcd,
+        raceNo: rr.raceNo,
+        startTime: rr.startTime || "",
+        weather, wind, windDir, wave,
+        boats,
+        updatedAt: nowIso,
+        exhibitionUpdatedAt: nowIso,
+        oddsUpdatedAt: nowIso,
+        sourceMode: "real-schedule",
+      });
+      id++;
+    }
+  }
+  return races;
+}
+
+/* /api/today を叩いて schedule を取得 (例外を投げず ok:false 形式で返す) */
+async function fetchTodaySchedule() {
+  try {
+    const resp = await fetch("/api/today", { headers: { "Accept": "application/json" } });
+    if (!resp.ok) return { ok:false, status:resp.status, error:`HTTP ${resp.status}` };
+    const json = await resp.json();
+    return { ok: !!json.ok, ...json };
+  } catch (e) {
+    return { ok:false, error: String(e.message || e) };
+  }
+}
+
+/* /api/odds を叩いて 1 レース分のオッズを取得し、race.currentWinOdds 等を埋める */
+async function fetchRaceOdds(race) {
+  if (!race || !race.jcd || !race.raceNo) return null;
+  const date = (race.date || "").replace(/-/g, "");
+  try {
+    const resp = await fetch(`/api/odds?jcd=${race.jcd}&rno=${race.raceNo}&date=${date}`);
+    if (!resp.ok) return null;
+    const json = await resp.json();
+    if (!json.ok) return null;
+    return json;
+  } catch { return null; }
 }
 
 /* =========================================================
@@ -2588,25 +2658,47 @@ function App() {
   const [refreshing, setRefreshing] = useState(false);
   const [recalcing, setRecalcing] = useState(false);
   const [refreshMsg, setRefreshMsg] = useState("");
+  /* データソースの状態: "loading" | "real-schedule" | "sample" + lastApiError */
+  const [dataSource, setDataSource] = useState("loading");
+  const [dataMessage, setDataMessage] = useState("起動中…");
+  const [apiError, setApiError] = useState(null);
 
-  /* 全レース 鮮度更新 (鮮度のみ書き換え)。実データ取得は将来拡張 */
-  function refreshAll(opts={}) {
+  /* 全レース 取得・更新: /api/today を叩いて real-schedule に置換。失敗時はサンプルにフォールバック */
+  async function refreshAll(opts={}) {
     if (refreshing) return;
     setRefreshing(true);
     if (!opts.silent) setRefreshMsg("🔄 最新データに更新中…");
-    setTimeout(() => {
-      const ts = new Date().toISOString();
-      setRaces(prev => prev.map(r => ({...r,
-        updatedAt: ts, exhibitionUpdatedAt: ts, oddsUpdatedAt: ts,
-      })));
-      setLastRefreshAt(ts);
-      setRecalcTick(t => t+1);
-      setRefreshing(false);
-      if (!opts.silent) {
-        setRefreshMsg(`✅ 最新データに更新しました (${new Date(ts).toLocaleTimeString("ja-JP")})`);
-        setTimeout(() => setRefreshMsg(""), 3000);
-      }
-    }, 250); // 押下フィードバックを担保するため最低250ms
+    const startedAt = Date.now();
+    const result = await fetchTodaySchedule();
+    const elapsed = Date.now() - startedAt;
+    // ボタンフィードバックを担保するため最低 250ms 待つ
+    if (elapsed < 250) await new Promise(r => setTimeout(r, 250 - elapsed));
+
+    const ts = new Date().toISOString();
+    if (result.ok && Array.isArray(result.venues) && result.total_races > 0) {
+      const realRaces = buildRacesFromSchedule(result, result.date);
+      setRaces(realRaces);
+      setDataSource("real-schedule");
+      setDataMessage(`✅ 実データ取得 (${result.total_venues}会場 / ${result.total_races}レース)`);
+      setApiError(null);
+      if (!opts.silent) setRefreshMsg(`✅ 実データに更新 (${new Date(ts).toLocaleTimeString("ja-JP")})`);
+    } else {
+      // サンプルへフォールバック (初回起動時のみ生成、それ以外は鮮度だけ更新)
+      setRaces(prev => {
+        if (!prev || prev.length === 0 || prev.every(r => r.sourceMode !== "sample")) {
+          return generateRaces(new Date().toISOString().slice(0,10));
+        }
+        return prev.map(r => ({...r, updatedAt: ts, exhibitionUpdatedAt: ts, oddsUpdatedAt: ts}));
+      });
+      setDataSource("sample");
+      setDataMessage(`⚠️ 実データ取得に失敗 — サンプル動作中: ${result.error || "unknown"}`);
+      setApiError(result.error || `HTTP ${result.status || "?"}`);
+      if (!opts.silent) setRefreshMsg(`⚠️ 取得失敗: ${result.error || "unknown"}`);
+    }
+    setLastRefreshAt(ts);
+    setRecalcTick(t => t+1);
+    setRefreshing(false);
+    if (!opts.silent) setTimeout(() => setRefreshMsg(""), 4000);
   }
   function manualRecalc() {
     if (recalcing) return;
@@ -2817,7 +2909,8 @@ function App() {
             lastRefreshAt={lastRefreshAt}
             refreshing={refreshing} recalcing={recalcing} refreshMsg={refreshMsg}
             onRefreshAll={refreshAll} onRecalc={manualRecalc}
-            onQuickRecord={quickRecordRecommendation}/>
+            onQuickRecord={quickRecordRecommendation}
+            dataSource={dataSource} dataMessage={dataMessage} apiError={apiError}/>
         )}
         {tab === "weekly" && (
           <WeeklyReportView bets={bets} results={results} races={races}
@@ -3057,7 +3150,8 @@ function Nav({ tab, setTab }) {
 
 /* ========== ダッシュボード ========== */
 function Dashboard({ races, evals, onPick, onGoTab, settings, setSettings, todayPnL, totalPnL, remainingDaily, lossStreak, money,
-  lastRefreshAt, refreshing, recalcing, refreshMsg, onRefreshAll, onRecalc, onQuickRecord }) {
+  lastRefreshAt, refreshing, recalcing, refreshMsg, onRefreshAll, onRecalc, onQuickRecord,
+  dataSource, dataMessage, apiError }) {
   const featured = useMemo(()=>{
     return races.map(r => ({race:r, e:evals[r.id]}))
       .sort((a,b)=> b.e.maxEV - a.e.maxEV).slice(0, 8);
@@ -3068,8 +3162,26 @@ function Dashboard({ races, evals, onPick, onGoTab, settings, setSettings, today
 
   const headline = useMemo(() => pickHeadlineRace(races, evals), [races, evals]);
 
+  /* データソース表示用クラス */
+  const dsClass = dataSource === "real-schedule" ? "ok"
+                : dataSource === "loading"       ? "info"
+                : "alert";
+
   return (
     <div className="space-y-4 mt-4">
+      {/* データソース・バナー (実データ / サンプル / 取得失敗) */}
+      <div className={dsClass} style={{padding:"10px 14px"}}>
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div className="text-sm">
+            {dataSource === "real-schedule" && <b>📡 実データモード</b>}
+            {dataSource === "loading" && <b>📡 取得中…</b>}
+            {dataSource === "sample" && <b>⚠️ サンプルデータ動作中</b>}
+            <span className="ml-2 text-xs opacity-90">{dataMessage}</span>
+          </div>
+          {apiError && <span className="text-xs hint">⚠ {String(apiError).slice(0,140)}</span>}
+        </div>
+      </div>
+
       {/* 更新バー (最上部・常に表示) */}
       <RefreshBar lastRefreshAt={lastRefreshAt}
         refreshing={refreshing} recalcing={recalcing} refreshMsg={refreshMsg}
@@ -4997,6 +5109,27 @@ function RaceView({ race, evalRes, races, onSelect, selectedId, settings, bankro
   if (!race || !evalRes) return <div className="mt-4 hint">レースが見つかりません。</div>;
   const { pred, sorted, recommended, reasons, skip, skipReasons, maxEV, strategies } = evalRes;
   const winProbsPct = pred.winProbs.map(p => +(p*100).toFixed(1));
+
+  /* 実データ (jcd 付き) のレースを開いたとき、/api/odds を叩いて
+     race.currentWinOdds (前回オッズと比較する基底) を埋める */
+  useEffect(() => {
+    if (!race || !race.jcd) return;
+    let cancelled = false;
+    fetchRaceOdds(race).then(odds => {
+      if (cancelled || !odds || !odds.win) return;
+      const arr = race.boats.map(b => +odds.win[String(b.boatNo)] || null);
+      const ts = new Date().toISOString();
+      setRaces && setRaces(prev => prev.map(r => r.id === race.id ? {
+        ...r,
+        prevOdds: r.currentWinOdds || r.prevOdds || null,
+        currentWinOdds: arr,
+        apiOdds: odds,
+        oddsUpdatedAt: ts,
+        updatedAt: ts,
+      } : r));
+    });
+    return () => { cancelled = true; };
+  }, [race?.id]);
 
   const positives = reasons.filter(r=>r.type==="pos");
   const negatives = reasons.filter(r=>r.type==="neg");
