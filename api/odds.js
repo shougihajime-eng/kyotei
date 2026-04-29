@@ -154,31 +154,33 @@ export default async function handler(req, res) {
       source: "boatrace.jp 公開オッズページ",
     };
     if (req.query.debug === "1") {
-      // 解析失敗時の診断用: テーブル構造を要約 + 1行目の HTML を返す
+      // 解析失敗時の診断用: 各テーブルの全行 HTML(短縮) を返す
       function summarize(html, name) {
         if (!html) return null;
         const $$ = cheerio.load(html);
         const tables = $$("table").toArray();
-        const trCount = $$("tr").length;
-        const tdCount = $$("td").length;
-        // <table>のうち最初に td を含むもの → 最初の <tr> の outerHTML
-        let firstRowHtml = null;
-        for (const t of tables) {
+        const tableSummaries = tables.map((t, ti) => {
           const trs = $$(t).find("tr").toArray();
+          // 各 <tr> のテキストを 1 行に圧縮 (空白潰し)
+          const rowsText = trs.map(tr => $$(tr).text().replace(/\s+/g, " ").trim().slice(0, 200));
+          // boat# らしい行 (短い 1-6 を含み、decimal もある行) の outerHTML を最大3つ
+          const candidateRowsHtml = [];
           for (const tr of trs) {
-            if ($$(tr).find("td").length > 0) {
-              firstRowHtml = $$.html(tr);
-              break;
+            const txt = $$(tr).text();
+            if (/\b[1-6]\b/.test(txt) && /\d+\.\d+/.test(txt) && candidateRowsHtml.length < 3) {
+              candidateRowsHtml.push($$.html(tr).slice(0, 1200));
             }
           }
-          if (firstRowHtml) break;
-        }
-        // body 内のテキストを 200 字
-        const bodyText = $$("body").text().replace(/\s+/g, " ").slice(0, 400);
+          return {
+            tableIdx: ti, trCount: trs.length,
+            rowsText: rowsText.slice(0, 12),
+            candidateRowsHtml,
+          };
+        });
         return {
-          name, htmlLength: html.length, tableCount: tables.length, trCount, tdCount,
-          firstRowHtml: firstRowHtml ? firstRowHtml.slice(0, 1500) : null,
-          bodySnippet: bodyText,
+          name, htmlLength: html.length, tableCount: tables.length,
+          totalTr: $$("tr").length, totalTd: $$("td").length,
+          tables: tableSummaries,
         };
       }
       body.debug = {
