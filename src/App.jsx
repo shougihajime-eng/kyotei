@@ -1,0 +1,305 @@
+import { useEffect, useMemo, useState, useCallback } from "react";
+import Header from "./components/Header.jsx";
+import Dashboard from "./components/Dashboard.jsx";
+import RaceList from "./components/RaceList.jsx";
+import RaceDetail from "./components/RaceDetail.jsx";
+import Verify from "./components/Verify.jsx";
+import Settings from "./components/Settings.jsx";
+import Onboarding from "./components/Onboarding.jsx";
+
+import { loadState, saveState, clearState } from "./lib/storage.js";
+import { fetchTodaySchedule, fetchRaceProgram, fetchRaceOdds, fetchRaceResult } from "./lib/api.js";
+import { evaluateRace, buildBuyRecommendation } from "./lib/predict.js";
+import { defaultSettings, summarizeToday, moneyState, perRaceCap } from "./lib/money.js";
+import { todayDate, todayKey, startEpoch } from "./lib/format.js";
+import { generateSampleRaces, buildRacesFromSchedule, mergeProgram, mergeOdds } from "./lib/sample.js";
+
+const REFRESH_COOLDOWN_MS = 60 * 1000;
+
+export default function App() {
+  /* === Persistent state === */
+  const initial = loadState() || {};
+  const [settings, setSettings] = useState({ ...defaultSettings(), ...(initial.settings || {}) });
+  const [predictions, setPredictions] = useState(initial.predictions || {});
+
+  /* === Volatile state === */
+  const [tab, setTab] = useState("home");
+  const [races, setRaces] = useState([]);
+  const [selectedRaceId, setSelectedRaceId] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshMsg, setRefreshMsg] = useState("");
+  const [lastRefreshAt, setLastRefreshAt] = useState(null);
+
+  /* === Persist on change === */
+  useEffect(() => {
+    saveState({ settings, predictions });
+  }, [settings, predictions]);
+
+  /* === Compute evals + recommendations for all races === */
+  const today = useMemo(() => summarizeToday(predictions), [predictions]);
+  const cap = useMemo(() => perRaceCap(settings, today), [settings, today]);
+  const moneyInfo = useMemo(() => moneyState(settings, today), [settings, today]);
+
+  const evals = useMemo(() => {
+    const map = {};
+    for (const r of races) map[r.id] = evaluateRace(r);
+    return map;
+  }, [races]);
+
+  const recommendations = useMemo(() => {
+    const map = {};
+    for (const r of races) {
+      const ev = evals[r.id];
+      map[r.id] = buildBuyRecommendation(ev, settings.riskProfile, cap, moneyInfo.forcedSkip);
+    }
+    return map;
+  }, [races, evals, settings.riskProfile, cap, moneyInfo.forcedSkip]);
+
+  /* === AI判断の自動スナップショット === */
+  useEffect(() => {
+    if (races.length === 0) return;
+    setPredictions((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      const stamp = new Date().toISOString();
+      for (const r of races) {
+        const rec = recommendations[r.id];
+        if (!rec) continue;
+        const dateKey = (r.date || "").replace(/-/g, "");
+        const key = `${dateKey}_${r.id}`;
+        const existing = next[key] || {};
+        const combos = rec.decision === "buy"
+          ? rec.items.map((it) => ({ kind: it.kind, combo: it.combo, stake: it.stake, odds: it.odds, prob: it.prob, ev: it.ev, role: it.role, grade: it.grade }))
+          : [];
+        const updated = {
+          ...existing,
+          key, date: r.date, raceId: r.id, venue: r.venue, jcd: r.jcd, raceNo: r.raceNo,
+          startTime: r.startTime, decision: rec.decision, combos,
+          totalStake: rec.decision === "buy" ? rec.total : 0,
+          grade: rec.grade || null,
+          snapshotAt: stamp,
+        };
+        const cmp = (o) => JSON.stringify({ d: o.decision, c: o.combos, s: o.totalStake });
+        if (cmp(existing) !== cmp(updated)) {
+          next[key] = updated;
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [races, recommendations]);
+
+  /* === 「最新にする」ボタン: 一括取得 === */
+  const refreshAll = useCallback(async () => {
+    if (refreshing) return;
+    const since = lastRefreshAt ? Date.now() - new Date(lastRefreshAt).getTime() : Infinity;
+    if (since < REFRESH_COOLDOWN_MS) {
+      const left = Math.ceil((REFRESH_COOLDOWN_MS - since) / 1000);
+      setRefreshMsg(`⏳ あと ${left} 秒 (連打防止)`);
+      setTimeout(() => setRefreshMsg(""), 2000);
+      return;
+    }
+    setRefreshing(true);
+    setRefreshMsg("🔄 最新データを確認中…");
+    const startedAt = Date.now();
+
+    /* ① 今日のスケジュール */
+    const sched = await fetchTodaySchedule();
+    let baseRaces;
+    if (sched?.ok && sched.total_races > 0) {
+      baseRaces = buildRacesFromSchedule(sched);
+    } else {
+      baseRaces = generateSampleRaces();
+    }
+
+    /* ② 勝負候補 (発走±60分) を絞る → program/odds/result を並列取得 */
+    const now = Date.now();
+    const candidates = baseRaces.filter((r) => {
+      const e = startEpoch(r.date, r.startTime);
+      if (e == null) return false;
+      const diff = (e - now) / 60000;
+      return diff >= -30 && diff <= 60;
+    }).slice(0, 12);
+    setRefreshMsg(`🔄 確認中… (候補 ${candidates.length} レース)`);
+
+    const dateK = todayKey();
+    const enriched = await Promise.all(candidates.map(async (r) => {
+      const e = startEpoch(r.date, r.startTime);
+      const finished = e != null && now > e + 5 * 60 * 1000;
+      const [prog, odds, result] = await Promise.all([
+        fetchRaceProgram(r.jcd, r.raceNo, dateK),
+        fetchRaceOdds(r.jcd, r.raceNo, dateK),
+        finished ? fetchRaceResult(r.jcd, r.raceNo, dateK) : Promise.resolve(null),
+      ]);
+      return { id: r.id, prog, odds, result };
+    }));
+
+    const enrichedMap = Object.fromEntries(enriched.map((e) => [e.id, e]));
+    const merged = baseRaces.map((r) => {
+      const enr = enrichedMap[r.id];
+      if (!enr) return r;
+      let next = r;
+      if (enr.prog) next = mergeProgram(next, enr.prog);
+      if (enr.odds) next = mergeOdds(next, enr.odds);
+      if (enr.result?.first) next = { ...next, apiResult: enr.result };
+      return next;
+    });
+    setRaces(merged);
+
+    /* ③ 結果をあずかる予測へマージ */
+    const dateKey = todayDate().replace(/-/g, "");
+    const stamp = new Date().toISOString();
+    setPredictions((prev) => {
+      const out = { ...prev };
+      for (const r of merged) {
+        if (!r.apiResult?.first) continue;
+        const key = `${dateKey}_${r.id}`;
+        const existing = out[key];
+        if (!existing) continue;
+        if (existing.result?.first) continue;
+        const winnerTri = `${r.apiResult.first}-${r.apiResult.second}-${r.apiResult.third}`;
+        const winnerEx = `${r.apiResult.first}-${r.apiResult.second}`;
+        const winnerWin = String(r.apiResult.first);
+        let payout = 0, hit = false;
+        for (const c of (existing.combos || [])) {
+          const yenPer100 = c.kind === "3連単" ? r.apiResult.payouts?.trifecta?.[winnerTri]
+                          : c.kind === "2連単" ? r.apiResult.payouts?.exacta?.[winnerEx]
+                          : c.kind === "単勝" ? r.apiResult.payouts?.tan?.[winnerWin]
+                          : 0;
+          const matched = c.combo === (c.kind === "3連単" ? winnerTri : c.kind === "2連単" ? winnerEx : winnerWin);
+          if (matched && yenPer100) {
+            payout += (c.stake / 100) * yenPer100;
+            hit = true;
+          }
+        }
+        out[key] = {
+          ...existing,
+          result: {
+            first: r.apiResult.first, second: r.apiResult.second, third: r.apiResult.third,
+            payouts: r.apiResult.payouts, fetchedAt: stamp,
+          },
+          payout, hit, pnl: payout - (existing.totalStake || 0),
+        };
+      }
+      return out;
+    });
+
+    /* ④ 完了 (最低 400 ms 表示) */
+    const elapsed = Date.now() - startedAt;
+    if (elapsed < 400) await new Promise((r2) => setTimeout(r2, 400 - elapsed));
+    const ts = new Date().toISOString();
+    setLastRefreshAt(ts);
+    setRefreshing(false);
+    if (sched?.ok) {
+      setRefreshMsg(`✅ 最新です (${sched.total_venues}会場 / ${sched.total_races}レース / 詳細 ${candidates.length}件)`);
+    } else {
+      setRefreshMsg(`⚠️ ${sched?.error || "取得失敗"} — サンプル動作中`);
+    }
+    setTimeout(() => setRefreshMsg(""), 5000);
+  }, [refreshing, lastRefreshAt]);
+
+  /* === 起動時に 1 回だけ取得 (cooldown bypass) === */
+  useEffect(() => {
+    if (!settings.onboardingDone) return;
+    setLastRefreshAt(null); // bypass cooldown for first call
+    refreshAll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings.onboardingDone]);
+
+  /* === ユーザーアクション: 結論カードから「記録する」 === */
+  const handleRecord = useCallback((race, rec) => {
+    // aiPredictions にすでに combo が入っている。recordedAt を打って永続化。
+    const dateKey = (race.date || "").replace(/-/g, "");
+    const key = `${dateKey}_${race.id}`;
+    setPredictions((prev) => ({
+      ...prev,
+      [key]: {
+        ...prev[key],
+        recorded: true,
+        recordedAt: new Date().toISOString(),
+        virtual: !!settings.virtualMode,
+      },
+    }));
+  }, [settings.virtualMode]);
+
+  /* === Reset === */
+  const handleReset = useCallback(() => {
+    if (!confirm("全データを消去します。よろしいですか?")) return;
+    clearState();
+    setSettings(defaultSettings());
+    setPredictions({});
+    setRaces([]);
+    setLastRefreshAt(null);
+    setRefreshMsg("リセットしました");
+    setTimeout(() => setRefreshMsg(""), 3000);
+  }, []);
+
+  /* === Weekly summary for badge === */
+  const weekly = useMemo(() => {
+    const today = new Date();
+    const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const arr = Object.values(predictions || {}).filter((p) => p.date >= weekAgo);
+    const buys = arr.filter((p) => p.decision === "buy" && p.totalStake > 0);
+    const settled = buys.filter((p) => p.result?.first);
+    let stake = 0, ret = 0, hits = 0;
+    settled.forEach((p) => { stake += p.totalStake; ret += p.payout || 0; if (p.hit) hits++; });
+    return { count: buys.length, settled: settled.length, hits, stake, ret, pnl: ret - stake, roi: stake > 0 ? ret / stake : 0 };
+  }, [predictions]);
+
+  /* === Onboarding === */
+  if (!settings.onboardingDone) {
+    return (
+      <Onboarding settings={settings} setSettings={setSettings}
+        onClose={() => setSettings((prev) => ({ ...prev, onboardingDone: true }))} />
+    );
+  }
+
+  /* === Main === */
+  const selectedRace = selectedRaceId ? races.find((r) => r.id === selectedRaceId) : null;
+
+  return (
+    <div className="min-h-screen">
+      <Header tab={tab} setTab={(t) => { setTab(t); setSelectedRaceId(null); }} today={today} settings={settings} />
+
+      <main className="pb-20">
+        {tab === "home" && (
+          <Dashboard
+            races={races} predictions={predictions} recommendations={recommendations}
+            today={today} weekly={weekly}
+            refreshing={refreshing} refreshMsg={refreshMsg} lastRefreshAt={lastRefreshAt}
+            onRefresh={refreshAll} onRecord={handleRecord} settings={settings}
+            onPickRace={(t) => setTab(t)}
+          />
+        )}
+        {tab === "list" && (
+          <RaceList
+            races={races} evals={evals} recommendations={recommendations}
+            onPickRace={(id) => { setSelectedRaceId(id); setTab("detail"); }}
+          />
+        )}
+        {tab === "detail" && (
+          <RaceDetail
+            race={selectedRace}
+            evalRes={selectedRace ? evals[selectedRace.id] : null}
+            recommendation={selectedRace ? recommendations[selectedRace.id] : null}
+            onRecord={handleRecord}
+            onBack={() => setTab("list")}
+            virtualMode={settings.virtualMode}
+          />
+        )}
+        {tab === "verify" && (
+          <Verify predictions={predictions} />
+        )}
+        {tab === "settings" && (
+          <Settings settings={settings} setSettings={setSettings} onReset={handleReset} />
+        )}
+      </main>
+
+      {moneyInfo.forcedSkip && (
+        <div className="fixed bottom-4 left-4 right-4 max-w-3xl mx-auto alert-error text-sm pulse-soft">
+          🔒 強制見送り中: {moneyInfo.reasons.join(" / ")}
+        </div>
+      )}
+    </div>
+  );
+}

@@ -1,5 +1,6 @@
 .DS_Store
 node_modules/
+dist/
 .vercel
 .env
 .env.local
@@ -8,3 +9,4 @@ node_modules/
 .git_old2/
 .git_v23/
 .git_intermediate/
+.claude/worktrees/

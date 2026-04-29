@@ -1,10 +1,26 @@
 {
   "name": "kyotei-ev-assistant",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
-  "description": "Boat-race EV assistant (frontend + Vercel serverless functions)",
+  "type": "module",
+  "description": "Kyotei (boat-race) EV assistant — buy or skip, in 3 seconds.",
   "engines": { "node": ">=18" },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
   "dependencies": {
-    "cheerio": "^1.0.0-rc.12"
+    "cheerio": "^1.0.0-rc.12",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "recharts": "^2.12.7"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.1",
+    "autoprefixer": "^10.4.19",
+    "postcss": "^8.4.41",
+    "tailwindcss": "^3.4.10",
+    "vite": "^5.4.2"
   }
 }
