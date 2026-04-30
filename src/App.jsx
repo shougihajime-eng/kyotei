@@ -248,6 +248,19 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings.onboardingDone]);
 
+  /* === 手動記録 (リアル/エア舟券フォーム) === */
+  const handleManualBet = useCallback((record) => {
+    setPredictions((prev) => ({ ...prev, [record.key]: record }));
+  }, []);
+
+  const handleDeleteRecord = useCallback((key) => {
+    setPredictions((prev) => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  }, []);
+
   /* === ユーザーアクション: 結論カードから「記録する」 ===
         virtualOverride を渡せば仮想/実 の選択を強制 (例: 「リアル購入として記録」 ボタンから true) */
   const handleRecord = useCallback((race, rec, opts = {}) => {
@@ -336,7 +349,9 @@ export default function App() {
           />
         )}
         {tab === "verify" && (
-          <Verify predictions={predictions} />
+          <Verify predictions={predictions}
+            onManualBet={handleManualBet}
+            onDeleteRecord={handleDeleteRecord} />
         )}
         {tab === "stats" && (
           <Stats predictions={predictions} lastRefreshAt={lastRefreshAt} />

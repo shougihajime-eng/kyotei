@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { yen, pct } from "../lib/format.js";
+import ManualBetForm from "./ManualBetForm.jsx";
 
 /**
  * 検証画面 — レース別カード一覧 + 集計。
@@ -7,8 +8,10 @@ import { yen, pct } from "../lib/format.js";
  *  ・各カードに 買い目 / 結果 / 着順 / 払戻 / 収支 を全部表示 (クリック不要)
  *  ・最低 1 週間分を時系列降順
  */
-export default function Verify({ predictions }) {
+export default function Verify({ predictions, onManualBet, onDeleteRecord }) {
   const [tab, setTab] = useState("air"); // air | real
+  const [formOpen, setFormOpen] = useState(false);
+  const [editing, setEditing] = useState(null); // 編集対象の prediction
 
   const all = useMemo(() => Object.values(predictions || {}), [predictions]);
 
@@ -45,13 +48,17 @@ export default function Verify({ predictions }) {
 
   return (
     <div className="max-w-3xl mx-auto px-4 mt-4 space-y-4">
-      {/* タブ */}
-      <div className="flex gap-2">
+      {/* タブ + 手動記録ボタン */}
+      <div className="flex gap-2 items-center flex-wrap">
         <button onClick={() => setTab("air")} className={"tab-btn flex-1 " + (tab === "air" ? "active" : "")}>
           🧪 エア舟券
         </button>
         <button onClick={() => setTab("real")} className={"tab-btn flex-1 " + (tab === "real" ? "active" : "")}>
           💰 リアル舟券
+        </button>
+        <button onClick={() => { setEditing(null); setFormOpen(true); }}
+          style={{ minHeight: 44, minWidth: 120, padding: "8px 14px", borderRadius: 10, fontSize: 14, fontWeight: 800, border: "none", cursor: "pointer", background: "#10b981", color: "#fff" }}>
+          + 手動記録
         </button>
       </div>
 
@@ -88,16 +95,31 @@ export default function Verify({ predictions }) {
       {/* レース別カード */}
       {cards.length === 0 ? (
         <div className="card p-4 text-center text-sm opacity-70" style={{ minHeight: 100 }}>
-          {tab === "air" ? "エア舟券" : "リアル舟券"} の記録なし
+          {tab === "air" ? "エア舟券" : "リアル舟券"} の記録なし<br />
+          <button onClick={() => { setEditing(null); setFormOpen(true); }}
+            className="btn btn-success mt-3 text-sm">+ 手動記録する</button>
         </div>
       ) : (
-        cards.map((p) => <RaceCard key={p.key} p={p} />)
+        cards.map((p) => <RaceCard key={p.key} p={p}
+          onEdit={p.manuallyRecorded ? () => { setEditing(p); setFormOpen(true); } : null}
+          onDelete={p.manuallyRecorded && onDeleteRecord ? () => {
+            if (confirm(`${p.venue} ${p.raceNo}R の記録を削除しますか?`)) onDeleteRecord(p.key);
+          } : null}
+        />)
       )}
+
+      {/* 手動記録フォーム */}
+      <ManualBetForm
+        open={formOpen}
+        initial={editing}
+        onClose={() => { setFormOpen(false); setEditing(null); }}
+        onSubmit={(record) => onManualBet && onManualBet(record)}
+      />
     </div>
   );
 }
 
-function RaceCard({ p }) {
+function RaceCard({ p, onEdit, onDelete }) {
   const settled = !!p.result?.first;
   const correct = settled ? `${p.result.first}-${p.result.second}-${p.result.third}` : null;
   const main = (p.combos || [])[0];
@@ -120,10 +142,15 @@ function RaceCard({ p }) {
         <div className="text-sm opacity-90">
           <span className="font-bold">{p.venue} {p.raceNo}R</span>
           <span className="ml-2 opacity-70 text-xs">{p.date} {p.startTime}</span>
+          {p.manuallyRecorded && <span className="pill ml-2" style={{ background: "rgba(34,211,238,0.18)", color: "#a5f3fc", fontSize: 10 }}>📝 手動</span>}
         </div>
-        {status === "hit"  && <span className="pill" style={{ background: "#10b981", color: "#fff" }}>🎯 的中</span>}
-        {status === "miss" && <span className="pill" style={{ background: "#ef4444", color: "#fff" }}>❌ 不的中</span>}
-        {status === "pending" && <span className="pill badge-skip">未確定</span>}
+        <div className="flex items-center gap-2">
+          {status === "hit"  && <span className="pill" style={{ background: "#10b981", color: "#fff" }}>🎯 的中</span>}
+          {status === "miss" && <span className="pill" style={{ background: "#ef4444", color: "#fff" }}>❌ 不的中</span>}
+          {status === "pending" && <span className="pill badge-skip">未確定</span>}
+          {onEdit && <button onClick={onEdit} className="btn btn-ghost text-xs" style={{ padding: "4px 8px" }}>✏️</button>}
+          {onDelete && <button onClick={onDelete} className="btn btn-ghost text-xs" style={{ padding: "4px 8px", color: "#f87171" }}>🗑</button>}
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3">
@@ -158,6 +185,7 @@ function RaceCard({ p }) {
           ) : <div className="opacity-70 mt-1">未確定</div>}
         </div>
       </div>
+      {p.memo && <div className="text-xs opacity-70 mt-2 italic border-l-2 pl-2 border-cyan-400">📝 {p.memo}</div>}
     </section>
   );
 }
