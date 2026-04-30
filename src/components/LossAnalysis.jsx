@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { yen } from "../lib/format.js";
 import { analyzePrediction, aggregateLessons } from "../lib/analysis.js";
-import { analyzeStrengthsAndWeaknesses, getLearnedWeights } from "../lib/learning.js";
+import { analyzeStrengthsAndWeaknesses, getLearnedWeights, getLearningLog, backtestComparison } from "../lib/learning.js";
 
 /**
  * 外れた理由 AI 分析画面
@@ -19,21 +19,61 @@ export default function LossAnalysis({ predictions, races }) {
   const aggregate = useMemo(() => aggregateLessons(predictions), [predictions]);
   const swot = useMemo(() => analyzeStrengthsAndWeaknesses(predictions), [predictions]);
   const learned = useMemo(() => getLearnedWeights(predictions), [predictions]);
+  const bt = useMemo(() => backtestComparison(predictions), [predictions]);
+  const log = useMemo(() => getLearningLog(), []);
 
   return (
     <div className="max-w-3xl mx-auto px-4 mt-4 space-y-4">
       <section className="card p-4" style={{ minHeight: 120 }}>
-        <h2 className="text-lg font-bold mb-2">🔍 外れた理由 AI 分析 + 自己進化</h2>
+        <h2 className="text-lg font-bold mb-2">🔍 外れた理由 AI 分析 + 自己改善</h2>
         <div className="text-xs opacity-70">
           AI が出した予想と実際の結果を比較し、なぜ外れたか / 何を見落としたかを言語化します。
-          さらに過去の的中傾向から各因子の重みを自動調整して、次の予想に反映します。
+          さらに過去の的中傾向から重みを慎重に調整して、<b>過去データをもとに改善を試みます</b> (検証で悪化なら自動ロールバック)。
         </div>
       </section>
 
-      {/* 🧠 自己進化サマリ — 学習が反映されている重み補正 */}
+      {/* 🧪 バックテスト比較 — 7日 / 14日 / 30日 の ROI */}
+      {bt && bt.all.count >= 5 && (
+        <section className="card p-4">
+          <h3 className="font-bold text-sm mb-2">🧪 バックテスト (期間別 ROI)</h3>
+          <div className="grid grid-cols-3 gap-2">
+            {[
+              { label: "直近 7日",  s: bt.r7 },
+              { label: "直近 14日", s: bt.r14 },
+              { label: "直近 30日", s: bt.r30 },
+            ].map((x, i) => {
+              const color = x.s.roi >= 1 ? "#34d399" : x.s.roi >= 0.85 ? "#fde68a" : "#f87171";
+              return (
+                <div key={i} className="text-center" style={{ background: "rgba(0,0,0,0.25)", borderRadius: 8, padding: 10 }}>
+                  <div className="text-xs opacity-70">{x.label}</div>
+                  <div className="num font-bold mt-1" style={{ fontSize: 18, color }}>
+                    {x.s.stake > 0 ? Math.round(x.s.roi * 100) + "%" : "—"}
+                  </div>
+                  <div className="text-xs opacity-60">{x.s.count}件 / 的中{x.s.hits}</div>
+                </div>
+              );
+            })}
+          </div>
+          {bt.isDeteriorating && (
+            <div className="alert-warn text-xs mt-3">
+              ⚠️ 直近 7 日が 30 日比 {bt.recentDropPct}pt 悪化 — 学習を一時停止してロールバック中
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* 🧠 学習結果 — 採用 / 不採用 / ロールバック */}
       {learned.ready && (
-        <section className="card p-4" style={{ borderColor: "#22d3ee", borderWidth: 2 }}>
-          <h3 className="font-bold text-sm mb-2">🧠 AI 自己進化中 ({learned.sampleSize} 件のレース履歴から学習)</h3>
+        <section className="card p-4" style={{ borderColor: learned.decision === "accepted" ? "#22d3ee" : learned.decision === "rollback" ? "#ef4444" : "#475569", borderWidth: 2 }}>
+          <h3 className="font-bold text-sm mb-2">
+            🧠 学習結果 ({learned.sampleSize} 件) —
+            <span className={"ml-2 " + (learned.decision === "accepted" ? "text-pos" : learned.decision === "rollback" ? "text-neg" : "")}>
+              {learned.decision === "accepted" ? "✅ 採用"
+              : learned.decision === "rollback" ? "🛑 ロールバック (前の重みに戻す)"
+              : learned.decision === "pending" ? "⏳ 判断保留"
+              : "= 中立 (重み変更なし)"}
+            </span>
+          </h3>
           {learned.notes.length > 0 ? (
             <ul className="space-y-1 text-xs">
               {learned.notes.map((n, i) => (
@@ -43,10 +83,43 @@ export default function LossAnalysis({ predictions, races }) {
               ))}
             </ul>
           ) : (
-            <div className="text-xs opacity-70">学習履歴は十分ですが、現状の重みが最適と判定されました。</div>
+            <div className="text-xs opacity-70">特記事項なし</div>
           )}
           <div className="text-xs opacity-60 mt-2">
-            ※ ここで決まった補正値は次の予想計算に自動反映されます (各因子 ±0.05 まで)
+            ※ 過学習防止: 7/14/30 日で安定した傾向のみ採用。1 期間だけの偏りは除外。最大補正は ±0.02。
+          </div>
+        </section>
+      )}
+
+      {/* 📜 学習ログ (採用/不採用の履歴) */}
+      {log.length > 0 && (
+        <section className="card p-4">
+          <h3 className="font-bold text-sm mb-2">📜 学習ログ (直近 {Math.min(log.length, 10)} 件)</h3>
+          <div className="overflow-x-auto scrollbar">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-left opacity-60 border-b border-[#1f2a44]">
+                  <th className="py-1">日付</th><th>判定</th><th>サンプル</th><th>変更</th><th>30日ROI</th><th>7日ROI</th>
+                </tr>
+              </thead>
+              <tbody>
+                {log.slice(0, 10).map((l) => (
+                  <tr key={l.timestamp} className="border-b border-[#1f2a44]/40">
+                    <td className="py-1 num">{l.date}</td>
+                    <td className={l.decision === "accepted" ? "text-pos" : "text-neg"}>
+                      {l.decision === "accepted" ? "採用" : "不採用"}
+                    </td>
+                    <td className="num">{l.sampleSize}</td>
+                    <td className="font-mono text-xs">
+                      {Object.keys(l.adjustments || {}).length === 0 ? "—" :
+                        Object.entries(l.adjustments).map(([k, v]) => `${k}: ${v >= 0 ? "+" : ""}${v.toFixed(2)}`).join(", ")}
+                    </td>
+                    <td className="num">{l.backtest?.r30Roi != null ? Math.round(l.backtest.r30Roi * 100) + "%" : "—"}</td>
+                    <td className="num">{l.backtest?.r7Roi != null ? Math.round(l.backtest.r7Roi * 100) + "%" : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </section>
       )}
