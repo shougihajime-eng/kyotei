@@ -52,43 +52,53 @@ function parseFukuOdds(html, depth /* 2 or 3 */) {
     headCells.forEach((c) => { const m = c.match(/^([1-6])\b/); if (m) colBoats.push(m[1]); });
     if (colBoats.length < 4) continue; // ヘッダが揃わないテーブルは対象外
     if (depth === 3) {
-      // 3連複: 各セルから [2着, 3着, オッズ] を読み取る
-      const carry = {};
+      // 3連複: 各列で 1着固定。データセル内の token 数で triplet/pair を判定し、
+      //          列ごとに 2着 carry を保持。
+      const carry2nd = {}; // first(列) → 直近の 2着
       $(tbl).find("tr").slice(1).each((rIdx, tr) => {
         const cells = $(tr).find("td").toArray().map((td) => $(td).text().replace(/\s+/g, " ").trim());
-        // cells はテーブル全列の値。各セルが 1〜6 の数字 or decimal を含む
-        // セル内のトークンを取得して triplet (a,b,odds) を順に消化
-        const flat = [];
+        // 各セル単位で、その列に対応する 1着 を計算する
+        // ただし「セル数 = 列数」 とは限らない (rowspan で詰まることがある)
+        // よって cells のインデックスから直接列番号を逆算するのは難しい。
+        // 代わりに: 各セルの token 群を見て、3-token なら triplet、2-token なら pair として処理。
+        //          列番号はカウンタで進める (順番に 1〜6)。
+        let col = 0; // 0-based 列カウンタ
         for (const c of cells) {
-          const tokens = c.split(" ").filter((t) => /^\d+(\.\d+)?$/.test(t));
-          for (const t of tokens) flat.push(t);
-        }
-        // flat を 3 トークン (2着, 3着, odds) ごとに切る
-        let k = 0;
-        for (let i = 0; i < flat.length; ) {
-          const a = flat[i], b = flat[i + 1], c = flat[i + 2];
-          // パターン: 2着=int, 3着=int, odds=decimal
-          if (/^[1-6]$/.test(a) && /^[1-6]$/.test(b) && /^\d+(\.\d+)?$/.test(c) && /\./.test(c)) {
-            const first = colBoats[k];
-            if (first && a !== first && b !== first && a !== b) {
-              const sorted = [+first, +a, +b].sort((x, y) => x - y);
-              const key = sorted.join("=");
-              const odds = parseFloat(c);
-              if (Number.isFinite(odds) && odds >= 1.0 && !out[key]) out[key] = odds;
-            }
-            i += 3; k = (k + 1) % 6;
-          } else if (/^[1-6]$/.test(a) && /^\d+(\.\d+)?$/.test(b) && /\./.test(b)) {
-            // ペア (rowspan で 2着 carry): [3着, odds]
-            const first = colBoats[k];
-            const second = carry[first];
-            if (first && second && a !== first && a !== second) {
-              const sorted = [+first, +second, +a].sort((x, y) => x - y);
-              const key = sorted.join("=");
-              const odds = parseFloat(b);
-              if (Number.isFinite(odds) && odds >= 1.0 && !out[key]) out[key] = odds;
-            }
-            i += 2; k = (k + 1) % 6;
-          } else { i += 1; }
+          if (col >= 6) break;
+          const toks = c.split(" ").filter((t) => /^\d+(\.\d+)?$/.test(t));
+          if (toks.length === 0) {
+            col += 1; // 空セルでも列カウンタを進める (rowspan の可能性あり)
+            continue;
+          }
+          const first = colBoats[col] || String(col + 1);
+          // セル内の token を順に消化
+          for (let i = 0; i < toks.length; ) {
+            const a = toks[i], b = toks[i + 1], cc = toks[i + 2];
+            if (/^[1-6]$/.test(a) && /^[1-6]$/.test(b) && cc && /\./.test(cc)) {
+              // triplet: 2着=a, 3着=b, odds=cc
+              if (a !== first && b !== first && a !== b) {
+                const odds = parseFloat(cc);
+                if (Number.isFinite(odds) && odds >= 1.0) {
+                  const key = [+first, +a, +b].sort((x, y) => x - y).join("=");
+                  if (!out[key]) out[key] = odds;
+                  carry2nd[first] = a;
+                }
+              }
+              i += 3;
+            } else if (/^[1-6]$/.test(a) && b && /\./.test(b)) {
+              // pair: 3着=a, odds=b (2着は carry)
+              const second = carry2nd[first];
+              if (second && a !== first && a !== second) {
+                const odds = parseFloat(b);
+                if (Number.isFinite(odds) && odds >= 1.0) {
+                  const key = [+first, +second, +a].sort((x, y) => x - y).join("=");
+                  if (!out[key]) out[key] = odds;
+                }
+              }
+              i += 2;
+            } else { i += 1; }
+          }
+          col += 1;
         }
       });
     } else {
