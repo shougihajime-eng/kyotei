@@ -1,131 +1,163 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { yen, pct } from "../lib/format.js";
 
 /**
- * 検証画面 — 「AI通り 1 週間買ってたら いくら増えた / 減った」 を実データで表示。
+ * 検証画面 — レース別カード一覧 + 集計。
+ *  ・タブで [エア舟券] [リアル舟券] を切替
+ *  ・各カードに 買い目 / 結果 / 着順 / 払戻 / 収支 を全部表示 (クリック不要)
+ *  ・最低 1 週間分を時系列降順
  */
 export default function Verify({ predictions }) {
-  const { weekBuys, settled, weekly } = useMemo(() => {
-    const arr = Object.values(predictions || {});
+  const [tab, setTab] = useState("air"); // air | real
+
+  const all = useMemo(() => Object.values(predictions || {}), [predictions]);
+
+  const filtered = useMemo(() => {
     const today = new Date();
     const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-    const inRange = (d) => d && d >= weekAgo && d <= today.toISOString().slice(0, 10);
-    const weekArr = arr.filter((p) => inRange(p.date));
-    const buys = weekArr.filter((p) => p.decision === "buy" && p.totalStake > 0);
-    const settledArr = buys.filter((p) => p.result?.first);
-    let stake = 0, ret = 0, hits = 0;
-    settledArr.forEach((p) => {
-      stake += p.totalStake;
-      ret += p.payout || 0;
-      if (p.hit) hits += 1;
+    return all.filter((p) => p.date >= weekAgo).filter((p) => {
+      const isReal = p.virtual === false;
+      return tab === "real" ? isReal : !isReal;
     });
+  }, [all, tab]);
+
+  const buys = filtered.filter((p) => p.decision === "buy" && p.totalStake > 0);
+  const settled = buys.filter((p) => p.result?.first);
+
+  const stats = useMemo(() => {
+    let stake = 0, ret = 0, hits = 0;
+    settled.forEach((p) => { stake += p.totalStake; ret += p.payout || 0; if (p.hit) hits++; });
     return {
-      weekBuys: buys,
-      settled: settledArr,
-      weekly: {
-        count: buys.length,
-        settled: settledArr.length,
-        hits,
-        misses: settledArr.length - hits,
-        stake, ret, pnl: ret - stake,
-        roi: stake > 0 ? ret / stake : 0,
-        hitRate: settledArr.length > 0 ? hits / settledArr.length : 0,
-      },
+      count: buys.length,
+      settled: settled.length,
+      hits, miss: settled.length - hits,
+      stake, ret, pnl: ret - stake,
+      roi: stake > 0 ? ret / stake : 0,
+      hitRate: settled.length > 0 ? hits / settled.length : 0,
     };
-  }, [predictions]);
+  }, [buys, settled]);
 
-  const w = weekly;
-  const pnlColor = w.pnl >= 0 ? "text-pos" : "text-neg";
-
-  // 買って正解 / 買って外れ
-  const goodBuys = settled.filter((p) => p.hit);
-  const badBuys = settled.filter((p) => !p.hit);
+  const cards = useMemo(() => {
+    return [...buys].sort((a, b) =>
+      (b.recordedAt || b.snapshotAt || "").localeCompare(a.recordedAt || a.snapshotAt || "")
+    );
+  }, [buys]);
 
   return (
-    <div className="max-w-5xl mx-auto px-4 mt-4 space-y-4">
-      <section className="card p-5" style={{ borderWidth: 2, borderColor: w.pnl >= 0 ? "#10b981" : "#ef4444" }}>
-        <div className="text-xs opacity-70 uppercase tracking-widest mb-2">AI通りに 1 週間買っていたら</div>
+    <div className="max-w-3xl mx-auto px-4 mt-4 space-y-4">
+      {/* タブ */}
+      <div className="flex gap-2">
+        <button onClick={() => setTab("air")} className={"tab-btn flex-1 " + (tab === "air" ? "active" : "")}>
+          🧪 エア舟券
+        </button>
+        <button onClick={() => setTab("real")} className={"tab-btn flex-1 " + (tab === "real" ? "active" : "")}>
+          💰 リアル舟券
+        </button>
+      </div>
+
+      {/* 集計 */}
+      <section className="card p-4" style={{ minHeight: 140 }}>
+        <div className="text-xs opacity-70 uppercase tracking-widest mb-2">
+          {tab === "air" ? "エア舟券" : "リアル舟券"} - 直近 7 日間
+        </div>
         <div className="flex items-baseline gap-4 flex-wrap">
           <div>
-            <div className="text-xs opacity-70">利益 / 損失</div>
-            <div className={"num " + pnlColor} style={{ fontSize: "min(48px,11vw)", fontWeight: 900, lineHeight: 1.05 }}>
-              {w.pnl >= 0 ? "+" : ""}{yen(w.pnl)}
+            <div className="text-xs opacity-70">収支</div>
+            <div className={"num " + (stats.pnl >= 0 ? "text-pos" : "text-neg")} style={{ fontSize: "min(40px,9vw)", fontWeight: 900 }}>
+              {stats.pnl >= 0 ? "+" : ""}{yen(stats.pnl)}
             </div>
           </div>
           <div>
             <div className="text-xs opacity-70">回収率</div>
-            <div className={"num " + pnlColor} style={{ fontSize: "min(36px,8vw)", fontWeight: 800 }}>
-              {w.stake > 0 ? (w.roi * 100).toFixed(0) + "%" : "—"}
+            <div className={"num " + (stats.roi >= 1 ? "text-pos" : "text-neg")} style={{ fontSize: "min(28px,7vw)", fontWeight: 800 }}>
+              {stats.stake > 0 ? Math.round(stats.roi * 100) + "%" : "—"}
+            </div>
+          </div>
+          <div>
+            <div className="text-xs opacity-70">的中率</div>
+            <div className="num" style={{ fontSize: "min(28px,7vw)", fontWeight: 800 }}>
+              {stats.settled > 0 ? Math.round(stats.hitRate * 100) + "%" : "—"}
             </div>
           </div>
         </div>
+        <div className="text-xs opacity-70 mt-2">
+          勝負 {stats.count} 件 / 確定 {stats.settled} / 的中 {stats.hits} / 外 {stats.miss}
+        </div>
       </section>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Stat label="勝負レース" value={w.count + "件"} />
-        <Stat label="的中レース" value={w.hits + "件"}
-          sub={`的中率 ${w.settled > 0 ? pct(w.hitRate, 0) : "—"}`} />
-        <Stat label="総投資額" value={yen(w.stake)} />
-        <Stat label="総払戻" value={yen(w.ret)} />
+      {/* レース別カード */}
+      {cards.length === 0 ? (
+        <div className="card p-4 text-center text-sm opacity-70" style={{ minHeight: 100 }}>
+          {tab === "air" ? "エア舟券" : "リアル舟券"} の記録なし
+        </div>
+      ) : (
+        cards.map((p) => <RaceCard key={p.key} p={p} />)
+      )}
+    </div>
+  );
+}
+
+function RaceCard({ p }) {
+  const settled = !!p.result?.first;
+  const correct = settled ? `${p.result.first}-${p.result.second}-${p.result.third}` : null;
+  const main = (p.combos || [])[0];
+  const status = !settled ? "pending"
+               : p.hit ? "hit"
+               : "miss";
+  const bg = status === "hit" ? "linear-gradient(135deg,#053527,#0b1220)"
+           : status === "miss" ? "linear-gradient(135deg,#3b1d1d,#0b1220)"
+           : "linear-gradient(135deg,#1e293b,#0f1830)";
+  const border = status === "hit" ? "#10b981"
+              : status === "miss" ? "#ef4444"
+              : "#475569";
+
+  return (
+    <section style={{
+      padding: 14, borderRadius: 14, background: bg, border: `2px solid ${border}`,
+      color: "#fff", minHeight: 160,
+    }}>
+      <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
+        <div className="text-sm opacity-90">
+          <span className="font-bold">{p.venue} {p.raceNo}R</span>
+          <span className="ml-2 opacity-70 text-xs">{p.date} {p.startTime}</span>
+        </div>
+        {status === "hit"  && <span className="pill" style={{ background: "#10b981", color: "#fff" }}>🎯 的中</span>}
+        {status === "miss" && <span className="pill" style={{ background: "#ef4444", color: "#fff" }}>❌ 不的中</span>}
+        {status === "pending" && <span className="pill badge-skip">未確定</span>}
       </div>
 
-      <DetailTable title="✅ 買って正解" rows={goodBuys} positive />
-      <DetailTable title="❌ 買って外れ" rows={badBuys} />
-    </div>
-  );
-}
-
-function Stat({ label, value, sub }) {
-  return (
-    <div className="card p-3">
-      <div className="text-xs opacity-70">{label}</div>
-      <div className="num font-bold mt-1" style={{ fontSize: 22 }}>{value}</div>
-      {sub && <div className="text-xs opacity-60 mt-1">{sub}</div>}
-    </div>
-  );
-}
-
-function DetailTable({ title, rows, positive }) {
-  return (
-    <section className="card p-4">
-      <h3 className="font-bold text-sm mb-2">{title} ({rows.length})</h3>
-      {rows.length === 0 ? (
-        <div className="text-xs opacity-70">該当なし</div>
-      ) : (
-        <div className="overflow-x-auto scrollbar">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-xs opacity-60 border-b border-[#1f2a44]">
-                <th className="py-1">日付</th>
-                <th>会場/R</th>
-                <th>買い目</th>
-                <th>投資</th>
-                <th>払戻</th>
-                <th>収支</th>
-                <th>正解</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((p) => {
-                const correct = p.result ? `${p.result.first}-${p.result.second}-${p.result.third}` : "—";
-                return (
-                  <tr key={p.key} className="border-b border-[#1f2a44]/50">
-                    <td className="py-1 num">{p.date}</td>
-                    <td>{p.venue} {p.raceNo}R</td>
-                    <td className="font-mono text-xs">{(p.combos || []).map((c) => c.combo).join(" / ")}</td>
-                    <td className="num">{yen(p.totalStake)}</td>
-                    <td className="num">{yen(p.payout || 0)}</td>
-                    <td className={"num " + (positive ? "text-pos" : "text-neg")}>
-                      {positive ? "+" : "−"}{yen(Math.abs(p.pnl || 0))}
-                    </td>
-                    <td className="font-mono text-xs">{correct}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <div className="text-xs opacity-70">買い目 (本命)</div>
+          {main ? (
+            <>
+              <div className="font-mono" style={{ fontSize: 20, fontWeight: 800, marginTop: 2 }}>{main.combo}</div>
+              <div className="text-xs opacity-70">{main.kind}</div>
+            </>
+          ) : <div className="opacity-70 mt-1">—</div>}
+          {p.combos?.length > 1 && (
+            <div className="text-xs opacity-70 mt-2 font-mono">
+              押さえ: {p.combos.slice(1).map(c => c.combo).join(" / ")}
+            </div>
+          )}
+          <div className="num text-xs opacity-80 mt-1">投資 {yen(p.totalStake)}</div>
         </div>
-      )}
+
+        <div>
+          <div className="text-xs opacity-70">着順 (正解)</div>
+          {settled ? (
+            <>
+              <div className="font-mono" style={{ fontSize: 20, fontWeight: 800, color: "#fde68a", marginTop: 2 }}>{correct}</div>
+              <div className="num text-xs opacity-80 mt-1">
+                払戻 {yen(p.payout || 0)}
+              </div>
+              <div className={"num mt-2 " + (p.pnl >= 0 ? "text-pos" : "text-neg")} style={{ fontSize: 18, fontWeight: 800 }}>
+                {p.pnl >= 0 ? "+" : ""}{yen(p.pnl)}
+              </div>
+            </>
+          ) : <div className="opacity-70 mt-1">未確定</div>}
+        </div>
+      </div>
     </section>
   );
 }

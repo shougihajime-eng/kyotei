@@ -224,18 +224,21 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings.onboardingDone]);
 
-  /* === ユーザーアクション: 結論カードから「記録する」 === */
-  const handleRecord = useCallback((race, rec) => {
-    // aiPredictions にすでに combo が入っている。recordedAt を打って永続化。
+  /* === ユーザーアクション: 結論カードから「記録する」 ===
+        virtualOverride を渡せば仮想/実 の選択を強制 (例: 「リアル購入として記録」 ボタンから true) */
+  const handleRecord = useCallback((race, rec, opts = {}) => {
     const dateKey = (race.date || "").replace(/-/g, "");
     const key = `${dateKey}_${race.id}`;
+    const virtual = opts.real === true ? false
+                  : opts.real === false ? true
+                  : !!settings.virtualMode;
     setPredictions((prev) => ({
       ...prev,
       [key]: {
         ...prev[key],
         recorded: true,
         recordedAt: new Date().toISOString(),
-        virtual: !!settings.virtualMode,
+        virtual,
       },
     }));
   }, [settings.virtualMode]);

@@ -139,15 +139,24 @@ export function mergeProgram(race, prog) {
 }
 
 /**
- * /api/odds のレスポンスで currentWinOdds を上書き。
+ * /api/odds のレスポンスを race にマージ。
+ *  apiOdds = { win, exacta, trifecta, quinella, trio } 全部保持。
+ *  predict.js から実オッズで EV 計算するためにそのまま渡す。
  */
 export function mergeOdds(race, odds) {
-  if (!odds?.win) return race;
-  const arr = race.boats.map((b) => +odds.win[String(b.boatNo)] || null);
+  if (!odds) return race;
+  // 単勝オッズの配列 (UI で他の用途に使う場合)
+  const arr = odds.win ? race.boats.map((b) => +odds.win[String(b.boatNo)] || null) : null;
   return {
     ...race,
     currentWinOdds: arr,
-    apiOdds: odds,
+    apiOdds: {
+      win:      odds.win || {},
+      exacta:   odds.exacta || {},
+      trifecta: odds.trifecta || {},
+      quinella: odds.quinella || {},
+      trio:     odds.trio || {},
+    },
   };
 }
 

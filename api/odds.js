@@ -19,7 +19,51 @@ const URLS = {
   win:      (jcd, rno, hd) => `https://www.boatrace.jp/owpc/pc/race/oddstf?jcd=${jcd}&rno=${rno}&hd=${hd}`,
   exacta:   (jcd, rno, hd) => `https://www.boatrace.jp/owpc/pc/race/odds2tf?jcd=${jcd}&rno=${rno}&hd=${hd}`,
   trifecta: (jcd, rno, hd) => `https://www.boatrace.jp/owpc/pc/race/odds3t?jcd=${jcd}&rno=${rno}&hd=${hd}`,
+  quinella: (jcd, rno, hd) => `https://www.boatrace.jp/owpc/pc/race/oddsk2?jcd=${jcd}&rno=${rno}&hd=${hd}`,
+  trio:     (jcd, rno, hd) => `https://www.boatrace.jp/owpc/pc/race/odds3f?jcd=${jcd}&rno=${rno}&hd=${hd}`,
 };
+
+/* 連複 (2連複 / 3連複) のオッズを抽出
+   組番のキーは "X=Y" / "X=Y=Z" 形式 (低い番号順)。
+   ページ構造は連単と類似のマトリクス。 */
+function parseFukuOdds(html, depth /* 2 or 3 */) {
+  const $ = cheerio.load(html);
+  const out = {};
+  // ナビゲーションテーブル除外
+  const dataTables = $("table").toArray().filter(t => {
+    const txt = $(t).text();
+    return !/締切予定時刻/.test(txt) && /\d+\.\d/.test(txt);
+  });
+  if (dataTables.length === 0) return out;
+
+  function tokenize(txt) {
+    return txt.replace(/[ 　\s]+/g, " ").trim().split(" ").filter(t => /^\d+(\.\d+)?$/.test(t));
+  }
+
+  // 連複は通常 1 表で 6 行 × 多列。各セルに「X=Y(=Z) ¥オッズ」のペアか単独オッズが並ぶ。
+  // 防御的: 全 td の text からマッチングを行う
+  for (const tbl of dataTables) {
+    $(tbl).find("tr").each((_, tr) => {
+      const txt = $(tr).text();
+      if (/[一-龯]/.test(txt)) return; // 選手名行はスキップ
+      const re = depth === 2
+        ? /([1-6])=([1-6])[\s¥]*?(\d+(?:\.\d+)?)/g
+        : /([1-6])=([1-6])=([1-6])[\s¥]*?(\d+(?:\.\d+)?)/g;
+      let m;
+      while ((m = re.exec(txt)) !== null) {
+        const odds = parseFloat(m[depth + 1]);
+        if (!Number.isFinite(odds) || odds < 1.0) continue;
+        // キーは小→大 ソート
+        const nums = depth === 2 ? [+m[1], +m[2]] : [+m[1], +m[2], +m[3]];
+        if (new Set(nums).size !== nums.length) continue; // 重複番号は無効
+        const sorted = [...nums].sort((a, b) => a - b);
+        const key = sorted.join("=");
+        if (!out[key]) out[key] = odds;
+      }
+    });
+  }
+  return out;
+}
 
 /**
  * 単勝 ページから艇番→オッズを抽出
@@ -163,23 +207,33 @@ export default async function handler(req, res) {
     if (!validateRno(rno)) return fail(res, 400, "invalid rno (期待: 1〜12)");
     if (!/^\d{8}$/.test(date)) return fail(res, 400, "invalid date (期待: YYYYMMDD)");
 
-    const [winHtml, exHtml, trHtml] = await Promise.all([
+    const [winHtml, exHtml, trHtml, qHtml, fHtml] = await Promise.all([
       fetchHtml(URLS.win(jcd, rno, date)).catch(e => null),
       fetchHtml(URLS.exacta(jcd, rno, date)).catch(e => null),
       fetchHtml(URLS.trifecta(jcd, rno, date)).catch(e => null),
+      fetchHtml(URLS.quinella(jcd, rno, date)).catch(e => null),
+      fetchHtml(URLS.trio(jcd, rno, date)).catch(e => null),
     ]);
 
     const win      = winHtml ? parseWinOdds(winHtml)        : {};
     const exacta   = exHtml  ? parseComboOdds(exHtml, 2)    : {};
     const trifecta = trHtml  ? parseComboOdds(trHtml, 3)    : {};
+    const quinella = qHtml   ? parseFukuOdds(qHtml, 2)      : {};
+    const trio     = fHtml   ? parseFukuOdds(fHtml, 3)      : {};
 
     // 直前オッズは 20 秒キャッシュ (上流負荷軽減と直前更新の両立)
     setCache(res, 20, 60);
-    const counts = { win: Object.keys(win).length, exacta: Object.keys(exacta).length, trifecta: Object.keys(trifecta).length };
+    const counts = {
+      win: Object.keys(win).length,
+      exacta: Object.keys(exacta).length,
+      trifecta: Object.keys(trifecta).length,
+      quinella: Object.keys(quinella).length,
+      trio: Object.keys(trio).length,
+    };
     const body = {
       ok: true,
       jcd, name: VENUE_NAMES[jcd], raceNo: +rno, date,
-      win, exacta, trifecta,
+      win, exacta, trifecta, quinella, trio,
       counts,
       fetchedAt: new Date().toISOString(),
       source: "boatrace.jp 公開オッズページ",
