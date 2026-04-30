@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { yen } from "../lib/format.js";
 import { analyzePrediction, aggregateLessons } from "../lib/analysis.js";
+import { analyzeStrengthsAndWeaknesses, getLearnedWeights } from "../lib/learning.js";
 
 /**
  * 外れた理由 AI 分析画面
@@ -16,15 +17,81 @@ export default function LossAnalysis({ predictions, races }) {
   }, [predictions]);
 
   const aggregate = useMemo(() => aggregateLessons(predictions), [predictions]);
+  const swot = useMemo(() => analyzeStrengthsAndWeaknesses(predictions), [predictions]);
+  const learned = useMemo(() => getLearnedWeights(predictions), [predictions]);
 
   return (
     <div className="max-w-3xl mx-auto px-4 mt-4 space-y-4">
       <section className="card p-4" style={{ minHeight: 120 }}>
-        <h2 className="text-lg font-bold mb-2">🔍 外れた理由 AI 分析</h2>
+        <h2 className="text-lg font-bold mb-2">🔍 外れた理由 AI 分析 + 自己進化</h2>
         <div className="text-xs opacity-70">
-          AI が出した予想と実際の結果を比較し、なぜ外れたか / 何を見落としたかを言語化します。集計から「次回への教訓」も抽出します。
+          AI が出した予想と実際の結果を比較し、なぜ外れたか / 何を見落としたかを言語化します。
+          さらに過去の的中傾向から各因子の重みを自動調整して、次の予想に反映します。
         </div>
       </section>
+
+      {/* 🧠 自己進化サマリ — 学習が反映されている重み補正 */}
+      {learned.ready && (
+        <section className="card p-4" style={{ borderColor: "#22d3ee", borderWidth: 2 }}>
+          <h3 className="font-bold text-sm mb-2">🧠 AI 自己進化中 ({learned.sampleSize} 件のレース履歴から学習)</h3>
+          {learned.notes.length > 0 ? (
+            <ul className="space-y-1 text-xs">
+              {learned.notes.map((n, i) => (
+                <li key={i} className={n.kind === "pos" ? "text-pos" : n.kind === "neg" ? "text-neg" : ""}>
+                  {n.text}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className="text-xs opacity-70">学習履歴は十分ですが、現状の重みが最適と判定されました。</div>
+          )}
+          <div className="text-xs opacity-60 mt-2">
+            ※ ここで決まった補正値は次の予想計算に自動反映されます (各因子 ±0.05 まで)
+          </div>
+        </section>
+      )}
+
+      {/* 得意 / 苦手 */}
+      {swot.hasEnoughData && (swot.strengths.length > 0 || swot.weaknesses.length > 0) && (
+        <section className="card p-4">
+          <h3 className="font-bold text-sm mb-3">🎯 得意条件 / ⚠️ 苦手条件 ({swot.sampleSize}件から抽出)</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <div className="text-xs font-bold mb-2 text-pos">🎯 得意 (回収率 110% 以上)</div>
+              {swot.strengths.length === 0 ? (
+                <div className="text-xs opacity-60">該当なし</div>
+              ) : (
+                <ul className="space-y-1">
+                  {swot.strengths.slice(0, 6).map((s, i) => (
+                    <li key={i} className="text-xs flex justify-between" style={{ background: "rgba(16,185,129,0.12)", padding: "4px 8px", borderRadius: 4 }}>
+                      <span><b>{s.label}</b> ({s.category})</span>
+                      <span className="num text-pos">{Math.round(s.roi * 100)}% ({s.count}件)</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <div>
+              <div className="text-xs font-bold mb-2 text-neg">⚠️ 苦手 (回収率 85% 以下)</div>
+              {swot.weaknesses.length === 0 ? (
+                <div className="text-xs opacity-60">該当なし</div>
+              ) : (
+                <ul className="space-y-1">
+                  {swot.weaknesses.slice(0, 6).map((s, i) => (
+                    <li key={i} className="text-xs flex justify-between" style={{ background: "rgba(239,68,68,0.12)", padding: "4px 8px", borderRadius: 4 }}>
+                      <span><b>{s.label}</b> ({s.category})</span>
+                      <span className="num text-neg">{Math.round(s.roi * 100)}% ({s.count}件)</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+          <div className="text-xs opacity-60 mt-2">
+            💡 苦手条件のレースでは見送りを増やし、得意条件のレースでは点数を増やすと回収率が上がります。
+          </div>
+        </section>
+      )}
 
       {/* 自己学習メモ (集計から自動抽出) */}
       {aggregate?.memos?.length > 0 && (

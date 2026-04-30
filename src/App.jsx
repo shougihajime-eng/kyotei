@@ -13,6 +13,7 @@ import { loadState, saveState, clearState } from "./lib/storage.js";
 import { fetchTodaySchedule, fetchRaceProgram, fetchRaceOdds, fetchRaceResult, fetchBeforeInfo } from "./lib/api.js";
 import { evaluateRace, buildBuyRecommendation, computeOverallGrade } from "./lib/predict.js";
 import { suggestStyle } from "./components/StyleSelector.jsx";
+import { getLearnedWeights } from "./lib/learning.js";
 import { defaultSettings, summarizeToday, perRaceCap } from "./lib/money.js";
 import { todayDate, todayKey, startEpoch } from "./lib/format.js";
 import { generateSampleRaces, buildRacesFromSchedule, mergeProgram, mergeOdds, mergeBeforeInfo } from "./lib/sample.js";
@@ -52,11 +53,14 @@ export default function App() {
   const today = useMemo(() => summarizeToday(predictions), [predictions]);
   const cap = useMemo(() => perRaceCap(settings, today), [settings, today]);
 
+  /* 過去成績から学習した重み補正 (-0.05〜+0.05) を計算 */
+  const learnedWeights = useMemo(() => getLearnedWeights(predictions), [predictions]);
+
   const evals = useMemo(() => {
     const map = {};
-    for (const r of races) map[r.id] = evaluateRace(r, news);
+    for (const r of races) map[r.id] = evaluateRace(r, news, learnedWeights.adjustments);
     return map;
-  }, [races, news]);
+  }, [races, news, learnedWeights]);
 
   const recommendations = useMemo(() => {
     const map = {};

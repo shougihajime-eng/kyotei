@@ -356,10 +356,29 @@ export function relatedNews(race, newsItems) {
   }).slice(0, 5);
 }
 
-/* レース全体の評価 */
-export function evaluateRace(race, newsItems) {
+/* レース全体の評価
+   learnedAdjustments: 過去の的中傾向から各因子の重み補正 (-0.05〜+0.05) を渡せる。
+                       null なら標準重みのまま動作。 */
+export function evaluateRace(race, newsItems, learnedAdjustments) {
   if (!race?.boats || race.boats.length !== 6) return { ok: false, reason: "no-boats", message: "出走表未取得" };
+  // 学習済み補正があれば一時的に FACTOR_WEIGHTS を変更
+  const orig = { ...FACTOR_WEIGHTS };
+  if (learnedAdjustments) {
+    for (const k of ["inAdvantage", "motor", "exhibition", "startPower"]) {
+      const v = learnedAdjustments[k];
+      if (typeof v === "number" && Math.abs(v) <= 0.10) {
+        FACTOR_WEIGHTS[k] = Math.max(0.05, Math.min(0.50, FACTOR_WEIGHTS[k] + v));
+      }
+    }
+  }
+  try {
+    return _evaluateInner(race, newsItems, learnedAdjustments);
+  } finally {
+    Object.assign(FACTOR_WEIGHTS, orig);
+  }
+}
 
+function _evaluateInner(race, newsItems, learnedAdjustments) {
   const scores = race.boats.map((b) => scoreBoat(b, race));
   scores.forEach((s) => {
     const boat = race.boats.find((b) => b.boatNo === s.boatNo);
@@ -409,6 +428,7 @@ export function evaluateRace(race, newsItems) {
     maeBuke,
     stExh,
     inTrust,
+    learnedAdjustments: learnedAdjustments || null,
     related: relatedNews(race, newsItems),
     availableKinds: {
       "2連単": Object.keys(apiOdds.exacta || {}).length > 0,
