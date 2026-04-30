@@ -11,14 +11,19 @@
  *   ・3連複 (順序なし)
  */
 
+/* コース別 1着率 (公営競艇 全国平均):
+   1コースが圧倒的に有利。これを必ず予想に反映する。 */
 const COURSE_WIN_PCT = [55, 16, 12, 9, 6, 2];
 
+/* 因子の重み:
+   ・1号艇有利度を 0.30 → 0.40 に強化 (6号艇偏重の解消)
+   ・他因子は均等に下げる */
 export const FACTOR_WEIGHTS = {
-  inAdvantage: 0.30,
-  motor:       0.20,
-  exhibition:  0.15,
-  startPower:  0.20,
-  oddsValue:   0.15,
+  inAdvantage: 0.40,
+  motor:       0.18,
+  exhibition:  0.12,
+  startPower:  0.18,
+  oddsValue:   0.12,
 };
 export const FACTOR_LABELS = {
   inAdvantage: "1号艇有利度",
@@ -113,12 +118,16 @@ function scoreBoat(boat, race) {
   const fSt = norm.st(boat.ST);
   const fWr = norm.wr(boat.winRate);
   const fB2 = norm.b2(boat.boat2);
-  const baseScore =
+  let baseScore =
     fIn * FACTOR_WEIGHTS.inAdvantage +
     fMot * FACTOR_WEIGHTS.motor +
     fEx * FACTOR_WEIGHTS.exhibition +
     fSt * FACTOR_WEIGHTS.startPower +
     fWr * 0.03 + fB2 * 0.02;
+  // コース基本ボーナス/ペナルティ (6号艇偏重の解消)
+  if (boat.boatNo === 1) baseScore += 0.05;       // 1号艇に下駄
+  else if (boat.boatNo === 6) baseScore -= 0.08;  // 6号艇は強いペナルティ (明確根拠が無ければ本命にしない)
+  else if (boat.boatNo === 5) baseScore -= 0.04;
   const cond = computeConditionMod(boat);
   const wd = windDirectionMod(boat, race?.windDir, race?.wind);
   const totalMod = cond.mod * wd.mod;
@@ -132,6 +141,35 @@ function scoreBoat(boat, race) {
     conditionReasons: reasons,
     factors: { inAdvantage: fIn, motor: fMot, exhibition: fEx, startPower: fSt, winRate: fWr, boat2: fB2 },
   };
+}
+
+/* 1号艇信頼度の判定 (5段階)
+   1号艇の AI 確率 + 周辺要素から判定 */
+export function judgeInTrust(race, scores, probs) {
+  const inIdx = scores.findIndex(s => s.boatNo === 1);
+  if (inIdx < 0) return { level: "—", message: "判定不能", color: "#9fb0c9", score: 0 };
+  const p1 = probs[inIdx] || 0;
+  const inBoat = race.boats[inIdx] || {};
+  const isRough = (race.wave ?? 0) > 8 || (race.wind ?? 0) > 6;
+  const partsExch = inBoat.partsExchange?.length > 0;
+  const tilt = inBoat.tilt;
+  // ベース判定
+  let level, message, color;
+  if (p1 >= 0.55 && !isRough) { level = "イン逃げ濃厚"; message = "1号艇の逃げ展開"; color = "#10b981"; }
+  else if (p1 >= 0.45) { level = "1号艇やや有利"; message = "1号艇本線"; color = "#34d399"; }
+  else if (p1 >= 0.30) { level = "1号艇不安あり"; message = "本命級だが盤石ではない"; color = "#fde68a"; }
+  else if (p1 >= 0.20 || isRough) { level = "荒れ注意"; message = "1号艇の信頼度低 / 荒れ要素"; color = "#f59e0b"; }
+  else { level = "イン崩壊警戒"; message = "外艇の捲り狙い濃厚"; color = "#f87171"; }
+  // 補足: 部品交換あり / 高チルト で信頼度下方修正
+  if (partsExch && level !== "イン崩壊警戒") {
+    message += " (1号艇 部品交換)";
+  }
+  if (tilt != null && tilt >= 1.5 && (level === "イン逃げ濃厚" || level === "1号艇やや有利")) {
+    level = "1号艇不安あり";
+    message = "1号艇 高チルト (出足落ち懸念)";
+    color = "#fde68a";
+  }
+  return { level, message, color, score: Math.round(p1 * 100) };
 }
 
 /* 展開予想 */
@@ -359,8 +397,10 @@ export function evaluateRace(race, newsItems) {
   const windWave = analyzeWindWave(race);
   const maeBuke = predictMaeBuke(race);
   const stExh = analyzeExhibitionST(race);
+  const inTrust = judgeInTrust(race, scores, probs);
   const out = {
     ok: true,
+    race, // 後続の buildBuyRecommendation で 6号艇チェック等に使う
     probs, scores, items,
     top, maxEV: top?.ev ?? 0,
     topGrade: !top ? "—" : top.ev >= 1.30 ? "S" : top.ev >= 1.10 ? "A" : top.ev >= 0.95 ? "B" : "C",
@@ -368,6 +408,7 @@ export function evaluateRace(race, newsItems) {
     windWave,
     maeBuke,
     stExh,
+    inTrust,
     related: relatedNews(race, newsItems),
     availableKinds: {
       "2連単": Object.keys(apiOdds.exacta || {}).length > 0,
@@ -380,11 +421,47 @@ export function evaluateRace(race, newsItems) {
   return out;
 }
 
+/* 配分計算: 本命に多め、押さえ/穴は均等に分配 */
+function computeAllocations(n, profile) {
+  if (n === 1) return [1.0];
+  if (n === 2) return [0.65, 0.35];
+  if (n === 3) {
+    if (profile === "aggressive") return [0.45, 0.30, 0.25];
+    return [0.55, 0.28, 0.17];
+  }
+  if (n === 4) return [0.40, 0.25, 0.20, 0.15];
+  if (n === 5) return [0.35, 0.22, 0.18, 0.13, 0.12];
+  // それ以上は均等
+  const each = 1 / n;
+  return Array(n).fill(each);
+}
+
+/* 6号艇本命チェック: 6号艇から始まる買い目 (1着=6) は、
+   明確な根拠 (展示◎ / モーター高 / 全国勝率高 / 1号艇信頼度低 / 荒れ判定) が無ければ除外する。 */
+function isBoat6CandidateValid(race, scores, probs, inTrust) {
+  const i6 = race.boats?.findIndex((b) => b.boatNo === 6) ?? -1;
+  if (i6 < 0) return false;
+  const b = race.boats[i6];
+  const s = scores[i6];
+  if (!s || !b) return false;
+  // 5 つの根拠を点数化
+  let evidence = 0;
+  if (b.exTime != null && b.exTime <= 6.75) evidence += 1; // 展示タイム良
+  if (b.motor2 != null && b.motor2 >= 45)    evidence += 1; // モーター高
+  if (b.winRate != null && b.winRate >= 6.0) evidence += 1; // 選手勝率高
+  if (inTrust?.level === "荒れ注意" || inTrust?.level === "イン崩壊警戒") evidence += 1;
+  if ((race.wind ?? 0) >= 6 || (race.wave ?? 0) >= 8) evidence += 1; // 荒れレース判定
+  // 進入で内に入る可能性 (entryHistory に 1〜3 がある)
+  if (Array.isArray(b.entryHistory) && b.entryHistory.some((l) => l <= 3)) evidence += 1;
+  return evidence >= 2; // 2つ以上の強根拠が必要
+}
+
 /* 戦略別の買い目選定:
- *   攻め (aggressive): 3連単 のみ
- *   バランス (balanced): 2連単 + 3連単
- *   安全 (steady): 2連複 + 3連複
- * 上位 3 を「本命」「押さえ」「穴」 に割当て、本命を強調。
+ *   攻め (aggressive): 3連単 / 多めの点数 (4-6)
+ *   バランス (balanced): 2連単 + 3連単 / 中程度 (3-4)
+ *   安全 (steady): 2連複 + 3連複 / 少なめ (1-3)
+ *
+ * 6号艇から始まる買い目は明確根拠なしには採用しない。
  */
 export function buildBuyRecommendation(ev, riskProfile, perRaceCap) {
   if (!ev) return { decision: "skip", reason: "未評価", items: [], total: 0 };
@@ -396,12 +473,21 @@ export function buildBuyRecommendation(ev, riskProfile, perRaceCap) {
   }
 
   const allowed = {
-    aggressive: ["3連単"],
+    aggressive: ["3連単", "2連単"],            // 攻め: 3連単 + 2連単 (穴狙い)
     balanced:   ["2連単", "3連単"],
-    steady:     ["2連複", "3連複"],
+    steady:     ["2連複", "3連複", "2連単"],   // 安全: 連複中心 + 2連単
   }[riskProfile] || ["2連単", "3連単"];
 
-  const candidates = ev.items.filter((t) => allowed.includes(t.kind) && t.ev >= 1.10);
+  // 6号艇本命チェック (1着=6 の候補は強根拠が必要)
+  const boat6Valid = isBoat6CandidateValid(ev.race || {boats: []}, ev.scores || [], ev.probs || [], ev.inTrust);
+  let candidates = ev.items.filter((t) => {
+    if (!allowed.includes(t.kind)) return false;
+    if (t.ev < 1.10) return false;
+    // 6号艇始まりは根拠が必要
+    if (t.combo.startsWith("6") && !boat6Valid) return false;
+    return true;
+  });
+
   if (candidates.length === 0) {
     return {
       decision: "skip",
@@ -413,19 +499,29 @@ export function buildBuyRecommendation(ev, riskProfile, perRaceCap) {
     return { decision: "skip", reason: "1日予算/1レース上限が 0", items: [], total: 0 };
   }
 
-  const top3 = candidates.slice(0, 3);
-  const stakes = [
-    Math.floor((perRaceCap * 0.60) / 100) * 100,
-    Math.floor((perRaceCap * 0.25) / 100) * 100,
-    Math.floor((perRaceCap * 0.15) / 100) * 100,
-  ];
-  const roles = ["本命", "押さえ", "穴"];
+  // 戦略別の買い目点数:
+  //   steady:     1〜2 点 (本命中心)
+  //   balanced:   2〜3 点
+  //   aggressive: 3〜5 点
+  const maxItems = riskProfile === "aggressive" ? 5 : riskProfile === "steady" ? 2 : 3;
+  // S 評価が複数あれば多めに、A 評価のみなら少なめに
+  const sCount = candidates.filter(c => c.ev >= 1.30).length;
+  const numItems = Math.max(1, Math.min(maxItems, sCount > 0 ? Math.min(maxItems, sCount + 1) : 2));
 
-  const items = top3.map((t, i) => {
+  // 配分: 本命に多め、押さえ・穴は均等
+  const allocations = computeAllocations(numItems, riskProfile);
+  const stakes = allocations.map(a => Math.floor((perRaceCap * a) / 100) * 100);
+  const roles = numItems === 1 ? ["本命"]
+              : numItems === 2 ? ["本命", "押さえ"]
+              : numItems === 3 ? ["本命", "押さえ", "穴"]
+              : ["本命", "押さえ1", "押さえ2", "穴1", "穴2"].slice(0, numItems);
+
+  const top = candidates.slice(0, numItems);
+  const items = top.map((t, i) => {
     const mainBoat = parseInt(t.combo[0]);
     const score = ev.scores.find((s) => s.boatNo === mainBoat);
     return {
-      role: roles[i],
+      role: roles[i] || `候補${i+1}`,
       kind: t.kind,
       combo: t.combo,
       prob: t.prob,

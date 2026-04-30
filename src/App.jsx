@@ -68,9 +68,17 @@ export default function App() {
     return map;
   }, [races, evals, settings.riskProfile, cap]);
 
-  /* === AI判断の自動スナップショット === */
+  /* === AI判断スナップショット ===
+       無限ループ防止のため、races の変更時のみ記録 (recommendations 依存は削除)。
+       記録のタイミング: 「最新にする」ボタンで races が更新された直後の 1 回のみ。 */
+  const racesSignature = useMemo(() =>
+    races.map((r) => r.id + ":" + (r.startTime || "")).join("|"),
+  [races]);
+
   useEffect(() => {
     if (races.length === 0) return;
+    // recommendations が未計算の場合があるため、recommendations を直接読み取らず
+    // races のみに依存して snapshot
     setPredictions((prev) => {
       const next = { ...prev };
       let changed = false;
@@ -92,8 +100,6 @@ export default function App() {
           grade: rec.grade || null,
           snapshotAt: stamp,
         };
-        // ⚠ 循環ループ防止: stake/totalStake は cap → predictions → cap で循環するため比較対象から除外
-        // 組番 (combo) と決定 (decision) のみで同一性を判定
         const cmp = (o) => JSON.stringify({
           d: o.decision || "",
           c: (o.combos || []).map(c => `${c.kind}:${c.combo}`).join("|"),
@@ -105,7 +111,8 @@ export default function App() {
       }
       return changed ? next : prev;
     });
-  }, [races, recommendations]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [racesSignature]); // ⚠ 重要: recommendations 依存を外して無限ループ撃退
 
   /* === 「最新にする」ボタン: 一括取得 === */
   const refreshAll = useCallback(async () => {
@@ -284,7 +291,9 @@ export default function App() {
 
   return (
     <div className="min-h-screen">
-      <Header tab={tab} setTab={(t) => { setTab(t); setSelectedRaceId(null); }} today={today} settings={settings} />
+      <Header tab={tab} setTab={(t) => { setTab(t); setSelectedRaceId(null); }}
+        today={today} settings={settings}
+        refreshing={refreshing} onRefresh={refreshAll} lastRefreshAt={lastRefreshAt} />
 
       <main className="pb-20">
         {tab === "home" && (
