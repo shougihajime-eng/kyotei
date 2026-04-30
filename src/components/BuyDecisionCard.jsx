@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, memo } from "react";
 import { yen, pct } from "../lib/format.js";
 
 /**
@@ -9,7 +9,10 @@ import { yen, pct } from "../lib/format.js";
  *   ・見送り:  「見送り」 + 一言理由
  *   ・オッズ取得不可: 「オッズ取得不可」 + 説明
  */
-export default function BuyDecisionCard({ race, recommendation, onRecord, virtualMode }) {
+/* React.memo で props 同一なら再描画スキップ → 「ガーっ」防止 */
+export default memo(BuyDecisionCard);
+
+function BuyDecisionCard({ race, recommendation, onRecord, virtualMode }) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
 

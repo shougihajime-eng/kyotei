@@ -72,14 +72,15 @@ const btnGhost = {
   border: "none", borderRadius: 8, fontWeight: 600, cursor: "pointer",
 };
 
-/* === Mount === */
+/* === Mount ===
+   StrictMode は開発時のみ effect を 2 回呼ぶため、
+   production build では本番動作には影響しないが「ガーっ」 感の一因になりうる。
+   ここでは StrictMode を外し、ErrorBoundary だけで保護する。 */
 const rootEl = document.getElementById("root");
 if (rootEl) {
   try {
     ReactDOM.createRoot(rootEl).render(
-      <React.StrictMode>
-        <ErrorBoundary><App /></ErrorBoundary>
-      </React.StrictMode>
+      <ErrorBoundary><App /></ErrorBoundary>
     );
   } catch (e) {
     rootEl.innerHTML = `<pre style="color:#fecaca;background:#3b1d1d;padding:16px;border-radius:8px;font-family:monospace;white-space:pre-wrap;">React mount failed:\n${(e && (e.stack || e.message)) || String(e)}</pre>`;

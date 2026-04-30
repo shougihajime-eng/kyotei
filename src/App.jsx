@@ -115,19 +115,23 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [racesSignature]); // ⚠ 重要: recommendations 依存を外して無限ループ撃退
 
-  /* === 「最新にする」ボタン: 一括取得 === */
+  /* === 「最新にする」ボタン: 一括取得 ===
+     try-finally で setRefreshing(false) を保証。
+     API 失敗時はサンプルにフォールバックし、画面は壊さない。
+     連打防止: 60 秒クールダウン + refreshing フラグで二重実行禁止。 */
   const refreshAll = useCallback(async () => {
     if (refreshing) return;
     const since = lastRefreshAt ? Date.now() - new Date(lastRefreshAt).getTime() : Infinity;
     if (since < REFRESH_COOLDOWN_MS) {
       const left = Math.ceil((REFRESH_COOLDOWN_MS - since) / 1000);
-      setRefreshMsg(`⏳ あと ${left} 秒 (連打防止)`);
-      setTimeout(() => setRefreshMsg(""), 2000);
+      setRefreshMsg(`⏳ あと ${left} 秒お待ちください (連打防止)`);
+      setTimeout(() => setRefreshMsg(""), 2500);
       return;
     }
     setRefreshing(true);
     setRefreshMsg("🔄 最新データを確認中…");
     const startedAt = Date.now();
+    try {
 
     /* ① 今日のスケジュール */
     const sched = await fetchTodaySchedule();
@@ -219,13 +223,21 @@ export default function App() {
     if (elapsed < 400) await new Promise((r2) => setTimeout(r2, 400 - elapsed));
     const ts = new Date().toISOString();
     setLastRefreshAt(ts);
-    setRefreshing(false);
     if (sched?.ok) {
-      setRefreshMsg(`✅ 最新です (${sched.total_venues}会場 / ${sched.total_races}レース / 詳細 ${candidates.length}件)`);
+      setRefreshMsg(`✅ 更新しました (${sched.total_venues}会場 / ${sched.total_races}レース / 詳細 ${candidates.length}件)`);
     } else {
-      setRefreshMsg(`⚠️ ${sched?.error || "取得失敗"} — サンプル動作中`);
+      setRefreshMsg(`⚠️ 一時的に取得できません。少し時間を空けて再実行してください — サンプル動作中`);
     }
     setTimeout(() => setRefreshMsg(""), 5000);
+    } catch (err) {
+      // 例外時は前回データを保持し、UI を壊さない
+      console.error("[refreshAll] error:", err);
+      setRefreshMsg("⚠️ 一時的に混雑しています。少し時間を空けて再実行してください");
+      setTimeout(() => setRefreshMsg(""), 5000);
+    } finally {
+      // finally で必ずフラグを下ろす (永続的にボタンが無効化されるのを防止)
+      setRefreshing(false);
+    }
   }, [refreshing, lastRefreshAt]);
 
   /* === 起動時に 1 回だけ取得 (cooldown bypass) === */
