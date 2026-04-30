@@ -17,8 +17,6 @@ export default function Onboarding({ settings, setSettings, onClose }) {
       bankroll: +bankroll || 0,
       dailyBudget: +dailyBudget || 0,
       perRaceLimit: +perRace || 0,
-      // 損失ストップは資金の 10% を初期値に
-      dailyLossStop: Math.floor((+bankroll || 0) * 0.10),
       riskProfile: risk,
       onboardingDone: true,
     });
@@ -62,9 +60,8 @@ export default function Onboarding({ settings, setSettings, onClose }) {
           </div>
 
           <div className="alert-info text-xs">
-            自動でかかる安全装置:<br />
-            ・1日損失 {yen(Math.floor(bankroll * 0.10))} 到達 → 強制見送り<br />
-            ・3 連敗 → 当日終了
+            このアプリは買い目提案 + EV + オッズ表示のみ。<br/>
+            購入判断は最終的にユーザーが行います (自動停止機能なし)。
           </div>
         </div>
 

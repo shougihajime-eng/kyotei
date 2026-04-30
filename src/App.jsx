@@ -10,7 +10,7 @@ import Onboarding from "./components/Onboarding.jsx";
 import { loadState, saveState, clearState } from "./lib/storage.js";
 import { fetchTodaySchedule, fetchRaceProgram, fetchRaceOdds, fetchRaceResult, fetchBeforeInfo } from "./lib/api.js";
 import { evaluateRace, buildBuyRecommendation } from "./lib/predict.js";
-import { defaultSettings, summarizeToday, moneyState, perRaceCap } from "./lib/money.js";
+import { defaultSettings, summarizeToday, perRaceCap } from "./lib/money.js";
 import { todayDate, todayKey, startEpoch } from "./lib/format.js";
 import { generateSampleRaces, buildRacesFromSchedule, mergeProgram, mergeOdds, mergeBeforeInfo } from "./lib/sample.js";
 
@@ -48,7 +48,6 @@ export default function App() {
   /* === Compute evals + recommendations for all races === */
   const today = useMemo(() => summarizeToday(predictions), [predictions]);
   const cap = useMemo(() => perRaceCap(settings, today), [settings, today]);
-  const moneyInfo = useMemo(() => moneyState(settings, today), [settings, today]);
 
   const evals = useMemo(() => {
     const map = {};
@@ -60,10 +59,10 @@ export default function App() {
     const map = {};
     for (const r of races) {
       const ev = evals[r.id];
-      map[r.id] = buildBuyRecommendation(ev, settings.riskProfile, cap, moneyInfo.forcedSkip);
+      map[r.id] = buildBuyRecommendation(ev, settings.riskProfile, cap, false /* 安全装置廃止 */);
     }
     return map;
-  }, [races, evals, settings.riskProfile, cap, moneyInfo.forcedSkip]);
+  }, [races, evals, settings.riskProfile, cap]);
 
   /* === AI判断の自動スナップショット === */
   useEffect(() => {
@@ -89,7 +88,12 @@ export default function App() {
           grade: rec.grade || null,
           snapshotAt: stamp,
         };
-        const cmp = (o) => JSON.stringify({ d: o.decision, c: o.combos, s: o.totalStake });
+        // ⚠ 循環ループ防止: stake/totalStake は cap → predictions → cap で循環するため比較対象から除外
+        // 組番 (combo) と決定 (decision) のみで同一性を判定
+        const cmp = (o) => JSON.stringify({
+          d: o.decision || "",
+          c: (o.combos || []).map(c => `${c.kind}:${c.combo}`).join("|"),
+        });
         if (cmp(existing) !== cmp(updated)) {
           next[key] = updated;
           changed = true;
@@ -308,12 +312,6 @@ export default function App() {
           <Settings settings={settings} setSettings={setSettings} onReset={handleReset} />
         )}
       </main>
-
-      {moneyInfo.forcedSkip && (
-        <div className="fixed bottom-4 left-4 right-4 max-w-3xl mx-auto alert-error text-sm pulse-soft">
-          🔒 強制見送り中: {moneyInfo.reasons.join(" / ")}
-        </div>
-      )}
     </div>
   );
 }

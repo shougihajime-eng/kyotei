@@ -7,7 +7,8 @@ import { useEffect, useState } from "react";
 export default function RefreshBar({ onRefresh, refreshing, refreshMsg, lastRefreshAt, cooldownSec = 60 }) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 1000);
+    // 30秒間隔で十分 (1秒だと毎秒再レンダで画面揺れの原因)
+    const id = setInterval(() => setNow(Date.now()), 30000);
     return () => clearInterval(id);
   }, []);
 
