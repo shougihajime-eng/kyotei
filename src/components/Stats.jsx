@@ -52,6 +52,27 @@ function SingleView({ items, label }) {
   const cumulative = useMemo(() => buildCumulative(daily), [daily]);
   const byKind = useMemo(() => buildByKind(items), [items]);
 
+  // スタイル別集計
+  const byStyle = useMemo(() => {
+    const m = {};
+    for (const p of items) {
+      const k = p.profile || "balanced";
+      if (!m[k]) m[k] = { profile: k, stake: 0, ret: 0, count: 0, hits: 0 };
+      m[k].stake += p.totalStake;
+      m[k].ret += p.payout || 0;
+      m[k].count += 1;
+      if (p.hit) m[k].hits += 1;
+    }
+    const labels = { steady: "🛡️ 本命党", balanced: "⚖️ 中堅党", aggressive: "🎯 穴党" };
+    return ["steady", "balanced", "aggressive"]
+      .map((k) => m[k] && {
+        ...m[k], label: labels[k],
+        roi: m[k].stake > 0 ? m[k].ret / m[k].stake : 0,
+        pnl: m[k].ret - m[k].stake,
+      })
+      .filter(Boolean);
+  }, [items]);
+
   if (items.length === 0) {
     return (
       <section className="card p-6 text-center" style={{ minHeight: 200 }}>
@@ -123,6 +144,32 @@ function SingleView({ items, label }) {
           </LineChart>
         </ResponsiveContainer>
       </Card>
+
+      {/* スタイル別 (本命党/中堅党/穴党) */}
+      {byStyle.length > 0 && (
+        <Card title="スタイル別の回収率">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-2">
+            {byStyle.map((s) => {
+              const color = s.roi >= 1 ? "#34d399" : "#f87171";
+              return (
+                <div key={s.profile} className="p-3 rounded-lg" style={{ background: "rgba(0,0,0,0.25)", minHeight: 110 }}>
+                  <div className="text-sm font-bold">{s.label}</div>
+                  <div className="text-xs opacity-70 mt-1">{s.count}件 / 的中 {s.hits}件</div>
+                  <div className="num font-bold mt-1" style={{ color, fontSize: 22 }}>
+                    {s.stake > 0 ? Math.round(s.roi * 100) + "%" : "—"}
+                  </div>
+                  <div className={"num text-xs mt-1 " + (s.pnl >= 0 ? "text-pos" : "text-neg")}>
+                    {s.pnl >= 0 ? "+" : ""}{yen(s.pnl)}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="text-xs opacity-70 mt-2">
+            💡 一番成績が良いスタイルを参考にしてください (ただしサンプル数が少ない場合は判断保留)
+          </div>
+        </Card>
+      )}
 
       {/* 券種別成績 */}
       <Card title="券種別成績">

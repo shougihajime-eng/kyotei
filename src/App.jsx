@@ -5,6 +5,7 @@ import RaceList from "./components/RaceList.jsx";
 import RaceDetail from "./components/RaceDetail.jsx";
 import Verify from "./components/Verify.jsx";
 import Stats from "./components/Stats.jsx";
+import LossAnalysis from "./components/LossAnalysis.jsx";
 import Settings from "./components/Settings.jsx";
 import Onboarding from "./components/Onboarding.jsx";
 
@@ -99,6 +100,7 @@ export default function App() {
           startTime: r.startTime, decision: rec.decision, combos,
           totalStake: rec.decision === "buy" ? rec.total : 0,
           grade: rec.grade || null,
+          profile: rec.profile || settings.riskProfile, // スタイル別集計のため
           snapshotAt: stamp,
         };
         const cmp = (o) => JSON.stringify({
@@ -250,8 +252,10 @@ export default function App() {
 
   /* === 手動記録 (リアル/エア舟券フォーム) === */
   const handleManualBet = useCallback((record) => {
-    setPredictions((prev) => ({ ...prev, [record.key]: record }));
-  }, []);
+    // 現在のスタイルも記録に含めて、後で集計
+    const enhanced = { ...record, profile: record.profile || settings.riskProfile };
+    setPredictions((prev) => ({ ...prev, [record.key]: enhanced }));
+  }, [settings.riskProfile]);
 
   const handleDeleteRecord = useCallback((key) => {
     setPredictions((prev) => {
@@ -355,6 +359,9 @@ export default function App() {
         )}
         {tab === "stats" && (
           <Stats predictions={predictions} lastRefreshAt={lastRefreshAt} />
+        )}
+        {tab === "analysis" && (
+          <LossAnalysis predictions={predictions} races={races} />
         )}
         {tab === "settings" && (
           <Settings settings={settings} setSettings={setSettings} onReset={handleReset} />

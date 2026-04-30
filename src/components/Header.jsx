@@ -7,6 +7,7 @@ const TABS = [
   { k: "list", label: "📋 一覧" },
   { k: "verify", label: "📅 検証" },
   { k: "stats", label: "📈 グラフ" },
+  { k: "analysis", label: "🔍 分析" },
   { k: "settings", label: "💼 設定" },
 ];
 

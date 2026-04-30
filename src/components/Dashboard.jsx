@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import BuyDecisionCard from "./BuyDecisionCard.jsx";
 import RefreshBar from "./RefreshBar.jsx";
 import NewsPanel from "./NewsPanel.jsx";
+import EVExplainer from "./EVExplainer.jsx";
 import { yen } from "../lib/format.js";
 
 /**
@@ -49,6 +50,9 @@ export default function Dashboard({
 
       {/* 1週間損益 */}
       <WeeklyTotalBadge weekly={weekly} />
+
+      {/* EV の見方 (本命があれば値を渡す) */}
+      <EVExplainer ev={rec?.main?.ev || rec?.items?.[0]?.ev || 0} />
 
       {/* 公式ニュース */}
       <NewsPanel />
