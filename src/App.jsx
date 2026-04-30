@@ -10,7 +10,7 @@ import Onboarding from "./components/Onboarding.jsx";
 
 import { loadState, saveState, clearState } from "./lib/storage.js";
 import { fetchTodaySchedule, fetchRaceProgram, fetchRaceOdds, fetchRaceResult, fetchBeforeInfo } from "./lib/api.js";
-import { evaluateRace, buildBuyRecommendation } from "./lib/predict.js";
+import { evaluateRace, buildBuyRecommendation, computeOverallGrade } from "./lib/predict.js";
 import { defaultSettings, summarizeToday, perRaceCap } from "./lib/money.js";
 import { todayDate, todayKey, startEpoch } from "./lib/format.js";
 import { generateSampleRaces, buildRacesFromSchedule, mergeProgram, mergeOdds, mergeBeforeInfo } from "./lib/sample.js";
@@ -60,7 +60,10 @@ export default function App() {
     const map = {};
     for (const r of races) {
       const ev = evals[r.id];
-      map[r.id] = buildBuyRecommendation(ev, settings.riskProfile, cap, false /* 安全装置廃止 */);
+      const rec = buildBuyRecommendation(ev, settings.riskProfile, cap, false);
+      // 総合評価 ★ (荒れ期待度を加味して再評価)
+      rec.overall = computeOverallGrade(ev, rec, ev?.windWave);
+      map[r.id] = rec;
     }
     return map;
   }, [races, evals, settings.riskProfile, cap]);

@@ -16,6 +16,9 @@ export default function RaceDetail({ race, evalRes, recommendation, onRecord, on
       <BuyDecisionCard race={race} recommendation={recommendation} onRecord={onRecord} virtualMode={virtualMode} />
 
       <DevelopmentSummary evalRes={evalRes} />
+      <WindWaveSection evalRes={evalRes} />
+      <MaeBukeSection evalRes={evalRes} />
+      <ExhibitionSTSection evalRes={evalRes} race={race} />
       <BoatProbabilityTable evalRes={evalRes} race={race} />
       <BeforeInfoSummary race={race} />
       <RelatedNews evalRes={evalRes} />
@@ -95,6 +98,106 @@ function BoatProbabilityTable({ evalRes, race }) {
 function grade(v) {
   if (v == null) return "—";
   if (v >= 0.7) return "A"; if (v >= 0.4) return "B"; return "C";
+}
+
+/* === Phase D: 風波 影響 === */
+function WindWaveSection({ evalRes }) {
+  const w = evalRes?.windWave;
+  if (!w) return null;
+  const inAdv = w.inAdvantage;
+  const rough = w.roughLikelihood;
+  return (
+    <section className="card p-4">
+      <h3 className="font-bold text-sm mb-2">🌊 風波 影響</h3>
+      <div className="text-xs opacity-90 mb-2">
+        💨 {w.windDir || "風向不明"} {w.wind}m / 🌊 波 {w.wave}cm
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <Meter label="イン有利度" value={inAdv} positive />
+        <Meter label="荒れ期待度" value={rough} negative />
+      </div>
+    </section>
+  );
+}
+function Meter({ label, value, positive, negative }) {
+  const color = positive
+    ? (value >= 70 ? "#34d399" : value >= 40 ? "#fde68a" : "#f87171")
+    : (value >= 70 ? "#f87171" : value >= 40 ? "#fde68a" : "#34d399");
+  return (
+    <div>
+      <div className="text-xs opacity-70">{label}</div>
+      <div className="num font-bold mt-1" style={{ fontSize: 24, color }}>{value}</div>
+      <div style={{ width: "100%", height: 6, background: "#1f2a44", borderRadius: 3, overflow: "hidden", marginTop: 4 }}>
+        <div style={{ width: value + "%", height: "100%", background: color }} />
+      </div>
+    </div>
+  );
+}
+
+/* === Phase D: 前付け検知 === */
+function MaeBukeSection({ evalRes }) {
+  const m = evalRes?.maeBuke;
+  if (!m) return null;
+  const stars = Math.min(5, Math.round(m.likelihood / 20));
+  return (
+    <section className="card p-4">
+      <h3 className="font-bold text-sm mb-2">🔄 前付け検知</h3>
+      <div className="flex items-baseline gap-3 flex-wrap">
+        <div>
+          <div className="text-xs opacity-70">前付け可能性</div>
+          <div className="num font-bold" style={{ fontSize: 24, color: m.likelihood >= 60 ? "#f87171" : m.likelihood >= 30 ? "#fde68a" : "#34d399" }}>
+            {m.likelihood}%
+          </div>
+        </div>
+        <div>
+          <div className="text-xs opacity-70">想定進入</div>
+          <div className="font-mono" style={{ fontSize: 18, fontWeight: 700 }}>{m.expectedLane || "—"}</div>
+        </div>
+      </div>
+      {m.isMaebuke && m.suspectBoats?.length > 0 && (
+        <div className="alert-warn text-xs mt-2">
+          ⚠️ {m.suspectBoats.map(s => `${s.boat}号艇`).join(", ")} が前付けの可能性 — 荒れ警戒
+        </div>
+      )}
+      {!m.isMaebuke && (
+        <div className="text-xs opacity-70 mt-2">標準進入 (枠番=進入) と推定</div>
+      )}
+    </section>
+  );
+}
+
+/* === Phase D: 展示ST 分析 === */
+function ExhibitionSTSection({ evalRes, race }) {
+  const arr = evalRes?.stExh || [];
+  if (arr.length === 0) return null;
+  return (
+    <section className="card p-4">
+      <h3 className="font-bold text-sm mb-2">⏱️ 展示ST 分析 (本番平均ST との差分)</h3>
+      <div className="overflow-x-auto scrollbar">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="text-left opacity-60 border-b border-[#1f2a44]">
+              <th className="py-1">艇</th><th>本番平均ST</th><th>展示ST</th><th>差分</th><th>判定</th>
+            </tr>
+          </thead>
+          <tbody>
+            {arr.map((s) => {
+              const color = s.status === "好調" ? "text-pos" : s.status === "不調" ? "text-neg" : "";
+              return (
+                <tr key={s.boatNo} className="border-b border-[#1f2a44]/40">
+                  <td className="py-1 font-bold">{s.boatNo}</td>
+                  <td className="num">{s.baseST ?? "—"}</td>
+                  <td className="num">{s.exST ?? "—"}</td>
+                  <td className={"num " + color}>{s.diff != null ? (s.diff >= 0 ? "+" : "") + s.diff.toFixed(2) : "—"}</td>
+                  <td className={color}>{s.status}{s.note && <span className="opacity-70 ml-1">({s.note})</span>}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
 }
 
 /* 直前情報サマリ */

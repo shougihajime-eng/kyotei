@@ -25,41 +25,98 @@ const URLS = {
 };
 
 /* 連複 (2連複 / 3連複) のオッズを抽出
-   ページ表記は「=」 または「-」両方ありうるため、両方を許容。
+   実構造 (boatrace.jp):
+     2連複 (odds2tf 内): 1着固定列毎に「2着 オッズ」のペアが triangular に並ぶ
+                          1着=1: (2着候補 5 つ) / 1着=2: (4 つ) / ... / 1着=5: (1 つ) / 1着=6: (0)
+                          合計 5+4+3+2+1+0 = 15 通り
+     3連複 (odds3f 専用): 1着固定列毎に「2着 3着 オッズ」のトリプレットが並ぶ (rowspan あり)
+                          総 20 通り
    キーは正規化して "X=Y" / "X=Y=Z" (小→大) で返す。
-
-   2連複は odds2tf に併記されており「2連複オッズ」 ラベル以降を対象に絞る。
-   3連複は odds3f 専用ページ。 */
+*/
 function parseFukuOdds(html, depth /* 2 or 3 */) {
   const $ = cheerio.load(html);
   const out = {};
-  let scanText = $("body").text().replace(/[ 　\s]+/g, " ");
 
-  // 2連複は「2連複オッズ」セクション以降のみ対象に絞る (2連単と混在するため)
-  if (depth === 2) {
-    const idx = scanText.indexOf("2連複");
-    if (idx < 0) return out;
-    scanText = scanText.slice(idx);
-  }
+  // ナビゲーション・締切時刻表を除外
+  const dataTables = $("table").toArray().filter((t) => {
+    const txt = $(t).text();
+    return !/締切予定時刻/.test(txt) && /\d+\.\d/.test(txt);
+  });
 
-  // 全角→半角
-  scanText = scanText.replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
-
-  // パターン: [1-6](=|-)[1-6](=|-)[1-6]? + decimal
-  // ¥ 記号や空白を挟んでもマッチする
-  const re = depth === 2
-    ? /([1-6])\s*[=\-]\s*([1-6])[\s¥]+(\d+(?:\.\d+)?)/g
-    : /([1-6])\s*[=\-]\s*([1-6])\s*[=\-]\s*([1-6])[\s¥]+(\d+(?:\.\d+)?)/g;
-
-  let m;
-  while ((m = re.exec(scanText)) !== null) {
-    const odds = parseFloat(m[depth + 1]);
-    if (!Number.isFinite(odds) || odds < 1.0 || odds > 1e6) continue;
-    const nums = depth === 2 ? [+m[1], +m[2]] : [+m[1], +m[2], +m[3]];
-    if (new Set(nums).size !== nums.length) continue;
-    const sorted = [...nums].sort((a, b) => a - b);
-    const key = sorted.join("=");
-    if (!out[key]) out[key] = odds;
+  // 連複の表は通常「ヘッダ + データ行 (列ベース)」 の単一テーブル
+  // 1着固定列 (1〜6) で各列のセル内容が「2着 オッズ」または「2着 3着 オッズ」
+  for (const tbl of dataTables) {
+    const headTr = $(tbl).find("tr").first();
+    const headCells = headTr.find("th, td").toArray().map((td) => $(td).text().replace(/\s+/g, " ").trim());
+    const colBoats = [];
+    headCells.forEach((c) => { const m = c.match(/^([1-6])\b/); if (m) colBoats.push(m[1]); });
+    if (colBoats.length < 4) continue; // ヘッダが揃わないテーブルは対象外
+    if (depth === 3) {
+      // 3連複: 各セルから [2着, 3着, オッズ] を読み取る
+      const carry = {};
+      $(tbl).find("tr").slice(1).each((rIdx, tr) => {
+        const cells = $(tr).find("td").toArray().map((td) => $(td).text().replace(/\s+/g, " ").trim());
+        // cells はテーブル全列の値。各セルが 1〜6 の数字 or decimal を含む
+        // セル内のトークンを取得して triplet (a,b,odds) を順に消化
+        const flat = [];
+        for (const c of cells) {
+          const tokens = c.split(" ").filter((t) => /^\d+(\.\d+)?$/.test(t));
+          for (const t of tokens) flat.push(t);
+        }
+        // flat を 3 トークン (2着, 3着, odds) ごとに切る
+        let k = 0;
+        for (let i = 0; i < flat.length; ) {
+          const a = flat[i], b = flat[i + 1], c = flat[i + 2];
+          // パターン: 2着=int, 3着=int, odds=decimal
+          if (/^[1-6]$/.test(a) && /^[1-6]$/.test(b) && /^\d+(\.\d+)?$/.test(c) && /\./.test(c)) {
+            const first = colBoats[k];
+            if (first && a !== first && b !== first && a !== b) {
+              const sorted = [+first, +a, +b].sort((x, y) => x - y);
+              const key = sorted.join("=");
+              const odds = parseFloat(c);
+              if (Number.isFinite(odds) && odds >= 1.0 && !out[key]) out[key] = odds;
+            }
+            i += 3; k = (k + 1) % 6;
+          } else if (/^[1-6]$/.test(a) && /^\d+(\.\d+)?$/.test(b) && /\./.test(b)) {
+            // ペア (rowspan で 2着 carry): [3着, odds]
+            const first = colBoats[k];
+            const second = carry[first];
+            if (first && second && a !== first && a !== second) {
+              const sorted = [+first, +second, +a].sort((x, y) => x - y);
+              const key = sorted.join("=");
+              const odds = parseFloat(b);
+              if (Number.isFinite(odds) && odds >= 1.0 && !out[key]) out[key] = odds;
+            }
+            i += 2; k = (k + 1) % 6;
+          } else { i += 1; }
+        }
+      });
+    } else {
+      // 2連複: 各セルから [2着, オッズ] を読み取る
+      $(tbl).find("tr").slice(1).each((_, tr) => {
+        const cells = $(tr).find("td").toArray().map((td) => $(td).text().replace(/\s+/g, " ").trim());
+        // セルごとに「数字 + decimal」のペアを抽出
+        cells.forEach((c, colIdx) => {
+          const tokens = c.split(" ").filter((t) => /^\d+(\.\d+)?$/.test(t));
+          // [2着, odds] ペア
+          for (let i = 0; i + 1 < tokens.length; i += 2) {
+            const a = tokens[i], b = tokens[i + 1];
+            if (!/^[1-6]$/.test(a)) continue;
+            if (!/\./.test(b)) continue;
+            const second = +a;
+            const odds = parseFloat(b);
+            const first = +(colBoats[colIdx] || 0);
+            if (!first || first === second) continue;
+            if (!Number.isFinite(odds) || odds < 1.0) continue;
+            const sorted = [first, second].sort((x, y) => x - y);
+            const key = sorted.join("=");
+            if (!out[key]) out[key] = odds;
+          }
+        });
+      });
+    }
+    // 取れたら最初のテーブルで完結 (連複は通常 1 表)
+    if (Object.keys(out).length > 0) break;
   }
   return out;
 }

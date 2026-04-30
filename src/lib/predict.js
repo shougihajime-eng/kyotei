@@ -221,6 +221,91 @@ function oneLineReason(score, ticket) {
   return strong.slice(0, 3).join("＋");
 }
 
+/* === Phase D: 前付け検知 === */
+export function predictMaeBuke(race) {
+  const boats = race.boats || [];
+  // 各艇の進入コース最頻値 (entryHistory が無ければ枠番)
+  const lanes = boats.map((b) => {
+    const hist = Array.isArray(b.entryHistory) ? b.entryHistory : [];
+    if (hist.length === 0) return { boat: b.boatNo, lane: b.boatNo, conf: 0 };
+    const counts = {};
+    for (const h of hist) counts[h] = (counts[h] || 0) + 1;
+    let topLane = b.boatNo, topCount = 0;
+    for (const [k, v] of Object.entries(counts)) {
+      if (v > topCount) { topCount = v; topLane = +k; }
+    }
+    return { boat: b.boatNo, lane: topLane, conf: topCount / hist.length };
+  });
+  // 1コースに 1号艇以外が入る確率 (前付け可能性)
+  const inner = lanes.find((l) => l.lane === 1);
+  const isMaebuke = inner && inner.boat !== 1;
+  const likelihood = isMaebuke ? Math.round(60 + (inner.conf || 0) * 40) : 0;
+  // 想定進入文字列 (例: "125/346" のような形式)
+  const expectedLane = lanes.sort((a, b) => a.lane - b.lane).map((l) => l.boat).join("");
+  return {
+    isMaebuke,
+    likelihood,
+    expectedLane,
+    suspectBoats: isMaebuke ? [{ boat: inner.boat, fromLane: inner.boat, toLane: 1 }] : [],
+  };
+}
+
+/* === Phase D: 展示ST 分析 (本番平均ST vs 展示ST) === */
+export function analyzeExhibitionST(race) {
+  const boats = race.boats || [];
+  return boats.map((b) => {
+    const baseST = b.ST;
+    const exST = b.startEx;
+    if (baseST == null || exST == null) {
+      return { boatNo: b.boatNo, status: "未取得", baseST, exST, diff: null, note: null };
+    }
+    const diff = +(exST - baseST).toFixed(3);
+    if (Math.abs(diff) < 0.03) return { boatNo: b.boatNo, status: "標準", baseST, exST, diff, note: null };
+    if (diff <= -0.03) return { boatNo: b.boatNo, status: "好調", baseST, exST, diff, note: "展示ST 異常に良い → 狙い目" };
+    return { boatNo: b.boatNo, status: "不調", baseST, exST, diff, note: "展示ST 異常に遅い → 崩れ警戒" };
+  });
+}
+
+/* === Phase D: 風波 影響分析 === */
+export function analyzeWindWave(race) {
+  const wind = race.wind ?? 0;
+  const wave = race.wave ?? 0;
+  const dir = race.windDir || "";
+  let inAdv = 50;
+  if (dir === "向かい風") inAdv += Math.min(20, wind * 3);
+  else if (dir === "追い風") inAdv -= Math.min(20, wind * 3);
+  else if (dir === "横風") inAdv -= 5;
+  inAdv = Math.max(0, Math.min(100, inAdv));
+  let rough = 0;
+  if (wind > 5) rough += (wind - 5) * 8;
+  if (wave > 5) rough += (wave - 5) * 3;
+  rough = Math.max(0, Math.min(100, rough));
+  return {
+    wind, wave, windDir: dir,
+    inAdvantage: Math.round(inAdv),
+    roughLikelihood: Math.round(rough),
+  };
+}
+
+/* === Phase D: 総合評価 ★1〜5 + 推奨アクション === */
+export function computeOverallGrade(ev, recommendation, windWave) {
+  if (!ev) return { stars: 0, action: "見送り", note: "未評価" };
+  if (recommendation?.decision === "no-odds") return { stars: 0, action: "見送り", note: "オッズ取得不可" };
+  if (!ev.ok) return { stars: 0, action: "見送り", note: ev.message || "データ不足" };
+  let stars = 0;
+  if (ev.maxEV >= 1.50) stars = 5;
+  else if (ev.maxEV >= 1.30) stars = 4;
+  else if (ev.maxEV >= 1.15) stars = 3;
+  else if (ev.maxEV >= 1.05) stars = 2;
+  else if (ev.maxEV >= 0.95) stars = 1;
+  if (windWave?.roughLikelihood >= 70) stars = Math.max(0, stars - 1);
+  let action = "見送り";
+  if (stars >= 4) action = ev.development?.scenario === "標準" || ev.development?.scenario === "逃げ" ? "本線" : "本線/穴";
+  else if (stars === 3) action = "本線";
+  else if (stars === 2) action = "穴狙い";
+  return { stars, action };
+}
+
 /* 関連ニュース抽出 (会場名 / 選手姓) */
 export function relatedNews(race, newsItems) {
   if (!Array.isArray(newsItems) || newsItems.length === 0) return [];
@@ -270,12 +355,19 @@ export function evaluateRace(race, newsItems) {
   items.sort((a, b) => b.ev - a.ev);
   const top = items[0];
 
-  return {
+  const development = predictDevelopment(race, scores, probs);
+  const windWave = analyzeWindWave(race);
+  const maeBuke = predictMaeBuke(race);
+  const stExh = analyzeExhibitionST(race);
+  const out = {
     ok: true,
     probs, scores, items,
     top, maxEV: top?.ev ?? 0,
     topGrade: !top ? "—" : top.ev >= 1.30 ? "S" : top.ev >= 1.10 ? "A" : top.ev >= 0.95 ? "B" : "C",
-    development: predictDevelopment(race, scores, probs),
+    development,
+    windWave,
+    maeBuke,
+    stExh,
     related: relatedNews(race, newsItems),
     availableKinds: {
       "2連単": Object.keys(apiOdds.exacta || {}).length > 0,
@@ -284,6 +376,8 @@ export function evaluateRace(race, newsItems) {
       "3連複": Object.keys(apiOdds.trio || {}).length > 0,
     },
   };
+  out.overall = computeOverallGrade(out, null, windWave); // recommendation 未確定のため lite
+  return out;
 }
 
 /* 戦略別の買い目選定:

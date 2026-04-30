@@ -48,6 +48,17 @@ export default function BuyDecisionCard({ race, recommendation, onRecord, virtua
         <span className={"pill badge-grade-" + (recommendation.grade || "A")}>{recommendation.grade}評価</span>
       </div>
 
+      {/* ★1〜5 総合評価 */}
+      {recommendation.overall && (
+        <div className="text-center mt-1">
+          <div style={{ fontSize: 24, letterSpacing: "0.2em" }}>
+            {"★".repeat(recommendation.overall.stars)}
+            <span style={{ opacity: 0.3 }}>{"☆".repeat(5 - recommendation.overall.stars)}</span>
+          </div>
+          <div className="text-xs opacity-80 mt-1">推奨アクション: <b>{recommendation.overall.action}</b></div>
+        </div>
+      )}
+
       {/* 一言理由 (タイトル) */}
       <div className="text-center mt-2" style={{ fontSize: 14, color: "#fde68a" }}>
         💡 {recommendation.reason}
