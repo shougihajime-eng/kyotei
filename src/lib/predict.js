@@ -421,7 +421,7 @@ export function evaluateRace(race, newsItems) {
   return out;
 }
 
-/* 配分計算: 本命に多め、押さえ/穴は均等に分配 */
+/* 配分計算: 本命に多め、押さえ/穴は均等に分配 (旧 — 後方互換) */
 function computeAllocations(n, profile) {
   if (n === 1) return [1.0];
   if (n === 2) return [0.65, 0.35];
@@ -431,9 +431,36 @@ function computeAllocations(n, profile) {
   }
   if (n === 4) return [0.40, 0.25, 0.20, 0.15];
   if (n === 5) return [0.35, 0.22, 0.18, 0.13, 0.12];
-  // それ以上は均等
   const each = 1 / n;
   return Array(n).fill(each);
+}
+
+/* 拡張版: 1〜20 点の任意の点数で配分計算
+   ・本命 (idx 0) に最も多く、後ろは指数的に減衰
+   ・aggressive では上位を厚くしすぎず、下位にも残す */
+function computeAllocationsExt(n, profile) {
+  if (n <= 0) return [];
+  if (n === 1) return [1.0];
+  // 上位ほど多い指数減衰: weight = base^i
+  const base = profile === "aggressive" ? 0.85 : profile === "steady" ? 0.65 : 0.75;
+  const raw = Array.from({ length: n }, (_, i) => Math.pow(base, i));
+  const sum = raw.reduce((a, b) => a + b, 0);
+  return raw.map((w) => w / sum);
+}
+
+/* 役割ラベル生成 */
+function makeRoles(n) {
+  if (n <= 0) return [];
+  if (n === 1) return ["本命"];
+  if (n === 2) return ["本命", "押さえ"];
+  if (n === 3) return ["本命", "押さえ", "穴"];
+  // 4 点以上: 本命 / 押さえ × 2 / 穴 × N / 大穴
+  const labels = ["本命", "押さえ1", "押さえ2"];
+  for (let i = 3; i < n; i++) {
+    if (i < n - 2) labels.push(`穴${i - 2}`);
+    else labels.push(`大穴${i - n + 3}`);
+  }
+  return labels.slice(0, n);
 }
 
 /* 6号艇本命チェック: 6号艇から始まる買い目 (1着=6) は、
@@ -473,17 +500,15 @@ export function buildBuyRecommendation(ev, riskProfile, perRaceCap) {
   }
 
   const allowed = {
-    aggressive: ["3連単", "2連単"],            // 攻め: 3連単 + 2連単 (穴狙い)
+    aggressive: ["3連単", "2連単"],
     balanced:   ["2連単", "3連単"],
-    steady:     ["2連複", "3連複", "2連単"],   // 安全: 連複中心 + 2連単
+    steady:     ["2連複", "3連複", "2連単"],
   }[riskProfile] || ["2連単", "3連単"];
 
-  // 6号艇本命チェック (1着=6 の候補は強根拠が必要)
   const boat6Valid = isBoat6CandidateValid(ev.race || {boats: []}, ev.scores || [], ev.probs || [], ev.inTrust);
   let candidates = ev.items.filter((t) => {
     if (!allowed.includes(t.kind)) return false;
-    if (t.ev < 1.10) return false;
-    // 6号艇始まりは根拠が必要
+    if (t.ev < 1.05) return false; // EV 1.05+ を候補に (1.10 以下は補助として残す)
     if (t.combo.startsWith("6") && !boat6Valid) return false;
     return true;
   });
@@ -491,44 +516,68 @@ export function buildBuyRecommendation(ev, riskProfile, perRaceCap) {
   if (candidates.length === 0) {
     return {
       decision: "skip",
-      reason: `${allowed.join("/")}で EV 1.10 以上の候補なし`,
-      items: [], total: 0,
+      reason: `${allowed.join("/")}で EV 1.05 以上の候補なし`,
+      items: [], total: 0, rationale: "妙味のあるオッズが見当たらないため見送り",
     };
   }
   if (perRaceCap <= 0) {
     return { decision: "skip", reason: "1日予算/1レース上限が 0", items: [], total: 0 };
   }
 
-  // 戦略別の買い目点数:
-  //   steady:     1〜2 点 (本命中心)
-  //   balanced:   2〜3 点
-  //   aggressive: 3〜5 点
-  const maxItems = riskProfile === "aggressive" ? 5 : riskProfile === "steady" ? 2 : 3;
-  // S 評価が複数あれば多めに、A 評価のみなら少なめに
-  const sCount = candidates.filter(c => c.ev >= 1.30).length;
-  const numItems = Math.max(1, Math.min(maxItems, sCount > 0 ? Math.min(maxItems, sCount + 1) : 2));
+  // === 利益重視: 候補 EV と分布を見て点数を動的に決める ===
+  //  ・S級 (EV ≥ 1.30) が 1 つだけ → 絞り (1-3 点)
+  //  ・S級 + A級 が 5 つ以上 → 広め (5-10 点)
+  //  ・荒れ展開 (development.scenario === "荒れ") → さらに広め
+  //  ・1号艇信頼度低 → 広め
+  //  ・riskProfile aggressive → 上限緩い (最大 20 点)
+  const sCount = candidates.filter((c) => c.ev >= 1.30).length;
+  const aCount = candidates.filter((c) => c.ev >= 1.10 && c.ev < 1.30).length;
+  const isRough = ev.development?.scenario === "荒れ" || ev.development?.scenario === "混戦";
+  const inUnstable = ev.inTrust?.level && (ev.inTrust.level === "荒れ注意" || ev.inTrust.level === "イン崩壊警戒");
 
-  // 配分: 本命に多め、押さえ・穴は均等
-  const allocations = computeAllocations(numItems, riskProfile);
-  const stakes = allocations.map(a => Math.floor((perRaceCap * a) / 100) * 100);
-  const roles = numItems === 1 ? ["本命"]
-              : numItems === 2 ? ["本命", "押さえ"]
-              : numItems === 3 ? ["本命", "押さえ", "穴"]
-              : ["本命", "押さえ1", "押さえ2", "穴1", "穴2"].slice(0, numItems);
+  const upperByProfile = { steady: 5, balanced: 10, aggressive: 20 };
+  const upper = upperByProfile[riskProfile] || 10;
+
+  let suggestedCount;
+  let why;
+  if (sCount >= 1 && aCount === 0 && !isRough && !inUnstable) {
+    suggestedCount = Math.min(3, upper);
+    why = `S級 1点 (EV ≥ 1.30) があり、展開も読みやすいため ${suggestedCount} 点に絞ります`;
+  } else if (sCount >= 1 && (aCount >= 3 || isRough)) {
+    suggestedCount = Math.min(Math.max(5, sCount + aCount - 1), upper);
+    why = `S級 + A級が ${sCount + aCount} 件、${isRough ? "荒れ展開で" : ""} 広めに ${suggestedCount} 点取ります`;
+  } else if (sCount >= 1) {
+    suggestedCount = Math.min(Math.max(3, sCount + 1), upper);
+    why = `S級 ${sCount} 点を中心に押さえを加えて ${suggestedCount} 点`;
+  } else if (aCount >= 5 || isRough || inUnstable) {
+    suggestedCount = Math.min(Math.max(6, aCount), upper);
+    why = `A級が ${aCount} 件あり ${isRough || inUnstable ? "展開不透明なので" : ""} 広めに ${suggestedCount} 点`;
+  } else if (aCount >= 1) {
+    suggestedCount = Math.min(Math.max(3, aCount + 1), upper);
+    why = `A級 ${aCount} 件を中心に ${suggestedCount} 点`;
+  } else {
+    suggestedCount = Math.min(2, upper);
+    why = `B級のみ ${candidates.length} 件 — 最低限 ${suggestedCount} 点で補助購入`;
+  }
+
+  const numItems = Math.min(suggestedCount, candidates.length);
+  const allocations = computeAllocationsExt(numItems, riskProfile);
+  const stakes = allocations.map((a) => Math.max(100, Math.floor((perRaceCap * a) / 100) * 100));
+  const roles = makeRoles(numItems);
 
   const top = candidates.slice(0, numItems);
   const items = top.map((t, i) => {
     const mainBoat = parseInt(t.combo[0]);
     const score = ev.scores.find((s) => s.boatNo === mainBoat);
     return {
-      role: roles[i] || `候補${i+1}`,
+      role: roles[i] || `候補${i + 1}`,
       kind: t.kind,
       combo: t.combo,
       prob: t.prob,
       odds: t.odds,
       ev: t.ev,
       stake: stakes[i] || 0,
-      grade: t.ev >= 1.30 ? "S" : t.ev >= 1.10 ? "A" : "B",
+      grade: t.ev >= 1.30 ? "S" : t.ev >= 1.10 ? "A" : t.ev >= 0.95 ? "B" : "C",
       conditionReasons: score?.conditionReasons || [],
     };
   }).filter((it) => it.stake > 0);
@@ -550,5 +599,33 @@ export function buildBuyRecommendation(ev, riskProfile, perRaceCap) {
     total: items.reduce((s, it) => s + it.stake, 0),
     grade: main.grade,
     development: ev.development,
+    /* 「なぜこの点数か」 — UI で表示 */
+    rationale: why,
+    points: items.length,
+    profile: riskProfile,
   };
+}
+
+/* === データ取得状況のサマリ === */
+export function dataAvailability(race) {
+  if (!race) return {};
+  const boats = race.boats || [];
+  const av = {
+    "選手データ":   boats.length === 6 && boats.every(b => b.racer && b.class) ? "ok" : "—",
+    "コース別成績": boats.some(b => b.localWinRate != null) ? "ok" : "—",
+    "モーター成績": boats.some(b => b.motor2 != null) ? "ok" : "—",
+    "ボート成績":   boats.some(b => b.boat2 != null) ? "ok" : "—",
+    "展示タイム":   boats.some(b => b.exTime != null) ? "ok" : "—",
+    "スタートST":   boats.some(b => b.ST != null) ? "ok" : "—",
+    "チルト":       boats.some(b => b.tilt != null) ? "ok" : "—",
+    "部品交換":     boats.some(b => b.partsExchange?.length) ? "ok" : "—",
+    "オッズ":       race.apiOdds && (Object.keys(race.apiOdds.exacta || {}).length > 0
+                                     || Object.keys(race.apiOdds.trifecta || {}).length > 0) ? "ok" : "—",
+    "天候":         race.weather ? "ok" : "—",
+    "風":           race.wind != null ? "ok" : "—",
+    "波":           race.wave != null ? "ok" : "—",
+  };
+  const total = Object.keys(av).length;
+  const got = Object.values(av).filter(v => v === "ok").length;
+  return { items: av, completeness: total > 0 ? got / total : 0, got, total };
 }

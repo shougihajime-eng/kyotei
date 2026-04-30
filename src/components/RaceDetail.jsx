@@ -1,5 +1,6 @@
 import BuyDecisionCard from "./BuyDecisionCard.jsx";
 import { pct } from "../lib/format.js";
+import { dataAvailability } from "../lib/predict.js";
 
 /**
  * レース詳細 — 結論カード + 6艇の確率/スコア + 直前情報サマリ + 関連記事
@@ -14,6 +15,16 @@ export default function RaceDetail({ race, evalRes, recommendation, onRecord, on
       <button className="btn btn-ghost text-xs" onClick={onBack}>← 戻る</button>
 
       <BuyDecisionCard race={race} recommendation={recommendation} onRecord={onRecord} virtualMode={virtualMode} />
+
+      {/* 「なぜこの点数」 説明 */}
+      {recommendation?.rationale && (
+        <section className="alert-info text-sm">
+          📐 <b>{recommendation.points || 0} 点購入の理由:</b> {recommendation.rationale}
+        </section>
+      )}
+
+      {/* データ取得状況パネル */}
+      <DataAvailabilityPanel race={race} />
 
       <DevelopmentSummary evalRes={evalRes} />
       <WindWaveSection evalRes={evalRes} />
@@ -98,6 +109,35 @@ function BoatProbabilityTable({ evalRes, race }) {
 function grade(v) {
   if (v == null) return "—";
   if (v >= 0.7) return "A"; if (v >= 0.4) return "B"; return "C";
+}
+
+/* データ取得状況パネル — 選手/コース別/モーター/展示/オッズ/気象 を取得済 / 未取得で表示 */
+function DataAvailabilityPanel({ race }) {
+  const av = dataAvailability(race);
+  const items = av.items || {};
+  const completeness = Math.round((av.completeness || 0) * 100);
+  return (
+    <section className="card p-4" style={{ minHeight: 120 }}>
+      <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+        <h3 className="font-bold text-sm">📋 データ取得状況</h3>
+        <span className={"pill " + (completeness >= 80 ? "badge-buy" : completeness >= 50 ? "badge-warn" : "badge-skip")}>
+          {av.got || 0} / {av.total || 0} ({completeness}%)
+        </span>
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-1 text-xs">
+        {Object.entries(items).map(([k, v]) => (
+          <div key={k} className="flex items-center gap-1">
+            <span style={{ color: v === "ok" ? "#34d399" : "#f87171" }}>{v === "ok" ? "✓" : "✗"}</span>
+            <span className={v === "ok" ? "" : "opacity-50"}>{k}</span>
+            {v !== "ok" && <span className="text-xs opacity-60 ml-auto">未取得</span>}
+          </div>
+        ))}
+      </div>
+      <div className="text-xs opacity-60 mt-2">
+        ※ 未取得項目は「最新にする」を押すと取得試行されます。取得不可のままの場合は仮値を使わず、その項目は予想に反映されません。
+      </div>
+    </section>
+  );
 }
 
 /* === Phase D: 風波 影響 === */
