@@ -517,11 +517,28 @@ export function buildBuyRecommendation(ev, riskProfile, perRaceCap) {
     return {
       decision: "skip",
       reason: `${allowed.join("/")}で EV 1.05 以上の候補なし`,
-      items: [], total: 0, rationale: "妙味のあるオッズが見当たらないため見送り",
+      items: [], total: 0,
+      rationale: "妙味のあるオッズが見当たらないため見送り (回収率重視)",
     };
   }
   if (perRaceCap <= 0) {
     return { decision: "skip", reason: "1日予算/1レース上限が 0", items: [], total: 0 };
+  }
+
+  // === 見送り強化条件 (回収率最大化のための積極見送り) ===
+  const topEv = candidates[0]?.ev || 0;
+  const isRoughHard = (ev.development?.scenario === "荒れ") && ev.windWave?.roughLikelihood >= 70;
+  const inUnstableHard = ev.inTrust?.level === "イン崩壊警戒";
+  // S 級 (EV 1.30+) も A 級も無く、しかも荒れ要素強 → 見送り
+  const sCountForSkip = candidates.filter((c) => c.ev >= 1.30).length;
+  const aCountForSkip = candidates.filter((c) => c.ev >= 1.10 && c.ev < 1.30).length;
+  if (sCountForSkip === 0 && aCountForSkip === 0 && (isRoughHard || inUnstableHard)) {
+    return {
+      decision: "skip",
+      reason: "B級候補のみ + 荒れ/インドミナント低 — 回収率悪化リスクのため見送り",
+      items: [], total: 0,
+      rationale: "EV 1.10 未満かつ展開不透明。安易な購入は長期的にマイナスになるため見送り推奨",
+    };
   }
 
   // === 利益重視: 候補 EV と分布を見て点数を動的に決める ===
@@ -603,6 +620,55 @@ export function buildBuyRecommendation(ev, riskProfile, perRaceCap) {
     rationale: why,
     points: items.length,
     profile: riskProfile,
+  };
+}
+
+/* === 予想分解: 本命艇のスコアを因子別に分解して可視化 ===
+   どのデータが予想にどれだけ影響したかを %s で示す。 */
+export function getScoreBreakdown(boat, race) {
+  if (!boat) return null;
+  const fIn = norm.in(boat.boatNo);
+  const fMot = norm.motor(boat.motor2);
+  const fEx = norm.ex(boat.exTime);
+  const fSt = norm.st(boat.ST);
+  const fWr = norm.wr(boat.winRate);
+  const fB2 = norm.b2(boat.boat2);
+  const cond = computeConditionMod(boat);
+  const wd = windDirectionMod(boat, race?.windDir, race?.wind);
+  const components = [
+    { key: "inAdvantage", label: "1号艇有利度", value: fIn, weight: FACTOR_WEIGHTS.inAdvantage,
+      contribution: +(fIn * FACTOR_WEIGHTS.inAdvantage).toFixed(3),
+      note: `コース基本勝率 ${(norm.in(boat.boatNo) * 55).toFixed(0)}%` },
+    { key: "motor", label: "モーター", value: fMot, weight: FACTOR_WEIGHTS.motor,
+      contribution: +(fMot * FACTOR_WEIGHTS.motor).toFixed(3),
+      note: boat.motor2 != null ? `2連率 ${boat.motor2}%` : "未取得" },
+    { key: "exhibition", label: "展示タイム", value: fEx, weight: FACTOR_WEIGHTS.exhibition,
+      contribution: +(fEx * FACTOR_WEIGHTS.exhibition).toFixed(3),
+      note: boat.exTime != null ? `${boat.exTime}秒` : "未取得" },
+    { key: "startPower", label: "スタート", value: fSt, weight: FACTOR_WEIGHTS.startPower,
+      contribution: +(fSt * FACTOR_WEIGHTS.startPower).toFixed(3),
+      note: boat.ST != null ? `平均ST ${boat.ST}` : "未取得" },
+    { key: "winRate", label: "全国勝率", value: fWr, weight: 0.03,
+      contribution: +(fWr * 0.03).toFixed(3),
+      note: boat.winRate != null ? `${boat.winRate}` : "未取得" },
+    { key: "boat2", label: "ボート2連率", value: fB2, weight: 0.02,
+      contribution: +(fB2 * 0.02).toFixed(3),
+      note: boat.boat2 != null ? `${boat.boat2}%` : "未取得" },
+  ];
+  const baseSum = components.reduce((s, c) => s + c.contribution, 0);
+  const condMod = cond.mod * wd.mod;
+  // 寄与度を %換算 (各因子が最終スコアの何 % を占めるか)
+  const totalRaw = baseSum * condMod;
+  const breakdown = components.map((c) => ({
+    ...c,
+    pctOfBase: baseSum > 0 ? Math.round((c.contribution / baseSum) * 100) : 0,
+  }));
+  return {
+    breakdown,
+    baseSum: +baseSum.toFixed(3),
+    conditionMod: +condMod.toFixed(3),
+    finalScore: +totalRaw.toFixed(3),
+    conditionReasons: [...cond.reasons, wd.reason].filter(Boolean),
   };
 }
 

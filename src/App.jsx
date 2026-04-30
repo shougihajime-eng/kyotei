@@ -220,13 +220,43 @@ export default function App() {
       return out;
     });
 
-    /* ④ 完了 (最低 400 ms 表示) */
+    /* ④ 高速 2 段階追加取得 — オッズだけ 5秒間隔で 2 回追い更新
+       (発走直前のオッズ変動を捉えやすくする / 連打防止のため最大 2 回まで) */
+    const fastTargets = candidates.filter((r) => {
+      const e = startEpoch(r.date, r.startTime);
+      const m = e != null ? (e - Date.now()) / 60000 : null;
+      return m != null && m >= -5 && m <= 30; // 発走前 30 分〜発走後 5 分のみ
+    }).slice(0, 8); // 最大 8 レース
+
+    if (fastTargets.length > 0) {
+      for (let pass = 1; pass <= 2; pass++) {
+        await new Promise((r) => setTimeout(r, 5000)); // 5 秒間隔
+        setRefreshMsg(`🔄 オッズ追い更新 ${pass}/2 (${fastTargets.length}レース)…`);
+        const oddsResults = await Promise.all(fastTargets.map(async (r) => {
+          const odds = await fetchRaceOdds(r.jcd, r.raceNo, dateK);
+          return { id: r.id, odds };
+        }));
+        setRaces((prev) => {
+          if (!prev || prev.length === 0) return prev;
+          const idx = Object.fromEntries(oddsResults.filter(x => x.odds).map(x => [x.id, x.odds]));
+          let changed = false;
+          const next = prev.map((r) => {
+            if (!idx[r.id]) return r;
+            changed = true;
+            return mergeOdds(r, idx[r.id]);
+          });
+          return changed ? next : prev;
+        });
+      }
+    }
+
+    /* ⑤ 完了 (最低 400 ms 表示) */
     const elapsed = Date.now() - startedAt;
     if (elapsed < 400) await new Promise((r2) => setTimeout(r2, 400 - elapsed));
     const ts = new Date().toISOString();
     setLastRefreshAt(ts);
     if (sched?.ok) {
-      setRefreshMsg(`✅ 更新しました (${sched.total_venues}会場 / ${sched.total_races}レース / 詳細 ${candidates.length}件)`);
+      setRefreshMsg(`✅ 更新しました (${sched.total_venues}会場 / ${sched.total_races}レース / 詳細 ${candidates.length}件 / オッズ ${fastTargets.length}件 ×3 段階)`);
     } else {
       setRefreshMsg(`⚠️ 一時的に取得できません。少し時間を空けて再実行してください — サンプル動作中`);
     }

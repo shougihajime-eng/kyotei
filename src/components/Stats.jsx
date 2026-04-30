@@ -4,6 +4,7 @@ import {
   XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine,
 } from "recharts";
 import { yen } from "../lib/format.js";
+import { judgeAIReliability, evaluateSkipQuality } from "../lib/analysis.js";
 
 /**
  * 📈 グラフ画面 — エア/リアル別の累計収支・日別収支・回収率・的中率・券種別成績
@@ -38,10 +39,69 @@ export default function Stats({ predictions, lastRefreshAt }) {
         最終更新: {lastRefreshAt ? new Date(lastRefreshAt).toLocaleTimeString("ja-JP") : "—"}
       </div>
 
+      {/* AI 信頼度パネル — 「このAIを信じていいか」 */}
+      <AITrustPanel predictions={predictions} />
+
       {tab === "compare"
         ? <CompareView air={air} real={real} />
         : <SingleView items={tab === "air" ? air : real} label={tab === "air" ? "エア" : "リアル"} />}
     </div>
+  );
+}
+
+/* AI 信頼度パネル */
+function AITrustPanel({ predictions }) {
+  const trust = useMemo(() => judgeAIReliability(predictions), [predictions]);
+  const skip = useMemo(() => evaluateSkipQuality(predictions), [predictions]);
+  return (
+    <section className="card p-4" style={{ minHeight: 140, borderColor: trust.color, borderWidth: 2 }}>
+      <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
+        <h3 className="font-bold text-sm">🤖 このAIを信じていいか</h3>
+        <span className="text-xs opacity-70">{trust.totalRaces || 0} 件のレースから判定</span>
+      </div>
+      <div className="text-center my-3">
+        <div style={{ fontSize: 24, letterSpacing: "0.2em" }}>
+          {"★".repeat(trust.stars)}<span style={{ opacity: 0.3 }}>{"☆".repeat(5 - trust.stars)}</span>
+        </div>
+        <div className="font-bold text-lg mt-1" style={{ color: trust.color }}>{trust.level}</div>
+        <div className="text-xs opacity-80 mt-1">{trust.message}</div>
+      </div>
+
+      {trust.sampleSize >= 10 && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs mt-3">
+          <div className="p-2 rounded text-center" style={{ background: "rgba(0,0,0,0.25)" }}>
+            <div className="opacity-70">回収率</div>
+            <div className="num font-bold mt-1" style={{ fontSize: 16, color: trust.roi >= 1 ? "#34d399" : "#f87171" }}>
+              {trust.roi != null ? Math.round(trust.roi * 100) + "%" : "—"}
+            </div>
+          </div>
+          <div className="p-2 rounded text-center" style={{ background: "rgba(0,0,0,0.25)" }}>
+            <div className="opacity-70">的中率</div>
+            <div className="num font-bold mt-1" style={{ fontSize: 16 }}>
+              {trust.hitRate != null ? Math.round(trust.hitRate * 100) + "%" : "—"}
+            </div>
+          </div>
+          <div className="p-2 rounded text-center" style={{ background: "rgba(0,0,0,0.25)" }}>
+            <div className="opacity-70">見送り精度</div>
+            <div className="num font-bold mt-1" style={{ fontSize: 16 }}>
+              {skip.skipQuality != null ? Math.round(skip.skipQuality * 100) + "%" : "—"}
+            </div>
+            <div className="opacity-60 mt-1" style={{ fontSize: 10 }}>
+              ✓{skip.skippedCorrect} ✗{skip.skippedMissed}
+            </div>
+          </div>
+          <div className="p-2 rounded text-center" style={{ background: "rgba(0,0,0,0.25)" }}>
+            <div className="opacity-70">サンプル</div>
+            <div className="num font-bold mt-1" style={{ fontSize: 16 }}>{trust.sampleSize}</div>
+          </div>
+        </div>
+      )}
+      {trust.sampleSize < 10 && (
+        <div className="text-xs opacity-60 mt-2 text-center">
+          💡 信頼度判定にはまず 10 件以上の確定済みレースが必要です。手動記録でデータを増やせます。
+        </div>
+      )}
+    </section>
   );
 }
 

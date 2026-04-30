@@ -100,6 +100,86 @@ export function analyzePrediction(prediction, race) {
 }
 
 /**
+ * 見送り精度の集計 — 「見送って正解」と「買って外れ」のバランスから判断する。
+ *
+ * 見送って正解 = AI が見送ったレースで、結果も荒れた / 1着候補が穴だった (買っていたら外していた可能性)
+ * 見送って失敗 = AI が見送ったレースだが、結果は本命通り (買えば当たっていた)
+ *
+ * 簡略実装: 結果が記録されていない見送りは集計対象外。
+ *  ・raceId に対する result がある predictions だけを集計対象とする。
+ *  ・見送りレースは prediction で decision="skip" だが、
+ *    現状の auto-save では「skip」予測も記録される (predict.js から見れば)。
+ *  ・本来は別途 race の result を予測と紐付けて見送り精度を計算するが、
+ *    raceId と result から AI が予想した買い目に対して当落判定を試行する。
+ */
+export function evaluateSkipQuality(predictions) {
+  const all = Object.values(predictions || {}).filter((p) => p.result?.first);
+  let skippedCorrect = 0; // 見送り → 高配当 (荒れ) だった
+  let skippedMissed = 0;  // 見送り → 本命通りだった (買えばよかった)
+  let boughtHit = 0;
+  let boughtMiss = 0;
+  for (const p of all) {
+    if (p.decision === "skip") {
+      // 結果の本命らしさ: 1号艇の 1着 = 普通 / それ以外 = 荒れ
+      if (p.result.first === 1) skippedMissed++;
+      else skippedCorrect++;
+    } else {
+      if (p.hit) boughtHit++;
+      else boughtMiss++;
+    }
+  }
+  const skipQuality = (skippedCorrect + skippedMissed) > 0
+    ? skippedCorrect / (skippedCorrect + skippedMissed) : null;
+  return {
+    boughtHit, boughtMiss,
+    skippedCorrect, skippedMissed,
+    skipQuality,
+    total: all.length,
+  };
+}
+
+/**
+ * AI 信頼度判定 — 「このAIを信じていいか」 を 5 段階で判定。
+ *  ・累計回収率 (real or air)
+ *  ・的中率
+ *  ・見送り精度
+ *  ・サンプル数
+ * を元にスコアリング。
+ */
+export function judgeAIReliability(predictions) {
+  const all = Object.values(predictions || {}).filter((p) => p.result?.first);
+  const buys = all.filter((p) => p.decision === "buy");
+  if (buys.length < 10) {
+    return {
+      level: "判断保留",
+      message: `データ不足 (購入 ${buys.length} 件 / 10件未満)`,
+      stars: 0, color: "#9fb0c9",
+    };
+  }
+  let stake = 0, ret = 0, hits = 0;
+  buys.forEach((p) => { stake += p.totalStake; ret += p.payout || 0; if (p.hit) hits++; });
+  const roi = stake > 0 ? ret / stake : 0;
+  const hitRate = buys.length > 0 ? hits / buys.length : 0;
+  const skipQ = evaluateSkipQuality(predictions);
+  let stars = 0;
+  let level, message, color;
+  if (roi >= 1.20 && buys.length >= 30) { stars = 5; level = "信頼度高"; message = `回収率 ${Math.round(roi*100)}% (${buys.length}件) — 信じて良い水準`; color = "#10b981"; }
+  else if (roi >= 1.05) { stars = 4; level = "信頼できる"; message = `回収率 ${Math.round(roi*100)}% — 公営の壁を超えています`; color = "#34d399"; }
+  else if (roi >= 0.95) { stars = 3; level = "様子見"; message = `回収率 ${Math.round(roi*100)}% — 大きな勝ちも負けも無し`; color = "#fde68a"; }
+  else if (roi >= 0.80) { stars = 2; level = "改善余地"; message = `回収率 ${Math.round(roi*100)}% — マイナス傾向、戦略見直し推奨`; color = "#f59e0b"; }
+  else { stars = 1; level = "信頼度低"; message = `回収率 ${Math.round(roi*100)}% — 大きく負け越し、見送り判定の見直しが必要`; color = "#f87171"; }
+  return {
+    stars, level, message, color,
+    roi, hitRate,
+    skipQuality: skipQ.skipQuality,
+    sampleSize: buys.length,
+    totalRaces: all.length,
+    skippedCorrect: skipQ.skippedCorrect,
+    skippedMissed: skipQ.skippedMissed,
+  };
+}
+
+/**
  * 全予測の集計から学習メモを生成
  *  既に記録された past の hit/miss から自動的に「気をつける条件」を抽出。
  */

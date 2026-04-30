@@ -1,6 +1,6 @@
 import BuyDecisionCard from "./BuyDecisionCard.jsx";
 import { pct } from "../lib/format.js";
-import { dataAvailability } from "../lib/predict.js";
+import { dataAvailability, getScoreBreakdown } from "../lib/predict.js";
 
 /**
  * レース詳細 — 結論カード + 6艇の確率/スコア + 直前情報サマリ + 関連記事
@@ -25,6 +25,9 @@ export default function RaceDetail({ race, evalRes, recommendation, onRecord, on
 
       {/* データ取得状況パネル */}
       <DataAvailabilityPanel race={race} />
+
+      {/* 本命艇の予想分解 (どのデータが何 % 効いたか) */}
+      <ScoreBreakdownPanel evalRes={evalRes} race={race} recommendation={recommendation} />
 
       <DevelopmentSummary evalRes={evalRes} />
       <WindWaveSection evalRes={evalRes} />
@@ -136,6 +139,63 @@ function DataAvailabilityPanel({ race }) {
       <div className="text-xs opacity-60 mt-2">
         ※ 未取得項目は「最新にする」を押すと取得試行されます。取得不可のままの場合は仮値を使わず、その項目は予想に反映されません。
       </div>
+    </section>
+  );
+}
+
+/* 本命艇の予想分解 — どの因子がどれだけ効いたかを %s で表示 */
+function ScoreBreakdownPanel({ evalRes, race, recommendation }) {
+  if (!recommendation || recommendation.decision !== "buy" || !recommendation.main) return null;
+  const mainBoatNo = parseInt(recommendation.main.combo[0]);
+  const boat = race?.boats?.find((b) => b.boatNo === mainBoatNo);
+  if (!boat) return null;
+  const bd = getScoreBreakdown(boat, race);
+  if (!bd) return null;
+  // 寄与度の高い順
+  const sorted = [...bd.breakdown].sort((a, b) => b.contribution - a.contribution);
+  const maxContribution = Math.max(...sorted.map((c) => c.contribution), 0.001);
+  return (
+    <section className="card p-4">
+      <h3 className="font-bold text-sm mb-3">🔬 本命艇 ({mainBoatNo}号艇) の予想分解</h3>
+      <div className="text-xs opacity-70 mb-3">
+        どのデータが何 % 効いているかを可視化しました。直前補正は ×{bd.conditionMod.toFixed(2)} 倍。
+      </div>
+      <div className="space-y-2">
+        {sorted.map((c) => (
+          <div key={c.key}>
+            <div className="flex items-baseline justify-between text-xs mb-1">
+              <span className="font-bold">{c.label}</span>
+              <span className="opacity-80">
+                <span className="opacity-60 mr-2">{c.note}</span>
+                <b>{c.pctOfBase}%</b>
+              </span>
+            </div>
+            <div style={{ width: "100%", height: 8, background: "#1f2a44", borderRadius: 4, overflow: "hidden" }}>
+              <div style={{
+                width: `${(c.contribution / maxContribution) * 100}%`,
+                height: "100%",
+                background: c.contribution > 0.10 ? "#10b981" : c.contribution > 0.05 ? "#fde68a" : "#9fb0c9",
+              }} />
+            </div>
+          </div>
+        ))}
+      </div>
+      {bd.conditionReasons.length > 0 && (
+        <div className="mt-3 pt-3" style={{ borderTop: "1px solid #1f2a44" }}>
+          <div className="text-xs opacity-70 mb-1">直前補正の内訳</div>
+          <div className="flex flex-wrap gap-1">
+            {bd.conditionReasons.map((r, i) => (
+              <span key={i} className="pill text-xs"
+                style={{
+                  background: r.kind === "pos" ? "rgba(16,185,129,0.18)" : "rgba(239,68,68,0.18)",
+                  color: r.kind === "pos" ? "#a7f3d0" : "#fecaca",
+                }}>
+                {r.kind === "pos" ? "✓" : "✗"} {r.text}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
     </section>
   );
 }
