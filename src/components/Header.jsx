@@ -1,5 +1,6 @@
-/* ヘッダ + 5 タブナビ + エア/リアル損益 + 更新ボタン (右上固定 / 44px) */
+/* ヘッダ + タブナビ + エア/リアル損益 + 更新ボタン (右上固定 / 44px) + スタイル切替 */
 import { yen } from "../lib/format.js";
+import StyleSelector from "./StyleSelector.jsx";
 
 const TABS = [
   { k: "home", label: "🏠 ホーム" },
@@ -9,7 +10,7 @@ const TABS = [
   { k: "settings", label: "💼 設定" },
 ];
 
-export default function Header({ tab, setTab, today, settings, refreshing, onRefresh, lastRefreshAt }) {
+export default function Header({ tab, setTab, today, settings, setSettings, refreshing, onRefresh, lastRefreshAt, suggestedStyle }) {
   const air = today?.air || { stake: 0, pnl: 0 };
   const real = today?.real || { stake: 0, pnl: 0 };
   const realLabel = real.stake === 0 ? "未入力" : (real.pnl >= 0 ? "+" + yen(real.pnl) : "−" + yen(Math.abs(real.pnl)));
@@ -60,7 +61,7 @@ export default function Header({ tab, setTab, today, settings, refreshing, onRef
         )}
       </div>
 
-      {/* タブナビ */}
+      {/* タブナビ + スタイル切替 */}
       <div className="max-w-5xl mx-auto px-4 pb-2">
         <div className="flex gap-1 overflow-x-auto scrollbar">
           {TABS.map((t) => (
@@ -68,6 +69,16 @@ export default function Header({ tab, setTab, today, settings, refreshing, onRef
               onClick={() => setTab(t.k)}>{t.label}</button>
           ))}
         </div>
+        {settings.onboardingDone && setSettings && (
+          <div className="mt-2 flex items-center gap-2 flex-wrap">
+            <span className="text-xs opacity-70">予想スタイル:</span>
+            <StyleSelector
+              value={settings.riskProfile}
+              onChange={(k) => setSettings({ ...settings, riskProfile: k })}
+              suggested={suggestedStyle}
+              compact />
+          </div>
+        )}
       </div>
     </header>
   );

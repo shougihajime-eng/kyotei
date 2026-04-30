@@ -11,6 +11,7 @@ import Onboarding from "./components/Onboarding.jsx";
 import { loadState, saveState, clearState } from "./lib/storage.js";
 import { fetchTodaySchedule, fetchRaceProgram, fetchRaceOdds, fetchRaceResult, fetchBeforeInfo } from "./lib/api.js";
 import { evaluateRace, buildBuyRecommendation, computeOverallGrade } from "./lib/predict.js";
+import { suggestStyle } from "./components/StyleSelector.jsx";
 import { defaultSettings, summarizeToday, perRaceCap } from "./lib/money.js";
 import { todayDate, todayKey, startEpoch } from "./lib/format.js";
 import { generateSampleRaces, buildRacesFromSchedule, mergeProgram, mergeOdds, mergeBeforeInfo } from "./lib/sample.js";
@@ -292,8 +293,9 @@ export default function App() {
   return (
     <div className="min-h-screen">
       <Header tab={tab} setTab={(t) => { setTab(t); setSelectedRaceId(null); }}
-        today={today} settings={settings}
-        refreshing={refreshing} onRefresh={refreshAll} lastRefreshAt={lastRefreshAt} />
+        today={today} settings={settings} setSettings={setSettings}
+        refreshing={refreshing} onRefresh={refreshAll} lastRefreshAt={lastRefreshAt}
+        suggestedStyle={suggestStyle(evals, predictions)} />
 
       <main className="pb-20">
         {tab === "home" && (
