@@ -53,11 +53,11 @@ export default function Dashboard({
       {/* 公式ニュース */}
       <NewsPanel />
 
-      {/* レース一覧へのリンク (薄いボタン) */}
-      <div className="text-center">
-        <button className="btn btn-ghost text-xs" onClick={() => onPickRace("list")}>
-          📋 全レースの判定を見る →
-        </button>
+      {/* タブ移動ボタン */}
+      <div className="flex flex-wrap gap-2 justify-center">
+        <button className="btn btn-ghost text-xs" onClick={() => onPickRace("list")}>📋 全レース →</button>
+        <button className="btn btn-ghost text-xs" onClick={() => onPickRace("verify")}>📅 検証 →</button>
+        <button className="btn btn-primary text-xs" onClick={() => onPickRace("stats")}>📈 グラフを見る</button>
       </div>
     </div>
   );

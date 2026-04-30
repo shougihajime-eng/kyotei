@@ -19,48 +19,47 @@ const URLS = {
   win:      (jcd, rno, hd) => `https://www.boatrace.jp/owpc/pc/race/oddstf?jcd=${jcd}&rno=${rno}&hd=${hd}`,
   exacta:   (jcd, rno, hd) => `https://www.boatrace.jp/owpc/pc/race/odds2tf?jcd=${jcd}&rno=${rno}&hd=${hd}`,
   trifecta: (jcd, rno, hd) => `https://www.boatrace.jp/owpc/pc/race/odds3t?jcd=${jcd}&rno=${rno}&hd=${hd}`,
-  quinella: (jcd, rno, hd) => `https://www.boatrace.jp/owpc/pc/race/oddsk2?jcd=${jcd}&rno=${rno}&hd=${hd}`,
+  // 2連複は odds2tf に併記 (タイトル「オッズ (2連単・2連複)」)
+  quinella: (jcd, rno, hd) => `https://www.boatrace.jp/owpc/pc/race/odds2tf?jcd=${jcd}&rno=${rno}&hd=${hd}`,
   trio:     (jcd, rno, hd) => `https://www.boatrace.jp/owpc/pc/race/odds3f?jcd=${jcd}&rno=${rno}&hd=${hd}`,
 };
 
 /* 連複 (2連複 / 3連複) のオッズを抽出
-   組番のキーは "X=Y" / "X=Y=Z" 形式 (低い番号順)。
-   ページ構造は連単と類似のマトリクス。 */
+   ページ表記は「=」 または「-」両方ありうるため、両方を許容。
+   キーは正規化して "X=Y" / "X=Y=Z" (小→大) で返す。
+
+   2連複は odds2tf に併記されており「2連複オッズ」 ラベル以降を対象に絞る。
+   3連複は odds3f 専用ページ。 */
 function parseFukuOdds(html, depth /* 2 or 3 */) {
   const $ = cheerio.load(html);
   const out = {};
-  // ナビゲーションテーブル除外
-  const dataTables = $("table").toArray().filter(t => {
-    const txt = $(t).text();
-    return !/締切予定時刻/.test(txt) && /\d+\.\d/.test(txt);
-  });
-  if (dataTables.length === 0) return out;
+  let scanText = $("body").text().replace(/[ 　\s]+/g, " ");
 
-  function tokenize(txt) {
-    return txt.replace(/[ 　\s]+/g, " ").trim().split(" ").filter(t => /^\d+(\.\d+)?$/.test(t));
+  // 2連複は「2連複オッズ」セクション以降のみ対象に絞る (2連単と混在するため)
+  if (depth === 2) {
+    const idx = scanText.indexOf("2連複");
+    if (idx < 0) return out;
+    scanText = scanText.slice(idx);
   }
 
-  // 連複は通常 1 表で 6 行 × 多列。各セルに「X=Y(=Z) ¥オッズ」のペアか単独オッズが並ぶ。
-  // 防御的: 全 td の text からマッチングを行う
-  for (const tbl of dataTables) {
-    $(tbl).find("tr").each((_, tr) => {
-      const txt = $(tr).text();
-      if (/[一-龯]/.test(txt)) return; // 選手名行はスキップ
-      const re = depth === 2
-        ? /([1-6])=([1-6])[\s¥]*?(\d+(?:\.\d+)?)/g
-        : /([1-6])=([1-6])=([1-6])[\s¥]*?(\d+(?:\.\d+)?)/g;
-      let m;
-      while ((m = re.exec(txt)) !== null) {
-        const odds = parseFloat(m[depth + 1]);
-        if (!Number.isFinite(odds) || odds < 1.0) continue;
-        // キーは小→大 ソート
-        const nums = depth === 2 ? [+m[1], +m[2]] : [+m[1], +m[2], +m[3]];
-        if (new Set(nums).size !== nums.length) continue; // 重複番号は無効
-        const sorted = [...nums].sort((a, b) => a - b);
-        const key = sorted.join("=");
-        if (!out[key]) out[key] = odds;
-      }
-    });
+  // 全角→半角
+  scanText = scanText.replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
+
+  // パターン: [1-6](=|-)[1-6](=|-)[1-6]? + decimal
+  // ¥ 記号や空白を挟んでもマッチする
+  const re = depth === 2
+    ? /([1-6])\s*[=\-]\s*([1-6])[\s¥]+(\d+(?:\.\d+)?)/g
+    : /([1-6])\s*[=\-]\s*([1-6])\s*[=\-]\s*([1-6])[\s¥]+(\d+(?:\.\d+)?)/g;
+
+  let m;
+  while ((m = re.exec(scanText)) !== null) {
+    const odds = parseFloat(m[depth + 1]);
+    if (!Number.isFinite(odds) || odds < 1.0 || odds > 1e6) continue;
+    const nums = depth === 2 ? [+m[1], +m[2]] : [+m[1], +m[2], +m[3]];
+    if (new Set(nums).size !== nums.length) continue;
+    const sorted = [...nums].sort((a, b) => a - b);
+    const key = sorted.join("=");
+    if (!out[key]) out[key] = odds;
   }
   return out;
 }

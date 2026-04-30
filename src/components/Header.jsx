@@ -3,8 +3,9 @@ import { yen } from "../lib/format.js";
 
 const TABS = [
   { k: "home", label: "🏠 ホーム" },
-  { k: "list", label: "📋 レース一覧" },
+  { k: "list", label: "📋 一覧" },
   { k: "verify", label: "📅 検証" },
+  { k: "stats", label: "📈 グラフ" },
   { k: "settings", label: "💼 設定" },
 ];
 

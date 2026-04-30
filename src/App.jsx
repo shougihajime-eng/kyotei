@@ -4,6 +4,7 @@ import Dashboard from "./components/Dashboard.jsx";
 import RaceList from "./components/RaceList.jsx";
 import RaceDetail from "./components/RaceDetail.jsx";
 import Verify from "./components/Verify.jsx";
+import Stats from "./components/Stats.jsx";
 import Settings from "./components/Settings.jsx";
 import Onboarding from "./components/Onboarding.jsx";
 
@@ -310,6 +311,9 @@ export default function App() {
         )}
         {tab === "verify" && (
           <Verify predictions={predictions} />
+        )}
+        {tab === "stats" && (
+          <Stats predictions={predictions} lastRefreshAt={lastRefreshAt} />
         )}
         {tab === "settings" && (
           <Settings settings={settings} setSettings={setSettings} onReset={handleReset} />
