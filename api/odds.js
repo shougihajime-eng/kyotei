@@ -267,10 +267,21 @@ export default async function handler(req, res) {
           tables: tableSummaries,
         };
       }
+      function fukuSnippet(html, depth) {
+        if (!html) return null;
+        const $$ = cheerio.load(html);
+        let txt = $$("body").text().replace(/[ 　\s]+/g, " ");
+        const label = depth === 2 ? "2連複" : "3連複";
+        const i = txt.indexOf(label);
+        if (i < 0) return { found: false, htmlLength: html.length };
+        return { found: true, idx: i, snippet: txt.slice(i, i + 1500) };
+      }
       body.debug = {
         win:      summarize(winHtml, "win"),
         exacta:   summarize(exHtml, "exacta"),
         trifecta: summarize(trHtml, "trifecta"),
+        quinella: fukuSnippet(qHtml, 2),
+        trio:     fukuSnippet(fHtml, 3),
       };
     }
     return res.status(200).json(body);
