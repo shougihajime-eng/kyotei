@@ -1,19 +1,30 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import BuyDecisionCard from "./BuyDecisionCard.jsx";
+import QuickJudgeCard from "./QuickJudgeCard.jsx";
 import RefreshBar from "./RefreshBar.jsx";
 import NewsPanel from "./NewsPanel.jsx";
 import EVExplainer from "./EVExplainer.jsx";
 import { yen } from "../lib/format.js";
 
 /**
- * ホーム画面 — 結論カード + 直近結果 + 1週間損益。これだけ。
+ * ホーム画面 — 初心者でも一目で判断できるシンプル構成。
+ *
+ *   上から:
+ *     1. 🚀 クイックジャッジ (本命/穴/見送り判定 + EV + エア・リアル成績)
+ *     2. 詳細結論カード (折りたたみ可能)
+ *     3. 直近の結果
+ *     4. 1週間損益
+ *     5. EV 解説
+ *     6. ニュース
+ *     7. タブ移動ボタン
  */
 export default function Dashboard({
   races, predictions, recommendations, today, weekly,
   refreshing, refreshMsg, lastRefreshAt, onRefresh,
   onRecord, settings, onPickRace,
 }) {
-  // 直近の S/A 評価レース (発走前 60 分以内 OR 発走 5 分以内に終わったもの)
+  const [showDetails, setShowDetails] = useState(false);
+
   const headline = useMemo(() => {
     if (!races || races.length === 0) return null;
     const now = Date.now();
@@ -21,10 +32,8 @@ export default function Dashboard({
       const startMs = startEpoch(r.date, r.startTime);
       return { race: r, startMs, untilStart: startMs ? (startMs - now) / 60000 : null };
     });
-    // 締切前 (発走 1 分前まで) のレース
     const upcoming = annotated.filter(x => x.untilStart != null && x.untilStart > 1 && x.untilStart < 600);
     if (upcoming.length === 0) return null;
-    // 該当レースの中で「買う」推奨が出ているもの優先、なければ直近のもの
     const sorted = [...upcoming].sort((a, b) => {
       const ra = recommendations[a.race.id]?.decision === "buy" ? 0 : 1;
       const rb = recommendations[b.race.id]?.decision === "buy" ? 0 : 1;
@@ -41,20 +50,32 @@ export default function Dashboard({
       {/* 更新バー */}
       <RefreshBar onRefresh={onRefresh} refreshing={refreshing} refreshMsg={refreshMsg} lastRefreshAt={lastRefreshAt} />
 
-      {/* 結論カード */}
-      <BuyDecisionCard race={headline} recommendation={rec}
-        onRecord={onRecord} virtualMode={settings.virtualMode} />
+      {/* 🚀 クイックジャッジ — 一目判定 */}
+      <QuickJudgeCard headlineRace={headline} recommendation={rec} today={today} />
 
-      {/* 直近の確定結果 */}
+      {/* 詳細を見る (折りたたみ) */}
+      {headline && rec && rec.decision === "buy" && (
+        <button onClick={() => setShowDetails(v => !v)}
+          className="btn btn-ghost text-xs w-full" style={{ padding: "8px 0" }}>
+          {showDetails ? "▲ 詳細を隠す" : "▼ 詳細を見る (買い目内訳・記録ボタン)"}
+        </button>
+      )}
+
+      {showDetails && (
+        <BuyDecisionCard race={headline} recommendation={rec}
+          onRecord={onRecord} virtualMode={settings.virtualMode} />
+      )}
+
+      {/* 直近結果 */}
       <RecentResult predictions={predictions} />
 
       {/* 1週間損益 */}
       <WeeklyTotalBadge weekly={weekly} />
 
-      {/* EV の見方 (本命があれば値を渡す) */}
+      {/* EV 解説 */}
       <EVExplainer ev={rec?.main?.ev || rec?.items?.[0]?.ev || 0} />
 
-      {/* 公式ニュース */}
+      {/* ニュース */}
       <NewsPanel />
 
       {/* タブ移動ボタン */}
@@ -62,6 +83,7 @@ export default function Dashboard({
         <button className="btn btn-ghost text-xs" onClick={() => onPickRace("list")}>📋 全レース →</button>
         <button className="btn btn-ghost text-xs" onClick={() => onPickRace("verify")}>📅 検証 →</button>
         <button className="btn btn-primary text-xs" onClick={() => onPickRace("stats")}>📈 グラフを見る</button>
+        <button className="btn btn-ghost text-xs" onClick={() => onPickRace("analysis")}>🔍 外れ分析 →</button>
       </div>
     </div>
   );
@@ -82,7 +104,7 @@ function RecentResult({ predictions }) {
   const isHit = recent.hit;
 
   return (
-    <div className="card p-4" style={{ borderWidth: 2, borderColor: "#475569" }}>
+    <div className="card p-4" style={{ borderWidth: 2, borderColor: "#475569", minHeight: 140 }}>
       <div className="text-xs opacity-70 mb-2">直近の結果 — {recent.venue} {recent.raceNo}R</div>
       <div className="grid grid-cols-2 gap-3">
         <div>
@@ -123,14 +145,14 @@ function RecentResult({ predictions }) {
 function WeeklyTotalBadge({ weekly }) {
   if (!weekly || weekly.count === 0) {
     return (
-      <div className="card p-3 text-center text-xs opacity-70">
-        💡 「最新にする」を押すと AI 予想が記録されます。1 週間続けるとここに損益が出ます。
+      <div className="card p-3 text-center text-xs opacity-70" style={{ minHeight: 60 }}>
+        💡 「更新」 を押すと AI 予想が記録されます。1 週間続けるとここに損益が出ます。
       </div>
     );
   }
   const pnlColor = weekly.pnl >= 0 ? "text-pos" : "text-neg";
   return (
-    <div className="card p-4" style={{ borderWidth: 2, borderColor: weekly.pnl >= 0 ? "#10b981" : "#ef4444" }}>
+    <div className="card p-4" style={{ borderWidth: 2, borderColor: weekly.pnl >= 0 ? "#10b981" : "#ef4444", minHeight: 80 }}>
       <div className="text-xs opacity-70 uppercase tracking-widest mb-1">AI通りに 1 週間買っていたら</div>
       <div className="flex items-baseline gap-3 flex-wrap">
         <div className={"num " + pnlColor} style={{ fontSize: 32, fontWeight: 900 }}>
@@ -146,7 +168,6 @@ function WeeklyTotalBadge({ weekly }) {
   );
 }
 
-/* helper - ここにだけインライン (App から渡すと冗長) */
 function startEpoch(dateStr, startTime) {
   if (!dateStr || !startTime) return null;
   try {
