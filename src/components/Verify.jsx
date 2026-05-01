@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { yen, pct } from "../lib/format.js";
 import ManualBetForm from "./ManualBetForm.jsx";
+import { classifyLossPattern } from "../lib/venueBias.js";
 
 /**
  * 検証画面 — レース別カード一覧 + 集計。
@@ -213,6 +214,18 @@ function RaceCard({ p, onEdit, onDelete }) {
         </div>
       </div>
       {p.memo && <div className="text-xs opacity-70 mt-2 italic border-l-2 pl-2 border-cyan-400">📝 {p.memo}</div>}
+      {/* 負けパターン (Round 17) */}
+      {(() => {
+        if (!settled || p.hit) return null;
+        const cls = classifyLossPattern({ jcd: p.jcd, venue: p.venue, apiResult: p.result }, p);
+        if (!cls) return null;
+        return (
+          <div className="text-xs mt-2 px-2 py-1 rounded" style={{ background: "rgba(239,68,68,0.10)", color: "#fecaca", border: "1px solid rgba(239,68,68,0.25)" }}>
+            😫 <b>{cls.kind}</b> — {cls.desc}
+          </div>
+        );
+      })()}
+      {p.reflection && <div className="text-xs opacity-70 mt-2 italic border-l-2 pl-2 border-amber-400">📝 反省: {p.reflection}</div>}
     </section>
   );
 }

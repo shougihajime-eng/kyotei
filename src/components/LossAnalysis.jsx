@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { yen } from "../lib/format.js";
 import { analyzePrediction, aggregateLessons } from "../lib/analysis.js";
 import { analyzeStrengthsAndWeaknesses, getLearnedWeights, getLearningLog, backtestComparison } from "../lib/learning.js";
+import { classifyLossPattern, VENUE_PROFILE, resolveJcd } from "../lib/venueBias.js";
 
 /**
  * 外れた理由 AI 分析画面
@@ -21,6 +22,40 @@ export default function LossAnalysis({ predictions, races }) {
   const learned = useMemo(() => getLearnedWeights(predictions), [predictions]);
   const bt = useMemo(() => backtestComparison(predictions), [predictions]);
   const log = useMemo(() => getLearningLog(), []);
+
+  /* 負けパターン集計 (Round 17) — 「刺され負け / まくり負け / 展開負け / 外艇選定ミス」 */
+  const lossPatterns = useMemo(() => {
+    const counts = {};
+    let totalLoss = 0;
+    for (const p of list) {
+      if (p.hit) continue;
+      // race object を再構築 (apiResult 相当)
+      const race = { jcd: p.jcd, venue: p.venue, apiResult: p.result };
+      const cls = classifyLossPattern(race, p);
+      if (!cls) continue;
+      totalLoss++;
+      counts[cls.kind] = (counts[cls.kind] || 0) + 1;
+    }
+    return { counts, totalLoss };
+  }, [list]);
+
+  /* 会場別 ROI (Round 17) */
+  const venueROI = useMemo(() => {
+    const m = {};
+    for (const p of list) {
+      const k = resolveJcd(p.jcd, p.venue);
+      const name = VENUE_PROFILE[k]?.name || p.venue || "—";
+      if (!m[name]) m[name] = { stake: 0, ret: 0, count: 0, hits: 0 };
+      m[name].stake += p.totalStake || 0;
+      m[name].ret += p.payout || 0;
+      m[name].count += 1;
+      if (p.hit) m[name].hits += 1;
+    }
+    return Object.entries(m)
+      .map(([name, v]) => ({ name, ...v, roi: v.stake > 0 ? v.ret / v.stake : 0, pnl: v.ret - v.stake }))
+      .filter((v) => v.count >= 3)
+      .sort((a, b) => b.roi - a.roi);
+  }, [list]);
 
   return (
     <div className="max-w-3xl mx-auto px-4 mt-4 space-y-4">
@@ -162,6 +197,60 @@ export default function LossAnalysis({ predictions, races }) {
           </div>
           <div className="text-xs opacity-60 mt-2">
             💡 苦手条件のレースでは見送りを増やし、得意条件のレースでは点数を増やすと回収率が上がります。
+          </div>
+        </section>
+      )}
+
+      {/* 負けパターン集計 (Round 17) */}
+      {lossPatterns.totalLoss >= 3 && (
+        <section className="card p-4">
+          <h3 className="font-bold text-sm mb-3">😫 負けパターン分析 ({lossPatterns.totalLoss} 件)</h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            {Object.entries(lossPatterns.counts).map(([kind, count]) => (
+              <div key={kind} className="text-center" style={{ background: "rgba(239,68,68,0.10)", borderRadius: 8, padding: "10px 6px", border: "1px solid rgba(239,68,68,0.25)" }}>
+                <div className="text-xs opacity-75">{kind}</div>
+                <div className="num font-bold mt-1" style={{ fontSize: 20, color: "#fca5a5" }}>{count}</div>
+                <div className="text-xs opacity-60 mt-1">{Math.round((count / lossPatterns.totalLoss) * 100)}%</div>
+              </div>
+            ))}
+          </div>
+          <div className="text-xs opacity-70 mt-3">
+            💡 「刺され負け」が多いなら 2号艇 ST 早の選手を警戒、「まくり負け」が多いなら 3-4 号艇のモーター強い選手を本命に検討。
+          </div>
+        </section>
+      )}
+
+      {/* 会場別 ROI (Round 17) */}
+      {venueROI.length > 0 && (
+        <section className="card p-4">
+          <h3 className="font-bold text-sm mb-3">🏟 会場別 回収率 (3件以上)</h3>
+          <div className="overflow-x-auto scrollbar">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-left opacity-60 border-b border-[#1f2a44]">
+                  <th className="py-1">会場</th><th>件数</th><th>的中</th><th>回収率</th><th>収支</th>
+                </tr>
+              </thead>
+              <tbody>
+                {venueROI.slice(0, 12).map((v) => {
+                  const color = v.roi >= 1 ? "#34d399" : v.roi >= 0.85 ? "#fde68a" : "#f87171";
+                  return (
+                    <tr key={v.name} className="border-b border-[#1f2a44]/40">
+                      <td className="py-1">{v.name}</td>
+                      <td className="num">{v.count}</td>
+                      <td className="num">{v.hits}</td>
+                      <td className="num font-bold" style={{ color }}>{Math.round(v.roi * 100)}%</td>
+                      <td className={"num " + (v.pnl >= 0 ? "text-pos" : "text-neg")}>
+                        {v.pnl >= 0 ? "+" : ""}{yen(v.pnl)}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div className="text-xs opacity-70 mt-2">
+            💡 苦手な場では見送り、得意な場では点数増やすと回収率改善が期待できます。
           </div>
         </section>
       )}

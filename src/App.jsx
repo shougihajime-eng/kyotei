@@ -80,6 +80,9 @@ export default function App() {
       const rec = buildBuyRecommendation(ev, settings.riskProfile, cap, false);
       // 総合評価 ★ (荒れ期待度を加味して再評価)
       rec.overall = computeOverallGrade(ev, rec, ev?.windWave);
+      rec.warnings = ev?.warnings || [];
+      rec.venueProfile = ev?.venueProfile || null;
+      rec.timeSlot = ev?.timeSlot || null;
       map[r.id] = rec;
     }
     return map;

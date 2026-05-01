@@ -104,6 +104,13 @@ export default function QuickJudgeCard({ headlineRace, recommendation, today, pr
         </div>
       )}
 
+      {/* 最重要の警戒事項 (Round 17) — 1つだけ表示 */}
+      {(recommendation?.warnings || []).find(w => w.kind === "warn") && (
+        <div className="text-center mt-2 text-xs px-2 py-1 rounded" style={{ background: "rgba(239,68,68,0.16)", color: "#fecaca" }}>
+          ⚠️ {recommendation.warnings.find(w => w.kind === "warn").text}
+        </div>
+      )}
+
       {/* エア / リアル 成績 */}
       <div className="grid grid-cols-2 gap-2 mt-4 pt-3" style={{ borderTop: "1px solid rgba(255,255,255,0.18)" }}>
         <div className="text-center">

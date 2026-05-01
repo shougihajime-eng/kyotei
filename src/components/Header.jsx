@@ -37,39 +37,41 @@ export default function Header({ tab, setTab, today, settings, setSettings, swit
   }
 
   return (
-    <header className="border-b border-[#1f2a44] bg-[#0b1220]/95 sticky top-0 z-30 backdrop-blur" style={{ minHeight: 130 }}>
-      <div className="max-w-5xl mx-auto px-4 py-2 flex items-center justify-between flex-wrap gap-2">
+    <header className="brand-header sticky top-0 z-30" style={{ minHeight: 130 }}>
+      <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between flex-wrap gap-3">
         {/* ロゴ */}
-        <div style={{ minWidth: 110 }}>
-          <div className="font-bold text-sm">競艇 期待値AI</div>
-          <div className="text-xs opacity-70">買わないAI v2</div>
+        <div style={{ minWidth: 130 }} className="flex items-center gap-2">
+          <div style={{
+            width: 36, height: 36, borderRadius: 10,
+            background: "linear-gradient(135deg, #38bdf8 0%, #2563eb 100%)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            boxShadow: "0 4px 12px rgba(56,189,248,0.35)",
+            fontSize: 18,
+          }}>🚤</div>
+          <div>
+            <div className="brand-logo" style={{ fontSize: 17, lineHeight: 1.05 }}>競艇 AI</div>
+            <div className="text-xs" style={{ color: "var(--text-mute)", letterSpacing: "0.04em" }}>EXPECTED VALUE ASSISTANT</div>
+          </div>
         </div>
 
-        {/* エア / リアル */}
+        {/* エア / リアル 損益 */}
         {settings.onboardingDone && (
-          <div className="flex flex-col items-center gap-1 text-xs">
+          <div className="flex flex-col items-end gap-1 text-xs">
             <div className="flex gap-2 items-center">
-              <span className="pill" style={{ background: "rgba(34,211,238,0.15)", color: "#a5f3fc", fontSize: 10 }}>エア</span>
-              <b className={"num " + (air.pnl >= 0 ? "text-pos" : "text-neg")}>{airLabel}</b>
+              <span className="pill badge-brand" style={{ fontSize: 10 }}>エア</span>
+              <b className={"num " + (air.pnl >= 0 ? "text-pos" : "text-neg")} style={{ fontSize: 13 }}>{airLabel}</b>
             </div>
             <div className="flex gap-2 items-center">
-              <span className="pill" style={{ background: "rgba(251,191,36,0.18)", color: "#fcd34d", fontSize: 10 }}>リアル</span>
-              <b className={"num " + (real.stake === 0 ? "opacity-60" : (real.pnl >= 0 ? "text-pos" : "text-neg"))}>{realLabel}</b>
+              <span className="pill badge-warn" style={{ fontSize: 10 }}>リアル</span>
+              <b className={"num " + (real.stake === 0 ? "opacity-60" : (real.pnl >= 0 ? "text-pos" : "text-neg"))} style={{ fontSize: 13 }}>{realLabel}</b>
             </div>
           </div>
         )}
 
         {/* 更新ボタン (右上固定 / 大きめ) */}
         {settings.onboardingDone && (
-          <button onClick={handleRefresh} disabled={refreshing}
-            style={{
-              minHeight: 44, minWidth: 100, padding: "10px 18px",
-              borderRadius: 10, fontSize: 14, fontWeight: 800,
-              border: "none", cursor: refreshing ? "not-allowed" : "pointer",
-              background: refreshing ? "#475569" : "#2563eb",
-              color: "#fff", opacity: refreshing ? 0.65 : 1,
-              boxShadow: "0 2px 8px rgba(37,99,235,0.3)",
-            }}>
+          <button onClick={handleRefresh} disabled={refreshing} className="btn btn-primary"
+            style={{ minHeight: 44, minWidth: 110, fontSize: 14 }}>
             {refreshing ? "🔄 更新中…" : "🔄 更新"}
           </button>
         )}

@@ -4,12 +4,16 @@
  * 5 因子で各艇のスコア → softmax で確率推定 → Plackett-Luce で順位確率 → 実オッズで EV 計算。
  * 仮オッズは一切生成しない。実オッズが取れない券種は計算しない (「オッズ取得不可」状態)。
  *
+ * Round 17: 会場バイアス (24場特性) + 昼/ナイター適性 + 戦法相性 を補正係数として組み込み
+ *           最終 EV = 基本確率 × オッズ × (会場補正) × (時間帯補正) × (戦法相性補正)
+ *
  * 対象券種:
  *   ・2連単 (順序あり)
  *   ・2連複 (順序なし)
  *   ・3連単 (順序あり)
  *   ・3連複 (順序なし)
  */
+import { venueTimeMods, timeAptitudeMod, styleMatchupMod, buildWarnings } from "./venueBias.js";
 
 /* コース別 1着率 (公営競艇 全国平均):
    1コースが圧倒的に有利。これを必ず予想に反映する。 */
@@ -459,6 +463,37 @@ function _evaluateInner(race, newsItems, learnedAdjustments) {
     s.score *= va.mod;
     if (va.reason) s.conditionReasons.push(va.reason);
   });
+
+  /* ===== Round 17: 会場バイアス + 時間帯 + 戦法相性 を掛ける ===== */
+  const venueRes = venueTimeMods(race.jcd, race.venue, race.startTime);
+  const matchupMods = styleMatchupMod(race.boats);
+  scores.forEach((s, idx) => {
+    const boatNo = s.boatNo;
+    // 会場 (1〜6 号艇別) 補正
+    const vMod = venueRes.mods[boatNo - 1] ?? 1;
+    if (vMod !== 1) {
+      s.score *= vMod;
+      const pct = Math.round((vMod - 1) * 100);
+      if (Math.abs(pct) >= 1) {
+        s.conditionReasons.push({ kind: pct > 0 ? "pos" : "neg", text: `${venueRes.profile?.name || ""}補正 ${pct > 0 ? "+" : ""}${pct}%` });
+      }
+    }
+    // 時間帯適性
+    const tMod = timeAptitudeMod(race.boats[idx], venueRes.slot);
+    if (tMod !== 1) {
+      s.score *= tMod;
+      const pct = Math.round((tMod - 1) * 100);
+      s.conditionReasons.push({ kind: pct > 0 ? "pos" : "neg", text: `${venueRes.slot === "night" ? "ナイター" : "昼"}適性 ${pct > 0 ? "+" : ""}${pct}%` });
+    }
+    // 戦法相性 (1号艇のみ影響)
+    const mMod = matchupMods[boatNo - 1] ?? 1;
+    if (mMod !== 1 && Math.abs(mMod - 1) >= 0.01) {
+      s.score *= mMod;
+      const pct = Math.round((mMod - 1) * 100);
+      s.conditionReasons.push({ kind: "neg", text: `戦法相性 ${pct}% (まくり/差しリスク)` });
+    }
+  });
+
   const probs = softmax(scores.map((s) => s.score), 0.30);
 
   // 実オッズ (どれか 1 つでもあれば計算可能)
@@ -504,6 +539,8 @@ function _evaluateInner(race, newsItems, learnedAdjustments) {
     stExh,
     inTrust,
     probConsistency,
+    venueProfile: venueRes.profile,
+    timeSlot: venueRes.slot,
     learnedAdjustments: learnedAdjustments || null,
     related: relatedNews(race, newsItems),
     availableKinds: {
@@ -514,6 +551,7 @@ function _evaluateInner(race, newsItems, learnedAdjustments) {
     },
   };
   out.overall = computeOverallGrade(out, null, windWave); // recommendation 未確定のため lite
+  out.warnings = buildWarnings(race, out);                // Round 17: 「このレース要注意」 警告
   return out;
 }
 

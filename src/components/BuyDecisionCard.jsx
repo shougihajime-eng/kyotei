@@ -67,6 +67,25 @@ function BuyDecisionCard({ race, recommendation, onRecord, virtualMode }) {
         💡 {recommendation.reason}
       </div>
 
+      {/* 会場バイアス + 警戒事項 (Round 17) */}
+      {(recommendation.venueProfile || (recommendation.warnings || []).length > 0) && (
+        <div className="mt-3 p-2 rounded" style={{ background: "rgba(0,0,0,0.22)", border: "1px solid rgba(255,255,255,0.06)" }}>
+          {recommendation.venueProfile && (
+            <div className="text-xs mb-1" style={{ color: "#bae6fd", fontWeight: 700 }}>
+              📍 {recommendation.venueProfile.name}: {recommendation.venueProfile.note}
+              {recommendation.timeSlot === "night" && <span className="ml-2" style={{ color: "#fde68a" }}>🌙 ナイター</span>}
+            </div>
+          )}
+          {(recommendation.warnings || []).slice(0, 4).map((w, i) => (
+            <div key={i} className="text-xs mt-1" style={{
+              color: w.kind === "warn" ? "#fecaca" : w.kind === "ok" ? "#a7f3d0" : "#bae6fd",
+            }}>
+              {w.kind === "warn" ? "⚠️" : w.kind === "ok" ? "✅" : "💬"} {w.text}
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* 本命 — これだけ採用すれば OK */}
       <div className="mt-3 text-center" style={{ background: "rgba(0,0,0,0.32)", borderRadius: 14, padding: "16px 12px", border: "2px solid rgba(255,255,255,0.18)", minHeight: 240 }}>
         <div className="text-xs opacity-85" style={{ fontWeight: 700, letterSpacing: "0.05em" }}>

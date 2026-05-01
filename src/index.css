@@ -2,268 +2,261 @@
 @tailwind components;
 @tailwind utilities;
 
-/* === セマンティックカラーシステム ===
-   色は装飾ではなく「意味」 として固定する。
-   ・緑 = 買い (期待値プラス / 良好)
-   ・赤 = 見送り / 危険
-   ・紫 = 穴 (高配当狙い)
-   ・黄 = 判断微妙
-   ・グレー = データ不足 / 中立
+/* === ブランド・デザイントークン (Round 16: クリーン UI) ===
+   ・基調: 深いネイビー + 鮮やかなシアン/ブルーのアクセント (信頼感 + 競艇らしさ)
+   ・色は「意味」 として固定:
+     緑 = 買い (期待値プラス) / 赤 = 見送り / 紫 = 穴 / 黄 = 微妙 / グレー = データ不足
 */
 :root {
-  --c-buy: #10b981;         /* 緑: 買い */
-  --c-buy-bg: rgba(16, 185, 129, 0.18);
-  --c-buy-border: rgba(16, 185, 129, 0.45);
+  /* ベース面 */
+  --bg-page: #060c1c;
+  --bg-page-2: #0a1428;
+  --bg-surface: #0f1a30;
+  --bg-surface-2: #142440;
+  --bg-input: #0c1a32;
+  --border-soft: #1d2c4a;
+  --border-strong: #2a3d63;
+
+  /* ブランド (青/シアン) */
+  --brand: #38bdf8;
+  --brand-2: #2563eb;
+  --brand-bg: rgba(56,189,248,0.12);
+  --brand-border: rgba(56,189,248,0.45);
+
+  /* テキスト */
+  --text: #e7eef8;
+  --text-soft: #b8c5db;
+  --text-mute: #8294b3;
+
+  /* セマンティック */
+  --c-buy: #10b981;
+  --c-buy-bg: rgba(16,185,129,0.16);
+  --c-buy-border: rgba(16,185,129,0.5);
   --c-buy-text: #6ee7b7;
 
-  --c-skip: #ef4444;        /* 赤: 見送り / 危険 */
-  --c-skip-bg: rgba(239, 68, 68, 0.18);
-  --c-skip-border: rgba(239, 68, 68, 0.45);
+  --c-skip: #ef4444;
+  --c-skip-bg: rgba(239,68,68,0.15);
+  --c-skip-border: rgba(239,68,68,0.5);
   --c-skip-text: #fecaca;
 
-  --c-hole: #a855f7;        /* 紫: 穴 (高配当) */
-  --c-hole-bg: rgba(168, 85, 247, 0.18);
-  --c-hole-border: rgba(168, 85, 247, 0.45);
+  --c-hole: #a855f7;
+  --c-hole-bg: rgba(168,85,247,0.16);
+  --c-hole-border: rgba(168,85,247,0.5);
   --c-hole-text: #d8b4fe;
 
-  --c-warn: #fbbf24;        /* 黄: 判断微妙 */
-  --c-warn-bg: rgba(251, 191, 36, 0.18);
-  --c-warn-border: rgba(251, 191, 36, 0.45);
+  --c-warn: #fbbf24;
+  --c-warn-bg: rgba(251,191,36,0.18);
+  --c-warn-border: rgba(251,191,36,0.5);
   --c-warn-text: #fde68a;
 
-  --c-mute: #6b7280;        /* グレー: データ不足 */
-  --c-mute-bg: rgba(107, 114, 128, 0.15);
-  --c-mute-border: rgba(107, 114, 128, 0.35);
+  --c-mute: #6b7280;
+  --c-mute-bg: rgba(107,114,128,0.15);
+  --c-mute-border: rgba(107,114,128,0.4);
   --c-mute-text: #d1d5db;
+
+  /* シャドウ */
+  --shadow-card: 0 1px 0 rgba(255,255,255,0.04) inset, 0 8px 24px rgba(0,0,0,0.35);
+  --shadow-glow: 0 0 0 1px var(--brand-border), 0 8px 24px rgba(56,189,248,0.18);
 }
 
-/* セマンティック クラス */
-.sem-buy   { color: var(--c-buy-text); background: var(--c-buy-bg); border-color: var(--c-buy-border); }
+/* === ベース === */
+html, body {
+  background:
+    radial-gradient(1200px 600px at 80% -100px, rgba(56,189,248,0.08), transparent 60%),
+    radial-gradient(900px 500px at -10% 20%, rgba(37,99,235,0.10), transparent 60%),
+    linear-gradient(180deg, var(--bg-page) 0%, var(--bg-page-2) 100%);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
+    "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* セマンティック クラス (要素の背景/枠/文字を一括) */
+.sem-buy   { color: var(--c-buy-text);  background: var(--c-buy-bg);  border-color: var(--c-buy-border); }
 .sem-skip  { color: var(--c-skip-text); background: var(--c-skip-bg); border-color: var(--c-skip-border); }
 .sem-hole  { color: var(--c-hole-text); background: var(--c-hole-bg); border-color: var(--c-hole-border); }
 .sem-warn  { color: var(--c-warn-text); background: var(--c-warn-bg); border-color: var(--c-warn-border); }
 .sem-mute  { color: var(--c-mute-text); background: var(--c-mute-bg); border-color: var(--c-mute-border); }
 
-/* ベースカラー */
-body {
-  background: #0b1220;
-  color: #e7eef8;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
-    "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
-}
-
-/* カード */
+/* === カード === */
 .card {
-  background: #121a2c;
-  border: 1px solid #1f2a44;
-  border-radius: 14px;
+  background: linear-gradient(180deg, var(--bg-surface) 0%, var(--bg-surface-2) 100%);
+  border: 1px solid var(--border-soft);
+  border-radius: 16px;
+  box-shadow: var(--shadow-card);
+}
+.card-glow {
+  border-color: var(--brand-border) !important;
+  box-shadow: var(--shadow-glow) !important;
 }
 
-/* バッジ */
+/* タイトル小バッジ */
+.section-title {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-mute);
+}
+
+/* === バッジ (pill) === */
 .pill {
-  padding: 2px 8px;
+  padding: 3px 10px;
   border-radius: 999px;
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 700;
   display: inline-block;
+  letter-spacing: 0.02em;
 }
-/* セマンティック (意味のある) badge */
-.badge-buy {
-  background: var(--c-buy-bg);
-  color: var(--c-buy-text);
-  border: 1px solid var(--c-buy-border);
-}
-.badge-skip {
-  background: var(--c-skip-bg);
-  color: var(--c-skip-text);
-  border: 1px solid var(--c-skip-border);
-}
-.badge-warn {
-  background: var(--c-warn-bg);
-  color: var(--c-warn-text);
-  border: 1px solid var(--c-warn-border);
-}
-.badge-hole {
-  background: var(--c-hole-bg);
-  color: var(--c-hole-text);
-  border: 1px solid var(--c-hole-border);
-}
-.badge-mute {
-  background: var(--c-mute-bg);
-  color: var(--c-mute-text);
-  border: 1px solid var(--c-mute-border);
-}
-/* グレード: S=買い (緑) / A=買い候補 (緑薄) / B=判断微妙 (黄) / C=データ不足 (グレー) */
-.badge-grade-S {
-  background: linear-gradient(135deg, #10b981, #047857);
-  color: #fff;
-  font-weight: 800;
-}
-.badge-grade-A {
-  background: var(--c-buy-bg);
-  color: var(--c-buy-text);
-  border: 1px solid var(--c-buy-border);
-}
-.badge-grade-B {
-  background: var(--c-warn-bg);
-  color: var(--c-warn-text);
-  border: 1px solid var(--c-warn-border);
-}
-.badge-grade-C {
-  background: var(--c-mute-bg);
-  color: var(--c-mute-text);
-  border: 1px solid var(--c-mute-border);
-}
+.badge-buy   { background: var(--c-buy-bg);   color: var(--c-buy-text);   border: 1px solid var(--c-buy-border); }
+.badge-skip  { background: var(--c-skip-bg);  color: var(--c-skip-text);  border: 1px solid var(--c-skip-border); }
+.badge-warn  { background: var(--c-warn-bg);  color: var(--c-warn-text);  border: 1px solid var(--c-warn-border); }
+.badge-hole  { background: var(--c-hole-bg);  color: var(--c-hole-text);  border: 1px solid var(--c-hole-border); }
+.badge-mute  { background: var(--c-mute-bg);  color: var(--c-mute-text);  border: 1px solid var(--c-mute-border); }
+.badge-brand { background: var(--brand-bg);   color: var(--brand);        border: 1px solid var(--brand-border); }
 
-/* ボタン */
+/* グレード: S=買い (緑グラデ) / A=買い候補 (緑薄) / B=判断微妙 (黄) / C=データ不足 (グレー) */
+.badge-grade-S { background: linear-gradient(135deg,#10b981,#047857); color:#fff; font-weight: 800; box-shadow: 0 0 0 2px rgba(16,185,129,0.25); }
+.badge-grade-A { background: var(--c-buy-bg);  color: var(--c-buy-text);  border: 1px solid var(--c-buy-border); }
+.badge-grade-B { background: var(--c-warn-bg); color: var(--c-warn-text); border: 1px solid var(--c-warn-border); }
+.badge-grade-C { background: var(--c-mute-bg); color: var(--c-mute-text); border: 1px solid var(--c-mute-border); }
+
+/* === ボタン === */
 .btn {
-  padding: 8px 14px;
-  border-radius: 10px;
-  font-weight: 600;
+  padding: 10px 16px;
+  border-radius: 12px;
+  font-weight: 700;
   font-size: 13px;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all 0.14s ease;
+  border: 1px solid transparent;
 }
-.btn[disabled] {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
+.btn[disabled] { opacity: 0.45; cursor: not-allowed; }
 .btn-primary {
-  background: #2563eb;
+  background: linear-gradient(180deg, #3b82f6 0%, #2563eb 100%);
   color: white;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.18) inset, 0 4px 12px rgba(37,99,235,0.35);
 }
-.btn-primary:hover:not([disabled]) {
-  background: #1d4ed8;
-}
+.btn-primary:hover:not([disabled]) { filter: brightness(1.08); }
 .btn-success {
-  background: #10b981;
+  background: linear-gradient(180deg, #10b981 0%, #059669 100%);
   color: white;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.18) inset, 0 4px 12px rgba(16,185,129,0.3);
 }
-.btn-success:hover:not([disabled]) {
-  background: #059669;
-}
+.btn-success:hover:not([disabled]) { filter: brightness(1.08); }
 .btn-ghost {
-  background: #1a2540;
-  color: #e7eef8;
+  background: rgba(56,189,248,0.06);
+  color: var(--text);
+  border: 1px solid var(--border-soft);
 }
 .btn-ghost:hover:not([disabled]) {
-  background: #243154;
+  background: rgba(56,189,248,0.14);
+  border-color: var(--brand-border);
 }
 
-/* Input */
+/* === Input / Select === */
 .input,
 .select {
-  background: #0f1830;
-  border: 1px solid #243154;
-  border-radius: 8px;
-  padding: 8px 10px;
-  color: #e7eef8;
+  background: var(--bg-input);
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  padding: 10px 12px;
+  color: var(--text);
   font-size: 13px;
   width: 100%;
+  transition: border-color 0.12s ease;
+}
+.input:focus,
+.select:focus {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px rgba(56,189,248,0.15);
 }
 
-/* Number formatting */
-.num {
-  font-variant-numeric: tabular-nums;
-}
+/* === 数字フォーマット === */
+.num { font-variant-numeric: tabular-nums; }
 
-/* Tab nav */
+/* === タブナビ === */
 .tab-btn {
-  padding: 10px 16px;
+  padding: 10px 14px;
   border-radius: 10px;
-  font-weight: 600;
-  font-size: 14px;
+  font-weight: 700;
+  font-size: 13px;
   cursor: pointer;
-  transition: all 0.15s;
-  border: none;
+  transition: all 0.12s ease;
+  border: 1px solid transparent;
   background: transparent;
-  color: #9fb0c9;
+  color: var(--text-mute);
 }
 .tab-btn.active {
-  background: #1d4ed8;
+  background: linear-gradient(180deg, #2563eb 0%, #1d4ed8 100%);
   color: #fff;
+  box-shadow: 0 4px 14px rgba(37,99,235,0.35);
 }
 .tab-btn:hover:not(.active) {
-  background: #1a2540;
-  color: #e7eef8;
+  background: rgba(56,189,248,0.08);
+  color: var(--text);
 }
 
-/* スクロールバー */
-.scrollbar::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
-.scrollbar::-webkit-scrollbar-thumb {
-  background: #243154;
-  border-radius: 6px;
-}
+/* === スクロールバー === */
+.scrollbar::-webkit-scrollbar { width: 10px; height: 10px; }
+.scrollbar::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 6px; }
 
-/* 状態色 */
-.text-pos {
-  color: #34d399;
-  font-weight: 700;
-}
-.text-neg {
-  color: #f87171;
-  font-weight: 700;
-}
+/* === 状態色テキスト === */
+.text-pos { color: #34d399; font-weight: 700; }
+.text-neg { color: #f87171; font-weight: 700; }
+.text-brand { color: var(--brand); }
 
-/* 通知 */
-.alert-info {
-  background: #0e2440;
-  border: 1px solid #1e40af;
-  color: #bfdbfe;
-  padding: 10px 14px;
-  border-radius: 10px;
-  font-size: 13px;
-}
-.alert-warn {
-  background: #3a2d0a;
-  border: 1px solid #b45309;
-  color: #fde68a;
-  padding: 10px 14px;
-  border-radius: 10px;
-  font-size: 13px;
-}
-.alert-error {
-  background: #3b1d1d;
-  border: 1px solid #7f1d1d;
-  color: #fecaca;
-  padding: 10px 14px;
-  border-radius: 10px;
-  font-size: 13px;
-}
-.alert-ok {
-  background: #053527;
-  border: 1px solid #047857;
-  color: #a7f3d0;
-  padding: 10px 14px;
-  border-radius: 10px;
-  font-size: 13px;
-}
+/* === 通知 === */
+.alert-info  { background: rgba(56,189,248,0.10); border: 1px solid rgba(56,189,248,0.4); color: #bae6fd; padding: 10px 14px; border-radius: 12px; font-size: 13px; }
+.alert-warn  { background: var(--c-warn-bg); border: 1px solid var(--c-warn-border); color: var(--c-warn-text); padding: 10px 14px; border-radius: 12px; font-size: 13px; }
+.alert-error { background: var(--c-skip-bg); border: 1px solid var(--c-skip-border); color: var(--c-skip-text); padding: 10px 14px; border-radius: 12px; font-size: 13px; }
+.alert-ok    { background: var(--c-buy-bg);  border: 1px solid var(--c-buy-border);  color: var(--c-buy-text);  padding: 10px 14px; border-radius: 12px; font-size: 13px; }
 
-/* Pulse animation */
+/* === Pulse + Toast アニメ === */
 @keyframes pulse-soft {
-  0%,
-  100% {
-    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4);
-  }
-  50% {
-    box-shadow: 0 0 0 12px rgba(16, 185, 129, 0);
-  }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(16,185,129,0.4); }
+  50%      { box-shadow: 0 0 0 12px rgba(16,185,129,0); }
 }
-.pulse-soft {
-  animation: pulse-soft 2s infinite;
+.pulse-soft { animation: pulse-soft 2s infinite; }
+
+@keyframes toast-slide {
+  0%   { opacity: 0; transform: translate(-50%, -16px); }
+  100% { opacity: 1; transform: translate(-50%, 0); }
 }
 
-/* Toast スライドイン (スタイル切替フィードバック) */
-@keyframes toast-slide {
-  0% {
-    opacity: 0;
-    transform: translate(-50%, -16px);
-  }
-  100% {
-    opacity: 1;
-    transform: translate(-50%, 0);
-  }
+/* === ヘッダ (sticky) のブランドアクセント === */
+.brand-header {
+  background:
+    linear-gradient(180deg, rgba(15,26,48,0.92) 0%, rgba(10,20,40,0.9) 100%);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border-soft);
+  box-shadow: 0 6px 24px rgba(0,0,0,0.25);
+}
+
+/* ブランドロゴ周り */
+.brand-logo {
+  background: linear-gradient(135deg, #38bdf8 0%, #2563eb 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+}
+
+/* === KPI 数値 (大きめ) === */
+.kpi-num {
+  font-variant-numeric: tabular-nums;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+}
+
+/* === スマホ用 余白調整 === */
+@media (max-width: 480px) {
+  .card { border-radius: 14px; }
+  .btn  { padding: 12px 18px; font-size: 14px; }   /* 押しやすく */
+  .pill { font-size: 11px; padding: 4px 10px; }
 }
