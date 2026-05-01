@@ -104,8 +104,15 @@ export default function QuickJudgeCard({ headlineRace, recommendation, today, pr
         </div>
       )}
 
+      {/* 危険レース表示 (Round 21) — 最優先 */}
+      {recommendation?.accident?.isAccident && (
+        <div className="text-center mt-2 px-2 py-1.5 rounded text-xs font-bold" style={{ background: "rgba(239,68,68,0.20)", color: "#fecaca", border: "1px solid rgba(239,68,68,0.6)" }}>
+          🚨 危険レース ({recommendation.accident.severity}/100) — 買わない選択も
+        </div>
+      )}
+
       {/* 最重要の警戒事項 (Round 17) — 1つだけ表示 */}
-      {(recommendation?.warnings || []).find(w => w.kind === "warn") && (
+      {!recommendation?.accident?.isAccident && (recommendation?.warnings || []).find(w => w.kind === "warn") && (
         <div className="text-center mt-2 text-xs px-2 py-1 rounded" style={{ background: "rgba(239,68,68,0.16)", color: "#fecaca" }}>
           ⚠️ {recommendation.warnings.find(w => w.kind === "warn").text}
         </div>

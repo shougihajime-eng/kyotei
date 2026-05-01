@@ -381,6 +381,68 @@ export function analyzeExhibitionST(race) {
   });
 }
 
+/* === Round 21: 事故レース (危険レース) 検知 ===
+   ・ST ばらつき大 (max - min > 0.10)
+   ・モーター差が極端 (max - min > 35)
+   ・展開依存が強い (上位 2 艇の確率差が小さい / 1号艇 0.30 未満かつ拮抗)
+   検出された場合、UI で「危険レース」 を表示し「買わない」 提案
+*/
+export function detectAccidentRace(race, scores, probs) {
+  if (!Array.isArray(race?.boats) || race.boats.length !== 6) return null;
+  const stArr = race.boats.map((b) => b.ST).filter((s) => s != null && !isNaN(s));
+  const motorArr = race.boats.map((b) => b.motor2).filter((m) => m != null && !isNaN(m));
+
+  const causes = [];
+  // ST ばらつき大
+  if (stArr.length >= 4) {
+    const maxST = Math.max(...stArr);
+    const minST = Math.min(...stArr);
+    if (maxST - minST > 0.10) {
+      causes.push(`ST ばらつき大 (${minST.toFixed(2)}〜${maxST.toFixed(2)})`);
+    }
+  }
+  // モーター差が極端
+  if (motorArr.length >= 4) {
+    const maxM = Math.max(...motorArr);
+    const minM = Math.min(...motorArr);
+    if (maxM - minM > 35) {
+      causes.push(`モーター差が極端 (${minM}%〜${maxM}%)`);
+    }
+  }
+  // 展開依存が強い
+  if (Array.isArray(probs) && probs.length === 6) {
+    const sorted = [...probs].sort((a, b) => b - a);
+    const inProb = probs[0];
+    if (sorted[0] - sorted[1] < 0.05 && sorted[0] < 0.40) {
+      causes.push(`上位拮抗 (展開依存高)`);
+    }
+    if (inProb < 0.30) {
+      causes.push(`1号艇1着確率 ${(inProb * 100).toFixed(0)}% — 安定軸なし`);
+    }
+  }
+  // 風 + 波 が同時に強い
+  if ((race.wind ?? 0) >= 7 && (race.wave ?? 0) >= 8) {
+    causes.push(`大荒れ水面 (風${race.wind}m + 波${race.wave}cm)`);
+  }
+  // 部品交換が複数艇
+  const partsCount = race.boats.filter((b) => Array.isArray(b.partsExchange) && b.partsExchange.length > 0).length;
+  if (partsCount >= 3) {
+    causes.push(`${partsCount}艇で部品交換 — 直前変動大`);
+  }
+
+  if (causes.length === 0) return { isAccident: false, causes: [], severity: 0 };
+  // 重大度 (重み付け)
+  const severity = Math.min(100, causes.length * 25);
+  return {
+    isAccident: causes.length >= 2 || severity >= 50,
+    causes,
+    severity,
+    message: causes.length >= 2
+      ? "⚠️ 危険レース — 複数の不安要素あり、買わない選択を推奨"
+      : "⚠️ 注意レース — 不安要素あり",
+  };
+}
+
 /* === Phase D: 風波 影響分析 === */
 export function analyzeWindWave(race) {
   const wind = race.wind ?? 0;
@@ -525,6 +587,7 @@ function _evaluateInner(race, newsItems, learnedAdjustments) {
   const maeBuke = predictMaeBuke(race);
   const stExh = analyzeExhibitionST(race);
   const inTrust = judgeInTrust(race, scores, probs);
+  const accident = detectAccidentRace(race, scores, probs);
   // 確率分布の整合性 (1着確率合計=1, 券種別 全買い目確率合計)
   const probConsistency = checkProbabilityConsistency(probs, items);
   const out = {
@@ -538,6 +601,7 @@ function _evaluateInner(race, newsItems, learnedAdjustments) {
     maeBuke,
     stExh,
     inTrust,
+    accident,
     probConsistency,
     venueProfile: venueRes.profile,
     timeSlot: venueRes.slot,
@@ -678,6 +742,17 @@ export function buildBuyRecommendation(ev, riskProfile, perRaceCap) {
       rationale: "妙味のあるオッズが見当たらないため見送り (回収率重視)",
     };
   }
+
+  // === Round 21: 事故レース検知 → 見送り推奨 ===
+  if (ev.accident?.isAccident && riskProfile !== "aggressive") {
+    return {
+      decision: "skip",
+      reason: ev.accident.message || "危険レース — 見送り",
+      items: [], total: 0,
+      rationale: `不安要素: ${ev.accident.causes.join(" / ")}`,
+      accident: ev.accident,
+    };
+  }
   if (perRaceCap <= 0) {
     return { decision: "skip", reason: "1日予算/1レース上限が 0", items: [], total: 0 };
   }
@@ -698,40 +773,60 @@ export function buildBuyRecommendation(ev, riskProfile, perRaceCap) {
     };
   }
 
-  // === 利益重視: 候補 EV と分布を見て点数を動的に決める ===
-  //  ・S級 (EV ≥ 1.30) が 1 つだけ → 絞り (1-3 点)
-  //  ・S級 + A級 が 5 つ以上 → 広め (5-10 点)
-  //  ・荒れ展開 (development.scenario === "荒れ") → さらに広め
-  //  ・1号艇信頼度低 → 広め
-  //  ・riskProfile aggressive → 上限緩い (最大 20 点)
+  // === Round 20: 利益重視 + 本命レースは絞る + 荒れレースのみ広げる ===
+  //   ・本命レース (1号艇 ≥55% かつ 荒れ要素なし) → 1〜2 点に厳格に絞る (トリガミ防止)
+  //   ・荒れる根拠が複数ある場合のみ点数を増やす
+  //   ・S級1個だけ + 本命レース → 1点
+  //   ・荒れ要素あり → S+A 数だけ広げる
   const sCount = candidates.filter((c) => c.ev >= 1.30).length;
   const aCount = candidates.filter((c) => c.ev >= 1.10 && c.ev < 1.30).length;
   const isRough = ev.development?.scenario === "荒れ" || ev.development?.scenario === "混戦";
   const inUnstable = ev.inTrust?.level && (ev.inTrust.level === "荒れ注意" || ev.inTrust.level === "イン崩壊警戒");
+  // 「荒れる根拠」 を点数化 (2 点以上で広げる対象)
+  let roughEvidence = 0;
+  if (isRough) roughEvidence += 1;
+  if (inUnstable) roughEvidence += 2;
+  if ((ev.race?.wind ?? 0) >= 6) roughEvidence += 1;
+  if ((ev.race?.wave ?? 0) >= 8) roughEvidence += 1;
+  if (ev.windWave?.roughLikelihood >= 60) roughEvidence += 1;
+  // 会場特性 (荒れやすい場)
+  if (ev.venueProfile?.makuri >= 3) roughEvidence += 1;
+  // 本命レース判定: 1号艇 ≥55% かつ 荒れ根拠 0
+  const isHonmei = inDominant && roughEvidence === 0;
 
-  const upperByProfile = { steady: 5, balanced: 10, aggressive: 20 };
-  const upper = upperByProfile[riskProfile] || 10;
+  // 上限 (本命レースは厳しく絞る)
+  const upperByProfile = { steady: 3, balanced: 6, aggressive: 12 };
+  const upper = isHonmei ? Math.min(2, upperByProfile[riskProfile] || 3) : (upperByProfile[riskProfile] || 6);
 
   let suggestedCount;
   let why;
-  if (sCount >= 1 && aCount === 0 && !isRough && !inUnstable) {
-    suggestedCount = Math.min(3, upper);
-    why = `S級 1点 (EV ≥ 1.30) があり、展開も読みやすいため ${suggestedCount} 点に絞ります`;
-  } else if (sCount >= 1 && (aCount >= 3 || isRough)) {
-    suggestedCount = Math.min(Math.max(5, sCount + aCount - 1), upper);
-    why = `S級 + A級が ${sCount + aCount} 件、${isRough ? "荒れ展開で" : ""} 広めに ${suggestedCount} 点取ります`;
-  } else if (sCount >= 1) {
+  if (isHonmei && sCount >= 1) {
+    // 本命レース + S級あり → 1点 (steady) / 1-2点 (balanced/aggressive)
+    suggestedCount = riskProfile === "aggressive" ? 2 : 1;
+    why = `本命レース (1号艇 ${(inProb*100).toFixed(0)}%、荒れ根拠なし) → 本線 ${suggestedCount} 点に絞ります (トリガミ防止)`;
+  } else if (isHonmei) {
+    // 本命レース + S級なし → A級1点だけ or 見送り寄り
+    suggestedCount = aCount >= 1 ? Math.min(2, upper) : 1;
+    why = `本命レース → 候補を ${suggestedCount} 点に絞ります`;
+  } else if (sCount >= 1 && roughEvidence >= 2) {
+    // 荒れ根拠強 + S級あり → 広めに
+    suggestedCount = Math.min(Math.max(4, sCount + aCount), upper);
+    why = `荒れ根拠 ${roughEvidence} 件 + S級 ${sCount} → 広めに ${suggestedCount} 点`;
+  } else if (sCount >= 1 && roughEvidence === 1) {
     suggestedCount = Math.min(Math.max(3, sCount + 1), upper);
-    why = `S級 ${sCount} 点を中心に押さえを加えて ${suggestedCount} 点`;
-  } else if (aCount >= 5 || isRough || inUnstable) {
-    suggestedCount = Math.min(Math.max(6, aCount), upper);
-    why = `A級が ${aCount} 件あり ${isRough || inUnstable ? "展開不透明なので" : ""} 広めに ${suggestedCount} 点`;
+    why = `S級 ${sCount} + 軽い荒れ要素 → ${suggestedCount} 点`;
+  } else if (sCount >= 1) {
+    suggestedCount = Math.min(Math.max(2, sCount), upper);
+    why = `S級 ${sCount} 中心 → ${suggestedCount} 点`;
+  } else if (aCount >= 1 && roughEvidence >= 2) {
+    suggestedCount = Math.min(Math.max(4, aCount), upper);
+    why = `荒れ根拠 ${roughEvidence} 件 + A級 ${aCount} → ${suggestedCount} 点`;
   } else if (aCount >= 1) {
-    suggestedCount = Math.min(Math.max(3, aCount + 1), upper);
-    why = `A級 ${aCount} 件を中心に ${suggestedCount} 点`;
+    suggestedCount = Math.min(Math.max(2, aCount), upper);
+    why = `A級 ${aCount} 中心 → ${suggestedCount} 点`;
   } else {
-    suggestedCount = Math.min(2, upper);
-    why = `B級のみ ${candidates.length} 件 — 最低限 ${suggestedCount} 点で補助購入`;
+    suggestedCount = 1;
+    why = `候補 ${candidates.length} 件 — 最低限 1 点`;
   }
 
   const numItems = Math.min(suggestedCount, candidates.length);
@@ -765,7 +860,26 @@ export function buildBuyRecommendation(ev, riskProfile, perRaceCap) {
     return { decision: "skip", reason: "予算配分後の有効候補なし", items: [], total: 0 };
   }
 
-  const main = items[0];
+  // === Round 20: トリガミ除外 ===
+  // 各買い目について「もしこの 1 点だけ的中した場合」 の収支を計算
+  //   profit_if_only_i_hits = stake_i * odds_i - (全買い目の合計賭け金)
+  // 本命 (items[0]) は保護、それ以降で profit < 0 (= 100 円儲からない) を除外
+  const totalStakeSum = items.reduce((s, it) => s + it.stake, 0);
+  const trigamiThreshold = 100; // 利益 100 円未満は実質トリガミ扱い
+  const profitable = items.filter((it, idx) => {
+    if (idx === 0) return true; // 本命は必ず残す
+    const profitIfOnlyHits = it.stake * it.odds - totalStakeSum;
+    return profitIfOnlyHits >= trigamiThreshold;
+  });
+  if (profitable.length < items.length) {
+    const removed = items.length - profitable.length;
+    why = `${why}（トリガミ除外で ${removed} 点削減）`;
+  }
+
+  const main = profitable[0] || items[0];
+  // items を profitable に置き換え (本命1点しか残らない場合もある)
+  items.length = 0;
+  items.push(...profitable);
   const mainBoat = parseInt(main.combo[0]);
   const mainScore = ev.scores.find((s) => s.boatNo === mainBoat);
   const reason = oneLineReason(mainScore, main);

@@ -67,6 +67,21 @@ function BuyDecisionCard({ race, recommendation, onRecord, virtualMode }) {
         💡 {recommendation.reason}
       </div>
 
+      {/* 事故レース警告 (Round 21) — 買い決定でも危険要素ありなら強調表示 */}
+      {recommendation.accident?.isAccident && (
+        <div className="mt-3 p-2 rounded text-center" style={{ background: "rgba(239,68,68,0.20)", border: "1px solid rgba(239,68,68,0.6)" }}>
+          <div className="text-sm font-bold" style={{ color: "#fecaca" }}>
+            🚨 危険レース ({recommendation.accident.severity}/100)
+          </div>
+          <div className="text-xs mt-1" style={{ color: "#fecaca" }}>
+            {recommendation.accident.causes.join(" / ")}
+          </div>
+          <div className="text-xs opacity-80 mt-1" style={{ color: "#fef9c3" }}>
+            ※「買わない」 という選択肢も検討してください
+          </div>
+        </div>
+      )}
+
       {/* 会場バイアス + 警戒事項 (Round 17) */}
       {(recommendation.venueProfile || (recommendation.warnings || []).length > 0) && (
         <div className="mt-3 p-2 rounded" style={{ background: "rgba(0,0,0,0.22)", border: "1px solid rgba(255,255,255,0.06)" }}>

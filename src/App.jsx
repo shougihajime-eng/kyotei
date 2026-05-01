@@ -83,6 +83,7 @@ export default function App() {
       rec.warnings = ev?.warnings || [];
       rec.venueProfile = ev?.venueProfile || null;
       rec.timeSlot = ev?.timeSlot || null;
+      rec.accident = ev?.accident || null;
       map[r.id] = rec;
     }
     return map;
