@@ -27,7 +27,7 @@ function BuyDecisionCard({ race, recommendation, onRecord, virtualMode }) {
     return <NoOdds race={race} />;
   }
   if (dec !== "buy") {
-    return <Skip race={race} reason={recommendation?.reason || "見送り"} />;
+    return <Skip race={race} reason={recommendation?.reason || "見送り"} recommendation={recommendation} />;
   }
 
   const main = recommendation.main;
@@ -43,13 +43,25 @@ function BuyDecisionCard({ race, recommendation, onRecord, virtualMode }) {
 
   return (
     <section style={cardStyle.buy}>
-      {/* ヘッダ: レース情報 + 評価バッジ */}
+      {/* ヘッダ: レース情報 + 評価バッジ + 現在スタイル */}
       <div className="flex items-center justify-between flex-wrap gap-2 mb-1">
         <div className="text-sm opacity-90">
           <b>{race.venue} {race.raceNo}R</b>
           <span className="ml-2 opacity-80">{race.startTime}発走</span>
         </div>
-        <span className={"pill badge-grade-" + (recommendation.grade || "A")}>{recommendation.grade}評価</span>
+        <div className="flex items-center gap-2">
+          {recommendation.profile && (
+            <span className="pill" style={{
+              fontSize: 11,
+              background: recommendation.profile === "steady" ? "rgba(59,130,246,0.18)" : recommendation.profile === "balanced" ? "rgba(251,191,36,0.18)" : "rgba(239,68,68,0.18)",
+              color: recommendation.profile === "steady" ? "#93c5fd" : recommendation.profile === "balanced" ? "#fcd34d" : "#fca5a5",
+              border: `1px solid ${recommendation.profile === "steady" ? "#3b82f6" : recommendation.profile === "balanced" ? "#fbbf24" : "#ef4444"}`,
+            }}>
+              {recommendation.profile === "steady" ? "🛡️ 本命型" : recommendation.profile === "balanced" ? "⚖️ バランス型" : "🎯 穴狙い型"}
+            </span>
+          )}
+          <span className={"pill badge-grade-" + (recommendation.grade || "A")}>{recommendation.grade}評価</span>
+        </div>
       </div>
 
       {/* ★1〜5 総合評価 */}
@@ -195,10 +207,18 @@ function BuyDecisionCard({ race, recommendation, onRecord, virtualMode }) {
         </div>
       )}
 
-      {/* 合計 + ボタン */}
-      <div className="text-center mt-4 text-xs opacity-80">合計</div>
-      <div className="text-center" style={{ fontSize: "min(32px,8vw)", fontWeight: 900, color: "#a7f3d0" }}>
-        {yen(recommendation.total)}
+      {/* 合計 + 想定払戻 (本命的中時) */}
+      <div className="grid grid-cols-2 gap-2 mt-4">
+        <div className="text-center p-2 rounded" style={{ background: "rgba(0,0,0,0.22)" }}>
+          <div className="text-xs opacity-80">合計投資</div>
+          <div style={{ fontSize: "min(24px,6.5vw)", fontWeight: 900, color: "#fde68a" }}>{yen(recommendation.total)}</div>
+        </div>
+        <div className="text-center p-2 rounded" style={{ background: "rgba(0,0,0,0.22)" }}>
+          <div className="text-xs opacity-80">本命的中時 想定払戻</div>
+          <div style={{ fontSize: "min(24px,6.5vw)", fontWeight: 900, color: "#a7f3d0" }}>
+            {yen(Math.round((recommendation.main?.stake || 0) * (recommendation.main?.odds || 0)))}
+          </div>
+        </div>
       </div>
 
       <div className="mt-4 flex flex-col gap-2 items-center">
@@ -232,6 +252,13 @@ const cardStyle = {
     boxShadow: "0 0 32px -8px #ef4444",
     minHeight: 240,
   },
+  skipMini: {
+    padding: "12px 14px", borderRadius: 12,
+    background: "linear-gradient(135deg, rgba(127,29,29,0.45), rgba(15,26,48,0.85))",
+    border: "1px solid rgba(239,68,68,0.4)",
+    color: "#fecaca",
+    minHeight: 80,
+  },
   noOdds: {
     padding: "60px 20px", borderRadius: 20, textAlign: "center",
     background: "linear-gradient(135deg,#3a2d0a,#1f1606)",
@@ -257,19 +284,37 @@ const btnReal = {
   minWidth: 240,
 };
 
-function Skip({ race, reason }) {
+function Skip({ race, reason, recommendation }) {
+  // Round 31: 見送りレースは短く。1 行理由 + 必要時のみ詳細を expand。
+  const [showAll, setShowAll] = useState(false);
+  const reasons = recommendation?.reasons || [];
+  const shortReason = reasons[0] || reason || "見送り";
+  const moreCount = Math.max(0, reasons.length - 1);
   return (
-    <section style={cardStyle.skip}>
-      <div style={{ fontSize: 14, fontWeight: 800, opacity: 0.85, marginBottom: 4 }}>📊 賢い判断</div>
-      <div style={{ fontSize: "min(48px,11vw)", fontWeight: 900, lineHeight: 1.1, letterSpacing: "-0.02em" }}>
-        見送り
+    <section style={cardStyle.skipMini}>
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <span style={{ fontSize: 24 }}>🔴</span>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 800 }}>見送り</div>
+            <div className="text-xs opacity-80">{race.venue} {race.raceNo}R ({race.startTime})</div>
+          </div>
+        </div>
+        <span className="pill badge-skip" style={{ fontSize: 10 }}>📊 賢い判断</span>
       </div>
-      <div className="opacity-90 mt-3 text-sm">{race.venue} {race.raceNo}R ({race.startTime}発走)</div>
-      <div className="opacity-90 mt-2 text-xs px-3">{reason}</div>
-      <div className="mt-3 mx-3 px-3 py-2 rounded-lg text-xs" style={{ background: "rgba(0,0,0,0.30)", color: "#fef9c3", lineHeight: 1.55 }}>
-        💡 <b>勝負レースを選ぶ</b>ことで、長期的な回収率が改善します。<br/>
-        無理に買わない判断にも価値があります。
-      </div>
+      <div className="text-xs opacity-90 mt-2" style={{ lineHeight: 1.45 }}>{shortReason}</div>
+      {moreCount > 0 && (
+        <>
+          <button onClick={() => setShowAll(v => !v)} className="text-xs opacity-70 mt-1 underline" style={{ background: "none", border: "none", cursor: "pointer", color: "#fcd34d" }}>
+            {showAll ? "▲ 隠す" : `▼ 他${moreCount}件の理由を見る`}
+          </button>
+          {showAll && (
+            <ul className="text-xs opacity-85 mt-1" style={{ paddingLeft: 16, lineHeight: 1.5 }}>
+              {reasons.slice(1).map((r, i) => <li key={i} style={{ listStyle: "disc", marginTop: 2 }}>{r}</li>)}
+            </ul>
+          )}
+        </>
+      )}
     </section>
   );
 }
