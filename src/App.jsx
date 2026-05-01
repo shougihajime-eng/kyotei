@@ -73,21 +73,32 @@ export default function App() {
     return map;
   }, [races, news, learnedWeights]);
 
-  const recommendations = useMemo(() => {
-    const map = {};
+  /* === Round 30: 3 スタイル同時計算 (事前計算 + キャッシュ) ===
+     ・races / evals / cap が変わったとき 1 回だけ全 3 スタイル分を計算
+     ・スタイル切替は計算済みキャッシュから O(1) で取り出すだけ → 即時反応
+     ・予想スナップショット保存にも 3 スタイル分が利用可能になる */
+  const allStyleRecommendations = useMemo(() => {
+    const out = { steady: {}, balanced: {}, aggressive: {} };
     for (const r of races) {
       const ev = evals[r.id];
-      const rec = buildBuyRecommendation(ev, settings.riskProfile, cap, false);
-      // 総合評価 ★ (荒れ期待度を加味して再評価)
-      rec.overall = computeOverallGrade(ev, rec, ev?.windWave);
-      rec.warnings = ev?.warnings || [];
-      rec.venueProfile = ev?.venueProfile || null;
-      rec.timeSlot = ev?.timeSlot || null;
-      rec.accident = ev?.accident || null;
-      map[r.id] = rec;
+      if (!ev) continue;
+      for (const style of ["steady", "balanced", "aggressive"]) {
+        const rec = buildBuyRecommendation(ev, style, cap, false);
+        rec.overall = computeOverallGrade(ev, rec, ev?.windWave);
+        rec.warnings = ev?.warnings || [];
+        rec.venueProfile = ev?.venueProfile || null;
+        rec.timeSlot = ev?.timeSlot || null;
+        rec.accident = ev?.accident || null;
+        out[style][r.id] = rec;
+      }
     }
-    return map;
-  }, [races, evals, settings.riskProfile, cap]);
+    return out;
+  }, [races, evals, cap]);
+
+  /* 現在スタイルの recommendations は事前計算からピックするだけ */
+  const recommendations = useMemo(() => {
+    return allStyleRecommendations[settings.riskProfile] || {};
+  }, [allStyleRecommendations, settings.riskProfile]);
 
   /* recommendations の最新値を ref にも反映 (switchProfile が安全に参照できるよう) */
   useEffect(() => { recsRef.current = recommendations; }, [recommendations]);
@@ -386,6 +397,32 @@ export default function App() {
     if (!settings.onboardingDone) return;
     setLastRefreshAt(null); // bypass cooldown for first call
     refreshAll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings.onboardingDone]);
+
+  /* === Round 30: 開催時間中バックグラウンド更新 (12 分間隔) ===
+     ・8:00 〜 22:00 JST のみ動作 (開催時間外は休む)
+     ・refreshing 中はスキップ (二重実行防止)
+     ・setLastRefreshAt(null) で cooldown を回避 (12 分間隔は十分間隔)
+     ・「次回更新予定」 を nextRefreshAt として state に保持 */
+  const [nextRefreshAt, setNextRefreshAt] = useState(null);
+  useEffect(() => {
+    if (!settings.onboardingDone) return;
+    const BG_INTERVAL_MS = 12 * 60 * 1000; // 12 分
+    function isRaceWindow() {
+      const h = new Date().getHours();
+      return h >= 8 && h < 22;
+    }
+    function tick() {
+      if (refreshing || !isRaceWindow()) return;
+      // cooldown を bypass して背景更新
+      setLastRefreshAt(null);
+      refreshAll();
+      setNextRefreshAt(new Date(Date.now() + BG_INTERVAL_MS).toISOString());
+    }
+    setNextRefreshAt(new Date(Date.now() + BG_INTERVAL_MS).toISOString());
+    const id = setInterval(tick, BG_INTERVAL_MS);
+    return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings.onboardingDone]);
 
