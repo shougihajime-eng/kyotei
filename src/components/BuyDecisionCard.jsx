@@ -320,17 +320,37 @@ function Skip({ race, reason, recommendation }) {
 }
 
 function NoOdds({ race }) {
+  // Round 34: 「取得不可」 で逃げない。 必ず "更新中" or "公開待ち" を表示
+  const hasStale = !!race?.apiOdds?.stale;
+  const lastFetchedAt = race?.apiOdds?.lastFetchedAt;
+  const ago = lastFetchedAt ? formatAgo(lastFetchedAt) : null;
   return (
     <section style={cardStyle.noOdds}>
-      <div style={{ fontSize: 48, marginBottom: 8 }}>⚠️</div>
-      <div style={{ fontSize: "min(40px,10vw)", fontWeight: 900 }}>オッズ取得不可</div>
+      <div style={{ fontSize: 36, marginBottom: 6 }}>{hasStale ? "🔄" : "⏳"}</div>
+      <div style={{ fontSize: "min(28px,7vw)", fontWeight: 900 }}>
+        {hasStale ? "オッズ更新中" : "オッズ公開待ち"}
+      </div>
       <div className="opacity-90 mt-3 text-sm">{race.venue} {race.raceNo}R ({race.startTime}発走)</div>
-      <div className="opacity-90 mt-2 text-xs">
-        まだ実オッズが公開されていません。<br/>
-        仮オッズでの推奨は行いません (期待値計算が壊れるため)
+      {hasStale && ago && (
+        <div className="opacity-90 mt-2 text-xs" style={{ color: "#fde68a" }}>
+          最終取得 {ago} 前
+        </div>
+      )}
+      <div className="opacity-80 mt-2 text-xs px-3" style={{ lineHeight: 1.5 }}>
+        {hasStale
+          ? "リトライ中です。仮オッズでの推奨は行いません (期待値計算が崩れるため)。次の自動更新で再取得します。"
+          : "発走 60〜90 分前から公開されます。まだ公開されていない可能性があります。"}
       </div>
     </section>
   );
+}
+
+function formatAgo(ts) {
+  if (!ts) return null;
+  const sec = Math.floor((Date.now() - new Date(ts).getTime()) / 1000);
+  if (sec < 60) return `${sec}秒`;
+  if (sec < 3600) return `${Math.floor(sec / 60)}分`;
+  return `${Math.floor(sec / 3600)}時間`;
 }
 
 function Empty({ title, sub }) {

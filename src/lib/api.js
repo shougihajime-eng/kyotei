@@ -1,15 +1,27 @@
 /**
  * Vercel Serverless Functions (/api/*) を呼ぶフェッチヘルパ。
- * いずれも例外を投げず、失敗時は { ok:false, error } を返す。
+ * いずれも例外を投げず、失敗時は { ok:false, error, stale?, lastFetchedAt? } を返す。
  *
- * リトライ機構:
- *   ・5xx / network エラー時のみ最大 2 回リトライ (指数バックオフ)
- *   ・4xx は再試行しない (URL ミス / 引数誤り)
- *   ・連続呼び出し抑制: 同一 URL は 1 秒以内に再 fetch しない (in-memory cache)
+ * Round 34: 開催中に「データ不足」 で逃げないための強化:
+ *   ・最大 5 回リトライ (指数バックオフ + ジッター)
+ *   ・直前成功キャッシュ (_lastSuccess) を URL 単位で保持
+ *   ・最終リトライも失敗したら、キャッシュがあれば stale データを返す
+ *   ・呼び出し側は data.stale=true で「更新中 (最終取得 12:34)」 表示が可能
  */
 
 const MEMO_TTL_MS = 1000;
-const _memo = new Map(); // url → { ts, promise }
+const _memo = new Map();         // url → { ts, promise } (in-flight 重複呼び出し抑制)
+const _lastSuccess = new Map();  // url → { ts, data } (リトライ全敗時のフォールバック)
+
+const MAX_RETRIES = 5;
+
+/* リトライ進捗を UI に伝えるためのコールバック (グローバル) */
+let _retryListener = null;
+export function setRetryListener(fn) { _retryListener = fn; }
+
+function emitRetry(url, attempt, max) {
+  if (_retryListener) try { _retryListener({ url, attempt, max }); } catch {}
+}
 
 export async function fetchJSON(url, opts = {}) {
   const now = Date.now();
@@ -17,42 +29,56 @@ export async function fetchJSON(url, opts = {}) {
   if (cached && now - cached.ts < MEMO_TTL_MS) {
     return cached.promise;
   }
-  const p = doFetchWithRetry(url, opts);
+  const p = doFetchWithRetry(url, opts, MAX_RETRIES);
   _memo.set(url, { ts: now, promise: p });
-  // 成功 / 失敗どちらでも 1 秒で memo expire
   setTimeout(() => { _memo.delete(url); }, MEMO_TTL_MS + 100);
   return p;
 }
 
-async function doFetchWithRetry(url, opts = {}, retriesLeft = 2) {
+async function doFetchWithRetry(url, opts = {}, retriesLeft = MAX_RETRIES) {
+  const attempt = MAX_RETRIES - retriesLeft + 1;
+  emitRetry(url, attempt, MAX_RETRIES);
   try {
     const r = await fetch(url, {
       headers: { Accept: "application/json", ...(opts.headers || {}) },
       signal: opts.signal,
     });
     if (r.status === 429) {
-      // Rate limit → 待ってリトライ
       if (retriesLeft > 0) {
-        await sleep(1500 + Math.random() * 1000);
+        await sleep(2000 + Math.random() * 1500);
         return doFetchWithRetry(url, opts, retriesLeft - 1);
       }
-      return { ok: false, error: "Rate limited (429) — 一時的に混雑しています" };
+      return staleFallback(url, "Rate limited (429)");
     }
     if (r.status >= 500 && retriesLeft > 0) {
-      // サーバーエラーは指数バックオフでリトライ
-      await sleep((3 - retriesLeft) * 800 + Math.random() * 400);
+      await sleep((MAX_RETRIES - retriesLeft) * 800 + Math.random() * 400);
       return doFetchWithRetry(url, opts, retriesLeft - 1);
     }
-    if (!r.ok) return { ok: false, error: `HTTP ${r.status}` };
-    return await r.json();
+    if (!r.ok) {
+      // 4xx は即諦め、ただし stale fallback あれば返す
+      return staleFallback(url, `HTTP ${r.status}`);
+    }
+    const data = await r.json();
+    if (data?.ok !== false) {
+      // 成功 → last-success キャッシュ更新
+      _lastSuccess.set(url, { ts: Date.now(), data });
+    }
+    return data;
   } catch (e) {
-    // ネットワークエラー → 指数バックオフでリトライ
     if (retriesLeft > 0) {
-      await sleep((3 - retriesLeft) * 600 + Math.random() * 400);
+      await sleep((MAX_RETRIES - retriesLeft) * 600 + Math.random() * 400);
       return doFetchWithRetry(url, opts, retriesLeft - 1);
     }
-    return { ok: false, error: String(e?.message || e || "fetch failed") };
+    return staleFallback(url, String(e?.message || e || "fetch failed"));
   }
+}
+
+function staleFallback(url, error) {
+  const last = _lastSuccess.get(url);
+  if (last) {
+    return { ...last.data, stale: true, lastFetchedAt: last.ts, error };
+  }
+  return { ok: false, error };
 }
 
 function sleep(ms) {
@@ -66,23 +92,28 @@ export async function fetchTodaySchedule() {
 export async function fetchRaceProgram(jcd, rno, dateStr) {
   if (!jcd || !rno || !dateStr) return null;
   const j = await fetchJSON(`/api/program?jcd=${jcd}&rno=${rno}&date=${dateStr}`);
-  return j.ok ? j : null;
+  return j?.ok !== false ? j : null;
 }
 
 export async function fetchRaceOdds(jcd, rno, dateStr) {
   if (!jcd || !rno || !dateStr) return null;
   const j = await fetchJSON(`/api/odds?jcd=${jcd}&rno=${rno}&date=${dateStr}`);
-  return j.ok ? j : null;
+  return j?.ok !== false ? j : null;
 }
 
 export async function fetchRaceResult(jcd, rno, dateStr) {
   if (!jcd || !rno || !dateStr) return null;
   const j = await fetchJSON(`/api/result?jcd=${jcd}&rno=${rno}&date=${dateStr}`);
-  return j.ok ? j : null;
+  return j?.ok !== false ? j : null;
 }
 
 export async function fetchBeforeInfo(jcd, rno, dateStr) {
   if (!jcd || !rno || !dateStr) return null;
   const j = await fetchJSON(`/api/beforeinfo?jcd=${jcd}&rno=${rno}&date=${dateStr}`);
-  return j.ok ? j : null;
+  return j?.ok !== false ? j : null;
+}
+
+/* デバッグ用: stale キャッシュ件数を確認 */
+export function getCacheStats() {
+  return { lastSuccessCount: _lastSuccess.size, inflightCount: _memo.size };
 }
