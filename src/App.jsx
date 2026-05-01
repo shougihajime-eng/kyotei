@@ -409,10 +409,14 @@ export default function App() {
 
   /* === Round 30: 開催時間中バックグラウンド更新 (12 分間隔) ===
      ・8:00 〜 22:00 JST のみ動作 (開催時間外は休む)
-     ・refreshing 中はスキップ (二重実行防止)
+     ・refreshing 中はスキップ (二重実行防止) — useRef で stale closure 撃退
      ・setLastRefreshAt(null) で cooldown を回避 (12 分間隔は十分間隔)
      ・「次回更新予定」 を nextRefreshAt として state に保持 */
   const [nextRefreshAt, setNextRefreshAt] = useState(null);
+  const refreshingRef = useRef(false);
+  const refreshAllRef = useRef(null);
+  useEffect(() => { refreshingRef.current = refreshing; }, [refreshing]);
+  useEffect(() => { refreshAllRef.current = refreshAll; }, [refreshAll]);
   useEffect(() => {
     if (!settings.onboardingDone) return;
     const BG_INTERVAL_MS = 12 * 60 * 1000; // 12 分
@@ -421,16 +425,14 @@ export default function App() {
       return h >= 8 && h < 22;
     }
     function tick() {
-      if (refreshing || !isRaceWindow()) return;
-      // cooldown を bypass して背景更新
+      if (refreshingRef.current || !isRaceWindow()) return;
       setLastRefreshAt(null);
-      refreshAll();
+      refreshAllRef.current && refreshAllRef.current();
       setNextRefreshAt(new Date(Date.now() + BG_INTERVAL_MS).toISOString());
     }
     setNextRefreshAt(new Date(Date.now() + BG_INTERVAL_MS).toISOString());
     const id = setInterval(tick, BG_INTERVAL_MS);
     return () => clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings.onboardingDone]);
 
   /* === 手動記録 (リアル/エア舟券フォーム) === */
@@ -508,6 +510,8 @@ export default function App() {
         today={today} settings={settings} setSettings={setSettings}
         switchProfile={switchProfile} switchVirtualMode={switchVirtualMode}
         refreshing={refreshing} onRefresh={refreshAll} lastRefreshAt={lastRefreshAt}
+        nextRefreshAt={nextRefreshAt}
+        savedCount={Object.keys(predictions || {}).length}
         suggestedStyle={suggestStyle(evals, predictions)} />
       {/* トースト: スタイル切替 / 操作フィードバック */}
       {toast && (

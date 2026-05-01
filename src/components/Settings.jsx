@@ -15,7 +15,10 @@ export default function Settings({ settings, setSettings, switchVirtualMode, onR
       <div>
         <label className="text-xs opacity-80">{label}</label>
         <input className="input mt-1 num" type="number" value={settings[key] ?? 0}
-          onChange={(e) => setSettings({ ...settings, [key]: +e.target.value || 0 })} />
+          onChange={(e) => {
+            const v = +e.target.value || 0;
+            setSettings((prev) => ({ ...prev, [key]: v })); // functional: stale closure 撃退
+          }} />
       </div>
     );
   }
