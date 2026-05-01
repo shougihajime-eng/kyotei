@@ -14,8 +14,10 @@
  */
 import { createClient } from "@supabase/supabase-js";
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "";
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
+// Node.js (テスト) と Vite 両方で動くよう防御的にアクセス
+const _env = (typeof import.meta !== "undefined" && import.meta.env) ? import.meta.env : (typeof process !== "undefined" ? process.env : {});
+const SUPABASE_URL = _env.VITE_SUPABASE_URL || "";
+const SUPABASE_ANON_KEY = _env.VITE_SUPABASE_ANON_KEY || "";
 
 let _client = null;
 

@@ -58,21 +58,33 @@ export default function App() {
     return () => { try { unsub && unsub(); } catch {} };
   }, []);
 
-  // ログイン直後の full sync (一度だけ)
+  // ログイン直後の full sync (一度だけ) + 5 分ごと定期 fullSync
   const syncedForUserRef = useRef(null);
   useEffect(() => {
     if (!authUser) { syncedForUserRef.current = null; return; }
-    if (syncedForUserRef.current === authUser.id) return;
-    syncedForUserRef.current = authUser.id;
-    setSyncStatus({ state: "syncing", lastAt: null, error: null, stats: null });
-    fullSync(authUser.id, predictions).then((res) => {
+    let cancelled = false;
+    async function runFullSync(reason) {
+      if (cancelled) return;
+      setSyncStatus((s) => ({ ...s, state: "syncing" }));
+      const res = await fullSync(authUser.id, predictions);
+      if (cancelled) return;
+      // ok でも partialOk (push 失敗) でも merged は採用 (cloud 新着分は取り込む)
+      if (res.merged) setPredictions(res.merged);
       if (res.ok) {
-        setPredictions(res.merged);
         setSyncStatus({ state: "synced", lastAt: Date.now(), error: null, stats: res.stats });
+      } else if (res.partialOk) {
+        setSyncStatus({ state: "error", lastAt: Date.now(), error: `${res.error} (cloud 取り込み済)`, stats: res.stats });
       } else {
         setSyncStatus({ state: "error", lastAt: Date.now(), error: res.error, stats: null });
       }
-    });
+    }
+    if (syncedForUserRef.current !== authUser.id) {
+      syncedForUserRef.current = authUser.id;
+      runFullSync("login");
+    }
+    // 5 分ごとに定期 fullSync (他端末記録を取り込む)
+    const id = setInterval(() => runFullSync("interval"), 5 * 60 * 1000);
+    return () => { cancelled = true; clearInterval(id); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authUser]);
 
@@ -678,10 +690,13 @@ export default function App() {
               if (!authUser) return;
               setSyncStatus({ state: "syncing", lastAt: null, error: null, stats: null });
               const res = await fullSync(authUser.id, predictions);
+              if (res.merged) setPredictions(res.merged); // ok / partialOk どちらでも採用
               if (res.ok) {
-                setPredictions(res.merged);
                 setSyncStatus({ state: "synced", lastAt: Date.now(), error: null, stats: res.stats });
                 showToast("✅ クラウド同期 完了", "ok");
+              } else if (res.partialOk) {
+                setSyncStatus({ state: "error", lastAt: Date.now(), error: res.error, stats: res.stats });
+                showToast("⚠️ 一部失敗 — cloud 取り込みは完了 (push リトライします)", "info");
               } else {
                 setSyncStatus({ state: "error", lastAt: Date.now(), error: res.error, stats: null });
                 showToast(`❌ 同期失敗: ${res.error}`, "neg");

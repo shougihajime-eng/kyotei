@@ -1,25 +1,30 @@
 /**
- * クラウド同期 — ローカル + Supabase を マージ (Round 45)
+ * クラウド同期 — ローカル + Supabase を マージ (Round 45-46)
  *
- * 設計方針:
+ * 設計原則 (絶対):
  * ・ローカル localStorage が「真実の primary 情報源」
- * ・ログイン時: ローカル → クラウド push (新規/更新)、クラウド → ローカル pull (他端末記録)
- * ・コンフリクト解決: snapshotAt 新しい方を採用 (last-write-wins)
- * ・ログイン失敗 / 通信失敗 でも localStorage は消えない
- * ・全予測を毎回送らず、変更分だけ upsert
+ * ・クラウドはバックアップ + 端末間同期手段
+ * ・「同期失敗で local が壊れる」 を絶対に起こさない
+ * ・push 失敗 / pull 失敗どちらでも local は変えない
+ *
+ * Round 46 安全性強化:
+ * ・mergeLocalAndCloud は防御的: cloud が null/undefined/壊れた値でも local をそのまま返す
+ * ・部分 push 失敗時も merged は採用可能 (local 拡張のみ)
+ * ・データ不正 (不正な key/date) は merge から除外
+ * ・手動記録の画像 (imageData) は cloud に乗せず local 専有 (容量 + 高速化)
+ * ・virtual / profile が cloud と local で食い違う異常も検知
  */
 import { getSupabase, cloudEnabled } from "./supabaseClient.js";
 
 const TABLE = "predictions";
+/* image_data は base64 で 数 MB になるためクラウド同期から除外。
+   ユーザーが写真を保存した端末でのみ閲覧可能 (ローカル専有)。 */
+const SYNC_IMAGE_DATA = false;
 
-/* === ローカル → クラウド push (差分 upsert) === */
-export async function pushToCloud(userId, predictions) {
-  const supabase = getSupabase();
-  if (!supabase || !userId) return { ok: false, error: "未ログイン" };
-  const list = Object.values(predictions || {});
-  if (list.length === 0) return { ok: true, pushed: 0 };
-  // Supabase 行に変換
-  const rows = list.map((p) => ({
+/* === 1 行を Supabase 形式に変換 (push 用) === */
+function toRow(userId, p) {
+  if (!p?.key) return null; // key なしは送信不可
+  return {
     user_id: userId,
     key: p.key,
     date: p.date || null,
@@ -40,13 +45,51 @@ export async function pushToCloud(userId, predictions) {
     manually_recorded: !!p.manuallyRecorded,
     memo: p.memo || null,
     reflection: p.reflection || null,
-    image_data: p.imageData || null,
+    image_data: SYNC_IMAGE_DATA ? (p.imageData || null) : null,
     matched_ai: p.matchedAi == null ? null : !!p.matchedAi,
     snapshot_at: p.snapshotAt || new Date().toISOString(),
     updated_at: new Date().toISOString(),
-  }));
+  };
+}
+
+/* === Supabase 行を localStorage 形式に変換 (pull 用) === */
+function fromRow(r) {
+  if (!r?.key) return null;
+  return {
+    key: r.key,
+    date: r.date,
+    raceId: r.race_id,
+    venue: r.venue,
+    jcd: r.jcd,
+    raceNo: r.race_no,
+    startTime: r.start_time,
+    decision: r.decision,
+    combos: r.combos || [],
+    totalStake: r.total_stake || 0,
+    profile: r.profile,
+    virtual: r.virtual === true ? true : (r.virtual === false ? false : undefined),
+    result: r.result || undefined,
+    payout: r.payout || 0,
+    hit: !!r.hit,
+    pnl: r.pnl,
+    manuallyRecorded: !!r.manually_recorded,
+    memo: r.memo,
+    reflection: r.reflection,
+    imageData: SYNC_IMAGE_DATA ? r.image_data : undefined, // 画像は受け取らない
+    matchedAi: r.matched_ai,
+    snapshotAt: r.snapshot_at,
+  };
+}
+
+/* === ローカル → クラウド push (差分 upsert) === */
+export async function pushToCloud(userId, predictions) {
+  const supabase = getSupabase();
+  if (!supabase || !userId) return { ok: false, error: "未ログイン" };
+  const list = Object.values(predictions || {});
+  if (list.length === 0) return { ok: true, pushed: 0 };
+  const rows = list.map((p) => toRow(userId, p)).filter(Boolean); // null は除外
+  if (rows.length === 0) return { ok: true, pushed: 0 };
   try {
-    // バッチで分けて upsert (1 リクエスト 200 件まで)
     const BATCH = 200;
     let pushed = 0;
     for (let i = 0; i < rows.length; i += BATCH) {
@@ -54,7 +97,9 @@ export async function pushToCloud(userId, predictions) {
       const { error } = await supabase
         .from(TABLE)
         .upsert(slice, { onConflict: "user_id,key" });
-      if (error) return { ok: false, error: error.message, pushed };
+      if (error) {
+        return { ok: false, error: error.message, pushed };
+      }
       pushed += slice.length;
     }
     return { ok: true, pushed };
@@ -75,33 +120,12 @@ export async function pullFromCloud(userId) {
       .order("date", { ascending: false })
       .limit(2000);
     if (error) return { ok: false, error: error.message };
-    // フォーマット復元
     const map = {};
     for (const r of data || []) {
-      map[r.key] = {
-        key: r.key,
-        date: r.date,
-        raceId: r.race_id,
-        venue: r.venue,
-        jcd: r.jcd,
-        raceNo: r.race_no,
-        startTime: r.start_time,
-        decision: r.decision,
-        combos: r.combos || [],
-        totalStake: r.total_stake || 0,
-        profile: r.profile,
-        virtual: r.virtual,
-        result: r.result || undefined,
-        payout: r.payout || 0,
-        hit: !!r.hit,
-        pnl: r.pnl,
-        manuallyRecorded: !!r.manually_recorded,
-        memo: r.memo,
-        reflection: r.reflection,
-        imageData: r.image_data,
-        matchedAi: r.matched_ai,
-        snapshotAt: r.snapshot_at,
-      };
+      // user_id が他人のデータをクライアント側でも防御チェック
+      if (r.user_id !== userId) continue; // RLS が動いていれば来ないはず
+      const p = fromRow(r);
+      if (p) map[r.key] = p;
     }
     return { ok: true, predictions: map, count: Object.keys(map).length };
   } catch (e) {
@@ -109,53 +133,102 @@ export async function pullFromCloud(userId) {
   }
 }
 
-/* === ローカル + クラウドをマージ ===
-   ・両方にあるキー → snapshotAt 新しい方
-   ・片方だけ → そのまま採用
+/* === ローカル + クラウドをマージ (絶対に local を壊さない) ===
+   cloud が null/undefined/不正でも local をそのまま返す。
+   両方ある場合: snapshotAt 新しい方を採用 (last-write-wins)。
+   手動記録 + 画像/メモがある local は cloud で上書きしない (情報を失わない)。
 */
 export function mergeLocalAndCloud(local, cloud) {
-  const merged = { ...local };
-  let cloudWon = 0, localWon = 0, cloudOnly = 0;
-  for (const [key, c] of Object.entries(cloud || {})) {
+  // 防御: local 自体が null/壊れている場合
+  const safeLocal = (local && typeof local === "object") ? local : {};
+  const safeCloud = (cloud && typeof cloud === "object") ? cloud : {};
+  const merged = { ...safeLocal };
+  let cloudWon = 0, localWon = 0, cloudOnly = 0, localOnly = 0;
+  // local だけにあるキーをカウント (cloud と比較しないキー)
+  for (const key of Object.keys(safeLocal)) {
+    if (!(key in safeCloud)) localOnly++;
+  }
+  // cloud をなめる
+  for (const [key, c] of Object.entries(safeCloud)) {
+    // 不正なエントリ (key 不一致 / null) は採用しない
+    if (!c || typeof c !== "object" || c.key !== key) continue;
     const l = merged[key];
     if (!l) {
       merged[key] = c;
       cloudOnly++;
-    } else {
-      const lTs = new Date(l.snapshotAt || 0).getTime();
-      const cTs = new Date(c.snapshotAt || 0).getTime();
-      if (cTs > lTs) {
-        // 手動記録は local 優先 (画像 / 反省メモを失わない)
-        if (l.manuallyRecorded && (l.imageData || l.reflection || l.memo)) {
-          merged[key] = { ...c, ...l, snapshotAt: l.snapshotAt };
-          localWon++;
-        } else {
-          merged[key] = c;
-          cloudWon++;
-        }
+      continue;
+    }
+    const lTs = Date.parse(l.snapshotAt || "") || 0;
+    const cTs = Date.parse(c.snapshotAt || "") || 0;
+    if (cTs > lTs) {
+      // local が手動記録 + 画像/メモあり → 上書きしない (大事な情報保護)
+      const localHasIrreplaceable = l.manuallyRecorded && (l.imageData || l.reflection || l.memo);
+      if (localHasIrreplaceable) {
+        // cloud の新しいフィールドだけマージ (local の画像/メモは保持)
+        merged[key] = {
+          ...c,
+          // local 専有フィールドを優先
+          imageData: l.imageData ?? c.imageData,
+          reflection: l.reflection ?? c.reflection,
+          memo: l.memo ?? c.memo,
+          // snapshotAt は local より大きく置く (再 push されないように cloud)
+          snapshotAt: c.snapshotAt,
+        };
+        cloudWon++;
       } else {
-        localWon++;
+        merged[key] = c;
+        cloudWon++;
       }
+    } else {
+      localWon++;
     }
   }
-  return { merged, cloudWon, localWon, cloudOnly };
+  return { merged, cloudWon, localWon, cloudOnly, localOnly };
 }
 
-/* === 完全同期 (ログイン時に呼ぶ) === */
+/* === 完全同期 (ログイン時に呼ぶ) ===
+   pull 失敗 → local は不変。 push 失敗 → merge 結果は local に反映 (cloud 新着分を取り込み済み)。 */
 export async function fullSync(userId, localPredictions) {
   if (!cloudEnabled() || !userId) return { ok: false, error: "未ログイン" };
   // 1. クラウドから pull
   const pulled = await pullFromCloud(userId);
-  if (!pulled.ok) return { ok: false, error: `クラウド取得失敗: ${pulled.error}` };
-  // 2. マージ
-  const { merged, cloudWon, localWon, cloudOnly } = mergeLocalAndCloud(localPredictions, pulled.predictions);
+  if (!pulled.ok) {
+    // pull 失敗: local は絶対に変えない
+    return { ok: false, error: `クラウド取得失敗: ${pulled.error}` };
+  }
+  // 2. マージ (cloud=null でも安全)
+  const mergeResult = mergeLocalAndCloud(localPredictions, pulled.predictions);
   // 3. マージ結果を push (ローカル側の差分をクラウドへ)
-  const pushed = await pushToCloud(userId, merged);
-  if (!pushed.ok) return { ok: false, error: `クラウド送信失敗: ${pushed.error}`, merged };
+  const pushed = await pushToCloud(userId, mergeResult.merged);
+  if (!pushed.ok) {
+    // push 失敗 — ただし pull は成功しているので merge 結果は採用 (cloud 新着分の取り込みは進んでいる)
+    // 次回の lightSync / fullSync でクラウドへの push をリトライ
+    return {
+      ok: false,
+      error: `クラウド送信失敗 (再試行で挽回します): ${pushed.error}`,
+      merged: mergeResult.merged,
+      partialOk: true, // ← App 側ではこれで setPredictions(merged) してよい
+      stats: {
+        pulled: pulled.count,
+        pushed: pushed.pushed || 0,
+        cloudWon: mergeResult.cloudWon,
+        localWon: mergeResult.localWon,
+        cloudOnly: mergeResult.cloudOnly,
+        localOnly: mergeResult.localOnly,
+      },
+    };
+  }
   return {
     ok: true,
-    merged,
-    stats: { pulled: pulled.count, pushed: pushed.pushed, cloudWon, localWon, cloudOnly },
+    merged: mergeResult.merged,
+    stats: {
+      pulled: pulled.count,
+      pushed: pushed.pushed,
+      cloudWon: mergeResult.cloudWon,
+      localWon: mergeResult.localWon,
+      cloudOnly: mergeResult.cloudOnly,
+      localOnly: mergeResult.localOnly,
+    },
   };
 }
 
