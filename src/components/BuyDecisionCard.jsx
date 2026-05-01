@@ -68,7 +68,7 @@ function BuyDecisionCard({ race, recommendation, onRecord, virtualMode }) {
       </div>
 
       {/* 本命 — これだけ採用すれば OK */}
-      <div className="mt-3 text-center" style={{ background: "rgba(0,0,0,0.32)", borderRadius: 14, padding: "16px 12px", border: "2px solid rgba(255,255,255,0.18)", minHeight: 200 }}>
+      <div className="mt-3 text-center" style={{ background: "rgba(0,0,0,0.32)", borderRadius: 14, padding: "16px 12px", border: "2px solid rgba(255,255,255,0.18)", minHeight: 240 }}>
         <div className="text-xs opacity-85" style={{ fontWeight: 700, letterSpacing: "0.05em" }}>
           👉 この買い目を採用
         </div>
@@ -76,9 +76,38 @@ function BuyDecisionCard({ race, recommendation, onRecord, virtualMode }) {
         <div className="font-mono" style={{ fontSize: "min(48px,12vw)", fontWeight: 900, marginTop: 6, lineHeight: 1.05 }}>
           {main.combo}
         </div>
-        <div className="text-xs opacity-80 mt-2">
-          オッズ {main.odds.toFixed(1)} / 確率 {pct(main.prob, 1)} / EV <b style={{ color: "#fde68a" }}>{main.ev.toFixed(2)}</b>
+        {/* 4 指標を均等に並べて表示 */}
+        <div className="grid grid-cols-2 gap-1 mt-3 text-xs" style={{ background: "rgba(0,0,0,0.18)", borderRadius: 8, padding: "8px 6px" }}>
+          <div>
+            <div className="opacity-60">推定的中確率</div>
+            <div className="num font-bold" style={{ fontSize: 16 }}>{pct(main.prob, 1)}</div>
+          </div>
+          <div>
+            <div className="opacity-60">オッズ</div>
+            <div className="num font-bold" style={{ fontSize: 16 }}>{main.odds.toFixed(1)}倍</div>
+          </div>
+          <div>
+            <div className="opacity-60">期待回収率</div>
+            <div className="num font-bold" style={{ fontSize: 16, color: (main.expectedReturn ?? main.ev) >= 1 ? "#a7f3d0" : "#fca5a5" }}>
+              {Math.round((main.expectedReturn ?? main.ev) * 100)}%
+            </div>
+          </div>
+          <div>
+            <div className="opacity-60">EV (期待値)</div>
+            <div className="num font-bold" style={{ fontSize: 16, color: "#fde68a" }}>
+              {((main.evMinus1 ?? (main.ev - 1)) >= 0 ? "+" : "")}{((main.evMinus1 ?? (main.ev - 1)) * 100).toFixed(0)}%
+            </div>
+          </div>
         </div>
+        {/* 採用理由 */}
+        {Array.isArray(main.pickReason) && main.pickReason.length > 0 && (
+          <div className="mt-3 text-left" style={{ background: "rgba(255,255,255,0.06)", borderRadius: 8, padding: "8px 10px" }}>
+            <div className="text-xs opacity-75 mb-1" style={{ fontWeight: 700 }}>📌 採用理由</div>
+            <ul className="text-xs opacity-90" style={{ paddingLeft: 14 }}>
+              {main.pickReason.map((r, i) => (<li key={i} style={{ listStyle: "disc", marginTop: 2 }}>{r}</li>))}
+            </ul>
+          </div>
+        )}
         <div className="num mt-3" style={{ fontSize: "min(28px,7vw)", fontWeight: 900 }}>
           {yen(main.stake)}
         </div>
@@ -99,7 +128,13 @@ function BuyDecisionCard({ race, recommendation, onRecord, virtualMode }) {
                   {isHole ? "🟣 " : ""}{it.role} ({it.kind})
                 </div>
                 <div className="font-mono" style={{ fontSize: 18, fontWeight: 800, marginTop: 2 }}>{it.combo}</div>
-                <div className="text-xs opacity-70 mt-1">EV {it.ev.toFixed(2)} / {yen(it.stake)}</div>
+                <div className="text-xs opacity-70 mt-1">
+                  確率 {pct(it.prob, 1)} / オッズ {it.odds.toFixed(1)}
+                </div>
+                <div className="text-xs mt-1" style={{ color: (it.expectedReturn ?? it.ev) >= 1 ? "#a7f3d0" : "#fca5a5" }}>
+                  期待回収 {Math.round((it.expectedReturn ?? it.ev) * 100)}%
+                </div>
+                <div className="text-xs opacity-70 mt-1">{yen(it.stake)}</div>
               </div>
             );
           })}

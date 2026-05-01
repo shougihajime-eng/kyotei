@@ -16,11 +16,25 @@ import { judgeAIReliability, evaluateSkipQuality } from "../lib/analysis.js";
  */
 export default function Stats({ predictions, lastRefreshAt }) {
   const [tab, setTab] = useState("air"); // air | real | compare
+  const [period, setPeriod] = useState("week"); // today | week | all
+
+  // 期間フィルタ用の境界日
+  const cutoff = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    if (period === "today") return today;
+    if (period === "week") {
+      const d = new Date();
+      d.setDate(d.getDate() - 6);
+      return d.toISOString().slice(0, 10);
+    }
+    return "0000-00-00"; // all
+  }, [period]);
 
   const all = useMemo(() => Object.values(predictions || {})
     .filter((p) => p.decision === "buy" && p.totalStake > 0 && p.result?.first)
+    .filter((p) => (p.date || "0000-00-00") >= cutoff)
     .sort((a, b) => (a.date + (a.startTime || "")).localeCompare(b.date + (b.startTime || ""))),
-  [predictions]);
+  [predictions, cutoff]);
 
   const air = useMemo(() => all.filter((p) => p.virtual !== false), [all]);
   const real = useMemo(() => all.filter((p) => p.virtual === false), [all]);
@@ -32,6 +46,28 @@ export default function Stats({ predictions, lastRefreshAt }) {
         <button onClick={() => setTab("air")} className={"tab-btn flex-1 " + (tab === "air" ? "active" : "")}>🧪 エア舟券</button>
         <button onClick={() => setTab("real")} className={"tab-btn flex-1 " + (tab === "real" ? "active" : "")}>💰 リアル舟券</button>
         <button onClick={() => setTab("compare")} className={"tab-btn flex-1 " + (tab === "compare" ? "active" : "")}>⚖️ 比較</button>
+      </div>
+
+      {/* 期間切替 (今日 / 今週 / 全期間) */}
+      <div className="flex gap-2 items-center flex-wrap">
+        <span className="text-xs opacity-70">期間:</span>
+        {[
+          { k: "today", label: "📅 今日",   color: "#22d3ee" },
+          { k: "week",  label: "🗓️ 今週",   color: "#10b981" },
+          { k: "all",   label: "📚 全期間", color: "#fbbf24" },
+        ].map((f) => (
+          <button key={f.k} onClick={() => setPeriod(f.k)}
+            className="pill"
+            style={{
+              padding: "6px 14px", fontSize: 12, cursor: "pointer", border: "none",
+              background: period === f.k ? f.color : "rgba(15,24,48,0.6)",
+              color: period === f.k ? "#0b1220" : "#9fb0c9",
+              fontWeight: period === f.k ? 800 : 600,
+              transition: "all 0.12s",
+            }}>
+            {f.label}
+          </button>
+        ))}
       </div>
 
       {/* 最終更新表示 */}

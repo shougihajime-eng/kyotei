@@ -40,60 +40,10 @@ export default function App() {
     setToast({ msg, kind, id });
     setTimeout(() => setToast((t) => (t && t.id === id ? null : t)), 2500);
   }, []);
-  /* スタイル切替: 即時反応 + トースト発火 + 切替後の差分通知 */
+  /* スタイル切替の差分通知用 ref。switchProfile / useEffect は recommendations 定義後に作る (TDZ 回避) */
   const lastSwitchInfo = useRef(null);
-  const switchProfile = useCallback((p) => {
-    if (settings.riskProfile === p) {
-      showToast("既に選択中のスタイルです", "info");
-      return;
-    }
-    // 切替前の「最も発走時刻が近い買い推奨」 を保存 (差分通知用)
-    const recsEntries = Object.entries(recommendations || {});
-    const headlineEntry = recsEntries.find(([_, r]) => r?.decision === "buy") || recsEntries[0];
-    const prevRec = headlineEntry?.[1];
-    lastSwitchInfo.current = {
-      prevDecision: prevRec?.decision,
-      prevMainCombo: prevRec?.main?.combo,
-      raceId: headlineEntry?.[0],
-      newProfile: p,
-      ts: Date.now(),
-    };
-    setSettings((prev) => ({ ...prev, riskProfile: p }));
-    const label = { steady: "🛡️ 安定型", balanced: "⚖️ バランス型", aggressive: "🎯 攻め型" }[p] || p;
-    showToast(`${label} に切り替えました`, "ok");
-  }, [settings.riskProfile, recommendations, showToast]);
-
-  /* スタイル切替後、recommendations が再計算された結果を旧と比較してトーストで通知 */
-  useEffect(() => {
-    const info = lastSwitchInfo.current;
-    if (!info || !info.raceId) return;
-    if (Date.now() - info.ts > 1500) return;
-    const newRec = recommendations[info.raceId];
-    if (!newRec) return;
-    const newMainCombo = newRec.main?.combo;
-    const prevDecision = info.prevDecision;
-    const newDecision = newRec.decision;
-    let msg = null, kind = "info";
-    if (prevDecision !== newDecision) {
-      if (newDecision === "buy") { msg = "🟢 買い判定に変わりました"; kind = "ok"; }
-      else if (newDecision === "skip") { msg = "🔴 見送りに変わりました"; kind = "neg"; }
-      else { msg = "判定が変わりました"; }
-    } else if (newDecision === "buy" && info.prevMainCombo !== newMainCombo) {
-      msg = `📋 買い目が変わりました (${info.prevMainCombo || "—"} → ${newMainCombo || "—"})`;
-      kind = "ok";
-    } else if (newDecision === "buy") {
-      msg = "⚠️ スタイルは変わりましたが、このレースでは同じ買い目です";
-      kind = "info";
-    } else if (newDecision === "skip") {
-      msg = "⚠️ スタイルは変わりましたが、このレースでは見送り判定のままです";
-      kind = "info";
-    }
-    if (msg) {
-      const t = setTimeout(() => showToast(msg, kind), 600);
-      lastSwitchInfo.current = null;
-      return () => clearTimeout(t);
-    }
-  }, [recommendations, showToast]);
+  /* recommendations の最新値を ref に保持 (switchProfile が hoisted で参照できるようにする) */
+  const recsRef = useRef({});
   /* news: マウント時に 1 回だけ取得 (キャッシュ s-maxage=600s なので軽量) */
   const [news, setNews] = useState([]);
   useEffect(() => {
@@ -135,6 +85,63 @@ export default function App() {
     return map;
   }, [races, evals, settings.riskProfile, cap]);
 
+  /* recommendations の最新値を ref にも反映 (switchProfile が安全に参照できるよう) */
+  useEffect(() => { recsRef.current = recommendations; }, [recommendations]);
+
+  /* スタイル切替: 即時反応 + トースト発火 + 切替前の状態を保存 */
+  const switchProfile = useCallback((p) => {
+    if (settings.riskProfile === p) {
+      showToast("既に選択中のスタイルです", "info");
+      return;
+    }
+    // 切替前の「最も発走時刻が近い買い推奨」 を ref から取得 (差分通知用)
+    const recsEntries = Object.entries(recsRef.current || {});
+    const headlineEntry = recsEntries.find(([_, r]) => r?.decision === "buy") || recsEntries[0];
+    const prevRec = headlineEntry?.[1];
+    lastSwitchInfo.current = {
+      prevDecision: prevRec?.decision,
+      prevMainCombo: prevRec?.main?.combo,
+      raceId: headlineEntry?.[0],
+      newProfile: p,
+      ts: Date.now(),
+    };
+    setSettings((prev) => ({ ...prev, riskProfile: p }));
+    const label = { steady: "🛡️ 安定型", balanced: "⚖️ バランス型", aggressive: "🎯 攻め型" }[p] || p;
+    showToast(`${label} に切り替えました`, "ok");
+  }, [settings.riskProfile, showToast]);
+
+  /* スタイル切替後、recommendations が再計算された結果を旧と比較してトーストで通知 */
+  useEffect(() => {
+    const info = lastSwitchInfo.current;
+    if (!info || !info.raceId) return;
+    if (Date.now() - info.ts > 1500) return;
+    const newRec = recommendations[info.raceId];
+    if (!newRec) return;
+    const newMainCombo = newRec.main?.combo;
+    const prevDecision = info.prevDecision;
+    const newDecision = newRec.decision;
+    let msg = null, kind = "info";
+    if (prevDecision !== newDecision) {
+      if (newDecision === "buy") { msg = "🟢 買い判定に変わりました"; kind = "ok"; }
+      else if (newDecision === "skip") { msg = "🔴 見送りに変わりました"; kind = "neg"; }
+      else { msg = "判定が変わりました"; }
+    } else if (newDecision === "buy" && info.prevMainCombo !== newMainCombo) {
+      msg = `📋 買い目が変わりました (${info.prevMainCombo || "—"} → ${newMainCombo || "—"})`;
+      kind = "ok";
+    } else if (newDecision === "buy") {
+      msg = "⚠️ スタイルは変わりましたが、このレースでは同じ買い目です";
+      kind = "info";
+    } else if (newDecision === "skip") {
+      msg = "⚠️ スタイルは変わりましたが、このレースでは見送り判定のままです";
+      kind = "info";
+    }
+    if (msg) {
+      const t = setTimeout(() => showToast(msg, kind), 600);
+      lastSwitchInfo.current = null;
+      return () => clearTimeout(t);
+    }
+  }, [recommendations, showToast]);
+
   /* === AI判断スナップショット ===
        無限ループ防止のため、races の変更時のみ記録 (recommendations 依存は削除)。
        記録のタイミング: 「最新にする」ボタンで races が更新された直後の 1 回のみ。 */
@@ -156,16 +163,27 @@ export default function App() {
         const dateKey = (r.date || "").replace(/-/g, "");
         const key = `${dateKey}_${r.id}`;
         const existing = next[key] || {};
+        // 手動記録 (manuallyRecorded) は AI スナップショットで上書きしない
+        if (existing.manuallyRecorded) continue;
         const combos = rec.decision === "buy"
-          ? rec.items.map((it) => ({ kind: it.kind, combo: it.combo, stake: it.stake, odds: it.odds, prob: it.prob, ev: it.ev, role: it.role, grade: it.grade }))
+          ? rec.items.map((it) => ({
+              kind: it.kind, combo: it.combo, stake: it.stake,
+              odds: it.odds, prob: it.prob, ev: it.ev,
+              expectedReturn: it.expectedReturn, evMinus1: it.evMinus1,
+              role: it.role, grade: it.grade, pickReason: it.pickReason,
+            }))
           : [];
         const updated = {
           ...existing,
           key, date: r.date, raceId: r.id, venue: r.venue, jcd: r.jcd, raceNo: r.raceNo,
           startTime: r.startTime, decision: rec.decision, combos,
+          reason: rec.reason || existing.reason || null,
+          rationale: rec.rationale || existing.rationale || null,
           totalStake: rec.decision === "buy" ? rec.total : 0,
           grade: rec.grade || null,
           profile: rec.profile || settings.riskProfile, // スタイル別集計のため
+          // virtual: AI スナップショットは settings.virtualMode に従う (既存値は尊重)
+          virtual: existing.virtual != null ? existing.virtual : !!settings.virtualMode,
           snapshotAt: stamp,
         };
         const cmp = (o) => JSON.stringify({

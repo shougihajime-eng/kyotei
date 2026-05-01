@@ -200,6 +200,19 @@ function rankProb3(probs, i, j, k) {
        * probs[k] / Math.max(1e-9, 1 - probs[i] - probs[j]);
 }
 
+/* === EV / 期待回収率 / 採用理由 ===
+   ・期待回収率 (expectedReturn) = 推定的中確率 × オッズ        … 100% 超なら期待値プラス
+   ・EV = 推定的中確率 × オッズ − 1 = 期待回収率 − 1            … 0 超なら期待値プラス
+   ・「100円購入時の期待払戻」 = prob × odds × 100 円
+   ・「100円購入時の期待利益」 = prob × odds × 100 − 100 円
+*/
+function makeItem(kind, combo, prob, odds) {
+  const expectedReturn = prob * odds;     // 1.20 = 期待回収率 120%
+  const ev = expectedReturn;               // 旧コードと整合 (買い目ランキングに使う指標として旧名を維持)
+  const evMinus1 = expectedReturn - 1;     // 「期待値プラスマイナス」 として明確に持つ
+  return { kind, combo, prob, odds, ev, expectedReturn, evMinus1 };
+}
+
 /* 各券種を全列挙して EV を計算 (実オッズが無い combo は除外) */
 function enumerateExacta(probs, oddsTable) {
   const items = [];
@@ -208,7 +221,7 @@ function enumerateExacta(probs, oddsTable) {
     const odds = oddsTable[`${i+1}-${j+1}`];
     if (odds == null) continue;
     const p = rankProb2(probs, i, j);
-    items.push({ kind: "2連単", combo: `${i+1}-${j+1}`, prob: p, odds, ev: p * odds });
+    items.push(makeItem("2連単", `${i+1}-${j+1}`, p, odds));
   }
   return items;
 }
@@ -219,7 +232,7 @@ function enumerateTrifecta(probs, oddsTable) {
     const odds = oddsTable[`${i+1}-${j+1}-${k+1}`];
     if (odds == null) continue;
     const p = rankProb3(probs, i, j, k);
-    items.push({ kind: "3連単", combo: `${i+1}-${j+1}-${k+1}`, prob: p, odds, ev: p * odds });
+    items.push(makeItem("3連単", `${i+1}-${j+1}-${k+1}`, p, odds));
   }
   return items;
 }
@@ -229,7 +242,7 @@ function enumerateQuinella(probs, oddsTable) {
     const odds = oddsTable[`${i+1}=${j+1}`];
     if (odds == null) continue;
     const p = rankProb2(probs, i, j) + rankProb2(probs, j, i);
-    items.push({ kind: "2連複", combo: `${i+1}=${j+1}`, prob: p, odds, ev: p * odds });
+    items.push(makeItem("2連複", `${i+1}=${j+1}`, p, odds));
   }
   return items;
 }
@@ -241,10 +254,44 @@ function enumerateTrio(probs, oddsTable) {
     const perms = [[i,j,k],[i,k,j],[j,i,k],[j,k,i],[k,i,j],[k,j,i]];
     let p = 0;
     for (const [a, b, c] of perms) p += rankProb3(probs, a, b, c);
-    items.push({ kind: "3連複", combo: `${i+1}=${j+1}=${k+1}`, prob: p, odds, ev: p * odds });
+    items.push(makeItem("3連複", `${i+1}=${j+1}=${k+1}`, p, odds));
   }
   return items;
 }
+
+/* === 確率整合性チェック ===
+   softmax + Plackett-Luce が壊れていないかを「全買い目の的中確率合計」で検算する。
+   完全列挙すれば 1.000 になる。実オッズが無い combo は除外しているので 1 未満になるが、
+   1.05 を超える / 0.30 を下回る ならどこかが壊れている。 */
+export function checkProbabilityConsistency(probs, items) {
+  // 1着確率合計 (softmax) — 必ず 1.0
+  const oneFirst = probs.reduce((a, b) => a + b, 0);
+  // 券種別 全買い目確率合計
+  const sumByKind = {};
+  for (const it of items) {
+    sumByKind[it.kind] = (sumByKind[it.kind] || 0) + it.prob;
+  }
+  return {
+    oneFirstSum: +oneFirst.toFixed(4),
+    byKind: Object.fromEntries(Object.entries(sumByKind).map(([k, v]) => [k, +v.toFixed(4)])),
+    healthy: Math.abs(oneFirst - 1.0) < 0.01,
+  };
+}
+
+/* === 最低的中確率フィルタ ===
+   オッズが高いだけで的中確率が極端に低い買い目を本線から除外する。
+   券種ごとに「全買い目の母集団に対する平均確率」 を基準にして適応的に決定する。
+   - 2連単 (30 通り):  平均 1/30 ≒ 3.3%。下限 1.0%
+   - 3連単 (120 通り): 平均 1/120 ≒ 0.83%。下限 0.3%
+   - 2連複 (15 通り):  平均 1/15 ≒ 6.7%。下限 2.0%
+   - 3連複 (20 通り):  平均 1/20 = 5.0%。下限 1.5%
+*/
+export const MIN_PROB_BY_KIND = {
+  "2連単": 0.010,
+  "3連単": 0.003,
+  "2連複": 0.020,
+  "3連複": 0.015,
+};
 
 /* 一言理由 (本命の強い因子から) */
 function oneLineReason(score, ticket) {
@@ -257,6 +304,32 @@ function oneLineReason(score, ticket) {
   if (f.startPower >= 0.7) strong.push("ST良");
   if (strong.length === 0) return `EV ${ticket.ev.toFixed(2)} 妙味`;
   return strong.slice(0, 3).join("＋");
+}
+
+/* 各買い目の採用理由を生成 (UI 表示用) */
+function buildPickReason(ticket, score, ev, inDominant, inFavored, inProb) {
+  const head = ticket.combo[0];
+  const r = [];
+  // 推定的中確率 / オッズ / 期待回収率
+  const probPct = (ticket.prob * 100).toFixed(1);
+  const er = (ticket.prob * ticket.odds * 100).toFixed(0);
+  r.push(`的中確率 ${probPct}% × オッズ ${ticket.odds.toFixed(1)} = 期待回収率 ${er}%`);
+  // 本命艇の強い因子
+  if (score?.factors) {
+    const f = score.factors;
+    if (head === "1" && (inDominant || inFavored)) {
+      r.push(`1号艇1着確率 ${(inProb * 100).toFixed(0)}% (イン${inDominant ? "濃厚" : "やや有利"})`);
+    }
+    if (f.motor >= 0.7) r.push(`${head}号艇 モーター上位`);
+    if (f.exhibition >= 0.7) r.push(`${head}号艇 展示◎`);
+    if (f.startPower >= 0.7) r.push(`${head}号艇 ST良`);
+  }
+  // 外艇ヘッドの場合の追加理由
+  if (head !== "1") {
+    if (inProb < 0.30) r.push("1号艇信頼度低 → 外艇展開");
+    else if (ev?.development?.scenario === "荒れ") r.push("荒れ展開期待");
+  }
+  return r;
 }
 
 /* === Phase D: 前付け検知 === */
@@ -417,6 +490,8 @@ function _evaluateInner(race, newsItems, learnedAdjustments) {
   const maeBuke = predictMaeBuke(race);
   const stExh = analyzeExhibitionST(race);
   const inTrust = judgeInTrust(race, scores, probs);
+  // 確率分布の整合性 (1着確率合計=1, 券種別 全買い目確率合計)
+  const probConsistency = checkProbabilityConsistency(probs, items);
   const out = {
     ok: true,
     race, // 後続の buildBuyRecommendation で 6号艇チェック等に使う
@@ -428,6 +503,7 @@ function _evaluateInner(race, newsItems, learnedAdjustments) {
     maeBuke,
     stExh,
     inTrust,
+    probConsistency,
     learnedAdjustments: learnedAdjustments || null,
     related: relatedNews(race, newsItems),
     availableKinds: {
@@ -526,10 +602,33 @@ export function buildBuyRecommendation(ev, riskProfile, perRaceCap) {
   }[riskProfile] || ["2連単", "3連単"];
 
   const boat6Valid = isBoat6CandidateValid(ev.race || {boats: []}, ev.scores || [], ev.probs || [], ev.inTrust);
+  const inProbIdx = ev.scores?.findIndex((s) => s.boatNo === 1) ?? -1;
+  const inProb = inProbIdx >= 0 ? (ev.probs?.[inProbIdx] ?? 0) : 0;
+  // 1号艇逃げ濃厚 (≥50%) / やや有利 (≥45%) のときは外艇ヘッドを強く抑制する
+  const inDominant = inProb >= 0.50;
+  const inFavored = inProb >= 0.45;
+
   let candidates = ev.items.filter((t) => {
     if (!allowed.includes(t.kind)) return false;
-    if (t.ev < 1.05) return false; // EV 1.05+ を候補に (1.10 以下は補助として残す)
+    if (t.ev < 1.05) return false; // 期待回収率 105% 以上を候補に
+    // 券種別 最低的中確率フィルタ — オッズが高いだけのスパイクを排除
+    const minP = MIN_PROB_BY_KIND[t.kind] ?? 0.005;
+    if (t.prob < minP) return false;
+    // 6号艇本命チェック (展示◎/モーター/勝率/インドミナント低/荒れ/内側進入歴 の根拠)
     if (t.combo.startsWith("6") && !boat6Valid) return false;
+    // インドミナント時は外艇ヘッドの本線採用を抑制
+    if (inDominant) {
+      // 1号艇逃げ濃厚 — ヘッドが 1 以外は EV ≥ 1.30 + 確率 2倍 を超えなければ除外
+      const head = t.combo[0];
+      if (head !== "1") {
+        const minProbForOuter = (MIN_PROB_BY_KIND[t.kind] ?? 0.005) * 2;
+        if (t.ev < 1.30 || t.prob < minProbForOuter) return false;
+      }
+    } else if (inFavored) {
+      // やや有利 — 1ヘッド以外は EV 1.15 以上を要求
+      const head = t.combo[0];
+      if (head !== "1" && t.ev < 1.15) return false;
+    }
     return true;
   });
 
@@ -606,16 +705,21 @@ export function buildBuyRecommendation(ev, riskProfile, perRaceCap) {
   const items = top.map((t, i) => {
     const mainBoat = parseInt(t.combo[0]);
     const score = ev.scores.find((s) => s.boatNo === mainBoat);
+    // 採用理由 — なぜこの買い目を出したか
+    const pickReason = buildPickReason(t, score, ev, inDominant, inFavored, inProb);
     return {
       role: roles[i] || `候補${i + 1}`,
       kind: t.kind,
       combo: t.combo,
-      prob: t.prob,
-      odds: t.odds,
-      ev: t.ev,
+      prob: t.prob,                   // 推定的中確率 (0〜1)
+      odds: t.odds,                   // 実オッズ
+      expectedReturn: +(t.prob * t.odds).toFixed(3), // 期待回収率
+      ev: t.ev,                       // (旧名互換) = expectedReturn
+      evMinus1: +(t.prob * t.odds - 1).toFixed(3),   // EV (期待値プラスマイナス)
       stake: stakes[i] || 0,
       grade: t.ev >= 1.30 ? "S" : t.ev >= 1.10 ? "A" : t.ev >= 0.95 ? "B" : "C",
       conditionReasons: score?.conditionReasons || [],
+      pickReason,                     // 採用理由 (UI で表示)
     };
   }).filter((it) => it.stake > 0);
 
