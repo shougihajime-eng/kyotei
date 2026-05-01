@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, memo } from "react";
 import {
   ResponsiveContainer, AreaChart, Area, BarChart, Bar, LineChart, Line,
   XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine,
@@ -127,8 +127,9 @@ export default function Stats({ predictions, lastRefreshAt, virtualMode }) {
   );
 }
 
-/* AI 信頼度パネル */
-function AITrustPanel({ predictions }) {
+/* AI 信頼度パネル — props 同一なら再描画スキップ */
+const AITrustPanel = memo(AITrustPanelImpl);
+function AITrustPanelImpl({ predictions }) {
   const trust = useMemo(() => judgeAIReliability(predictions), [predictions]);
   const skip = useMemo(() => evaluateSkipQuality(predictions), [predictions]);
   return (
@@ -183,8 +184,9 @@ function AITrustPanel({ predictions }) {
   );
 }
 
-/* === エア or リアル の単独表示 === */
-function SingleView({ items, label }) {
+/* === エア or リアル の単独表示 (memo) === */
+const SingleView = memo(SingleViewImpl);
+function SingleViewImpl({ items, label }) {
   const summary = useMemo(() => summarize(items), [items]);
   const daily = useMemo(() => buildDaily(items), [items]);
   const cumulative = useMemo(() => buildCumulative(daily), [daily]);
@@ -333,8 +335,9 @@ function SingleView({ items, label }) {
   );
 }
 
-/* === エア vs リアル 比較 === */
-function CompareView({ air, real }) {
+/* === エア vs リアル 比較 (memo) === */
+const CompareView = memo(CompareViewImpl);
+function CompareViewImpl({ air, real }) {
   const airSum = useMemo(() => summarize(air), [air]);
   const realSum = useMemo(() => summarize(real), [real]);
   const gap = (airSum.pnl || 0) - (realSum.pnl || 0);
@@ -491,10 +494,11 @@ function buildByKind(items) {
     .filter(Boolean);
 }
 
-/* === Round 39: 実績検証パネル ===
+/* === Round 39: 実績検証パネル (memo) ===
    ・7日 / 30日 / 全期間 で「買い数」「的中率」「回収率」「見送り精度」「スタイル別」 を並列表示
    ・推定 (シミュレーション) と区別して 「実績データ」 と明示 */
-function ActualPerformancePanel({ predictions, virtualMode }) {
+const ActualPerformancePanel = memo(ActualPerformancePanelImpl);
+function ActualPerformancePanelImpl({ predictions, virtualMode }) {
   const data = useMemo(() => {
     const all = Object.values(predictions || {});
     const today = new Date();

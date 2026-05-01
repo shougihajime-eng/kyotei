@@ -257,8 +257,35 @@ html, body {
 /* === スマホ用 余白調整 === */
 @media (max-width: 480px) {
   .card { border-radius: 14px; }
-  .btn  { padding: 12px 18px; font-size: 14px; }   /* 押しやすく */
+  .btn  { padding: 12px 18px; font-size: 14px; min-height: 44px; }   /* 押しやすく + タップターゲット 44px+ */
   .pill { font-size: 11px; padding: 4px 10px; }
+  .tab-btn { min-height: 44px; }                                      /* スマホでタブ押しやすく */
   /* iOS の自動ズーム (フォント < 16px で input フォーカス時) を防止 */
-  .input, .select { font-size: 16px; }
+  .input, .select { font-size: 16px; min-height: 44px; }
 }
+
+/* === Round 40: タップ即時フィードバック === */
+.btn { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+.btn:active:not([disabled]) { transform: scale(0.97); transition: transform 0.05s ease-out; }
+.tab-btn { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+.tab-btn:active:not(.active) { transform: scale(0.97); }
+.pill { -webkit-tap-highlight-color: transparent; }
+
+/* スケルトン (ローディング表示用) */
+@keyframes skeleton-shine {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.10) 50%, rgba(255,255,255,0.04) 75%);
+  background-size: 200% 100%;
+  animation: skeleton-shine 1.4s ease-in-out infinite;
+  border-radius: 8px;
+}
+
+/* 全体: スクロールスムーズ */
+html { scroll-behavior: smooth; }
+body { -webkit-overflow-scrolling: touch; }
+
+/* React のリストレンダリングで安定する prop */
+* { -webkit-touch-callout: none; }

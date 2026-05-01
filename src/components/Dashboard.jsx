@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, memo } from "react";
 import BuyDecisionCard from "./BuyDecisionCard.jsx";
 import QuickJudgeCard from "./QuickJudgeCard.jsx";
 import RefreshBar from "./RefreshBar.jsx";
@@ -114,7 +114,8 @@ export default function Dashboard({
 }
 
 /** 今日の収支ミニバー (1 行) */
-function TodayMiniBar({ today }) {
+const TodayMiniBar = memo(TodayMiniBarImpl);
+function TodayMiniBarImpl({ today }) {
   const air  = today?.air  || { stake: 0, pnl: 0 };
   const real = today?.real || { stake: 0, pnl: 0 };
   const total = (air.pnl || 0) + (real.pnl || 0);
@@ -137,7 +138,8 @@ function TodayMiniBar({ today }) {
   );
 }
 
-function RecentResult({ predictions }) {
+const RecentResult = memo(RecentResultImpl);
+function RecentResultImpl({ predictions }) {
   const recent = useMemo(() => {
     const arr = Object.values(predictions || {});
     const settled = arr.filter(p => p.result?.first);
@@ -190,7 +192,8 @@ function RecentResult({ predictions }) {
   );
 }
 
-function WeeklyTotalBadge({ weekly }) {
+const WeeklyTotalBadge = memo(WeeklyTotalBadgeImpl);
+function WeeklyTotalBadgeImpl({ weekly }) {
   if (!weekly || weekly.count === 0) {
     return (
       <div className="card p-3 text-center text-xs opacity-70" style={{ minHeight: 60 }}>
@@ -226,7 +229,8 @@ function startEpoch(dateStr, startTime) {
 
 /* === 戦略ランキングカード (Round 32) ===
    「今日はどの戦い方が有利か」 を 1 枚で見せる。クリックで該当スタイルに切替 */
-function StrategyRankingCard({ ranking, currentProfile, switchProfile }) {
+const StrategyRankingCard = memo(StrategyRankingCardImpl);
+function StrategyRankingCardImpl({ ranking, currentProfile, switchProfile }) {
   const STYLE_COLORS = {
     steady:     { bd: "#3b82f6", bg: "rgba(59,130,246,0.15)",  fg: "#93c5fd" },
     balanced:   { bd: "#fbbf24", bg: "rgba(251,191,36,0.15)",  fg: "#fcd34d" },

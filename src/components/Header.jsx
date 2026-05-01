@@ -1,4 +1,5 @@
 /* ヘッダ + タブナビ + エア/リアル損益 + 更新ボタン + 現在のスタイル大表示 + StyleSelector */
+import { memo } from "react";
 import { yen } from "../lib/format.js";
 import StyleSelector from "./StyleSelector.jsx";
 
@@ -17,7 +18,8 @@ const PROFILE_INFO = {
   aggressive: { label: "🎯 攻め型", color: "#ef4444", bg: "rgba(239,68,68,0.18)" },
 };
 
-export default function Header({ tab, setTab, today, settings, setSettings, switchProfile, switchVirtualMode, refreshing, onRefresh, lastRefreshAt, nextRefreshAt, savedCount, suggestedStyle }) {
+export default memo(HeaderImpl);
+function HeaderImpl({ tab, setTab, today, settings, setSettings, switchProfile, switchVirtualMode, refreshing, onRefresh, lastRefreshAt, nextRefreshAt, savedCount, suggestedStyle }) {
   const air = today?.air || { stake: 0, pnl: 0 };
   const real = today?.real || { stake: 0, pnl: 0 };
   const realLabel = real.stake === 0 ? "未入力" : (real.pnl >= 0 ? "+" + yen(real.pnl) : "−" + yen(Math.abs(real.pnl)));

@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useDeferredValue, memo } from "react";
 import { yen, pct } from "../lib/format.js";
 import ManualBetForm from "./ManualBetForm.jsx";
 import { classifyLossPattern } from "../lib/venueBias.js";
@@ -23,6 +23,11 @@ export default function Verify({ predictions, onManualBet, onDeleteRecord, curre
   }, [virtualMode]);
 
   const all = useMemo(() => Object.values(predictions || {}), [predictions]);
+  // Round 40: フィルタ系の重い再計算は deferred 化 (タブ切替の体感速度を優先)
+  const tabDeferred = useDeferredValue(tab);
+  const styleDeferred = useDeferredValue(styleFilter);
+  const periodDeferred = useDeferredValue(periodFilter);
+  const venueDeferred = useDeferredValue(venueFilter);
 
   // 利用可能な会場一覧 (ヘッドライン)
   const venueOptions = useMemo(() => {
@@ -42,12 +47,12 @@ export default function Verify({ predictions, onManualBet, onDeleteRecord, curre
   const filtered = useMemo(() => {
     return all.filter((p) => (p.date || "0000-00-00") >= cutoff).filter((p) => {
       const isReal = p.virtual === false;
-      const matchTab = tab === "real" ? isReal : !isReal;
-      const matchStyle = styleFilter === "all" || (p.profile || "balanced") === styleFilter;
-      const matchVenue = venueFilter === "all" || p.venue === venueFilter;
+      const matchTab = tabDeferred === "real" ? isReal : !isReal;
+      const matchStyle = styleDeferred === "all" || (p.profile || "balanced") === styleDeferred;
+      const matchVenue = venueDeferred === "all" || p.venue === venueDeferred;
       return matchTab && matchStyle && matchVenue;
     });
-  }, [all, tab, styleFilter, venueFilter, cutoff]);
+  }, [all, tabDeferred, styleDeferred, venueDeferred, cutoff]);
 
   const buys = filtered.filter((p) => p.decision === "buy" && p.totalStake > 0);
   const settled = buys.filter((p) => p.result?.first);
@@ -205,7 +210,8 @@ export default function Verify({ predictions, onManualBet, onDeleteRecord, curre
   );
 }
 
-function RaceCard({ p, onEdit, onDelete }) {
+const RaceCard = memo(RaceCardImpl);
+function RaceCardImpl({ p, onEdit, onDelete }) {
   const [expanded, setExpanded] = useState(false);
   const settled = !!p.result?.first;
   const correct = settled ? `${p.result.first}-${p.result.second}-${p.result.third}` : null;

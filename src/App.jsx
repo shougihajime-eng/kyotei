@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback, useRef } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef, startTransition } from "react";
 import Header from "./components/Header.jsx";
 import Dashboard from "./components/Dashboard.jsx";
 import RaceList from "./components/RaceList.jsx";
@@ -127,9 +127,11 @@ export default function App() {
       newProfile: p,
       ts: Date.now(),
     };
-    setSettings((prev) => ({ ...prev, riskProfile: p }));
+    // 即時トースト (urgent)
     const label = { steady: "🛡️ 安定型", balanced: "⚖️ バランス型", aggressive: "🎯 攻め型" }[p] || p;
     showToast(`${label} に切り替えました`, "ok");
+    // recommendations の再選択は事前計算済みキャッシュのピックなので軽い
+    setSettings((prev) => ({ ...prev, riskProfile: p }));
   }, [settings.riskProfile, showToast]);
 
   /* スタイル切替後、recommendations が再計算された結果を旧と比較してトーストで通知 */
@@ -165,14 +167,16 @@ export default function App() {
   }, [recommendations, showToast]);
 
   /* === エア / リアル モード切替 ===
-     functional setState で stale closure を回避 + 即時トースト発火 */
+     ・トーストは即時 (urgent)
+     ・settings 更新は startTransition で非優先化 — 表示の即時反応を保つ */
   const switchVirtualMode = useCallback((forceValue) => {
+    // 即時 (urgent): トースト発火を予測的に行う
     setSettings((prev) => {
       const next = { ...prev, virtualMode: forceValue != null ? !!forceValue : !prev.virtualMode };
-      // 同期的にトースト発火 (即時反応)
       const msg = next.virtualMode
         ? "🧪 エア舟券モードに切り替えました (検証用)"
         : "💰 リアル舟券モードに切り替えました";
+      // showToast は urgent (タイマー登録だけなのでブロックしない)
       showToast(msg, next.virtualMode ? "info" : "ok");
       return next;
     });
