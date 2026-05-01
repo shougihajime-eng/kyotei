@@ -259,4 +259,6 @@ html, body {
   .card { border-radius: 14px; }
   .btn  { padding: 12px 18px; font-size: 14px; }   /* 押しやすく */
   .pill { font-size: 11px; padding: 4px 10px; }
+  /* iOS の自動ズーム (フォント < 16px で input フォーカス時) を防止 */
+  .input, .select { font-size: 16px; }
 }

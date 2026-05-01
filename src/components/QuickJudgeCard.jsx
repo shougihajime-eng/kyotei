@@ -91,11 +91,21 @@ function QuickJudgeCardImpl({ headlineRace, recommendation, today, profile }) {
         </>
       ) : (
         <div className="text-center py-4 opacity-90">
+          {dec === "skip" && (
+            <div className="mb-2 px-2 py-1 rounded inline-block text-xs font-bold" style={{ background: "rgba(0,0,0,0.30)", color: "#fef9c3" }}>
+              📊 賢い見送り
+            </div>
+          )}
           <div style={{ fontSize: 14, color: "#fecaca" }}>
             {recommendation?.reason || "対象なし"}
           </div>
           {recommendation?.rationale && (
             <div className="text-xs opacity-70 mt-2">{recommendation.rationale}</div>
+          )}
+          {dec === "skip" && (
+            <div className="text-xs opacity-80 mt-3 mx-2 px-3 py-2 rounded-lg" style={{ background: "rgba(0,0,0,0.30)", color: "#fef9c3", lineHeight: 1.55 }}>
+              💡 勝負レースを選ぶことで、長期的な回収率が改善します
+            </div>
           )}
         </div>
       )}

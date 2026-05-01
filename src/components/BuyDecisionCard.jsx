@@ -1,5 +1,6 @@
 import { useState, memo } from "react";
 import { yen, pct } from "../lib/format.js";
+import { explainExpectedReturn, explainProbOdds, toneColor } from "../lib/explain.js";
 
 /**
  * 結論カード — 連勝系 4 券種 (2連単/2連複/3連単/3連複) のみ。
@@ -133,6 +134,25 @@ function BuyDecisionCard({ race, recommendation, onRecord, virtualMode }) {
             </div>
           </div>
         </div>
+
+        {/* 平易な日本語説明 (Round 24) */}
+        {(() => {
+          const er = main.expectedReturn ?? main.ev;
+          const erEx = explainExpectedReturn(er);
+          const poEx = explainProbOdds(main.prob, main.odds);
+          return (
+            <div className="mt-2 text-xs" style={{ lineHeight: 1.55 }}>
+              <div style={{ color: toneColor[erEx.tone] || "#bae6fd" }}>
+                💬 期待回収率 {Math.round(er * 100)}% = {erEx.text}
+              </div>
+              {poEx && (
+                <div className="mt-1" style={{ color: toneColor[poEx.tone] || "#bae6fd" }}>
+                  {poEx.text}
+                </div>
+              )}
+            </div>
+          );
+        })()}
         {/* 採用理由 */}
         {Array.isArray(main.pickReason) && main.pickReason.length > 0 && (
           <div className="mt-3 text-left" style={{ background: "rgba(255,255,255,0.06)", borderRadius: 8, padding: "8px 10px" }}>
@@ -240,11 +260,16 @@ const btnReal = {
 function Skip({ race, reason }) {
   return (
     <section style={cardStyle.skip}>
-      <div style={{ fontSize: "min(56px,12vw)", fontWeight: 900, lineHeight: 1.1, letterSpacing: "-0.02em" }}>
+      <div style={{ fontSize: 14, fontWeight: 800, opacity: 0.85, marginBottom: 4 }}>📊 賢い判断</div>
+      <div style={{ fontSize: "min(48px,11vw)", fontWeight: 900, lineHeight: 1.1, letterSpacing: "-0.02em" }}>
         見送り
       </div>
       <div className="opacity-90 mt-3 text-sm">{race.venue} {race.raceNo}R ({race.startTime}発走)</div>
-      <div className="opacity-90 mt-1 text-xs">{reason}</div>
+      <div className="opacity-90 mt-2 text-xs px-3">{reason}</div>
+      <div className="mt-3 mx-3 px-3 py-2 rounded-lg text-xs" style={{ background: "rgba(0,0,0,0.30)", color: "#fef9c3", lineHeight: 1.55 }}>
+        💡 <b>勝負レースを選ぶ</b>ことで、長期的な回収率が改善します。<br/>
+        無理に買わない判断にも価値があります。
+      </div>
     </section>
   );
 }

@@ -1,5 +1,6 @@
 import { memo, useMemo } from "react";
 import { yen } from "../lib/format.js";
+import { explainROI, explainHitRate, toneColor } from "../lib/explain.js";
 
 /**
  * 「今日のサマリ」 — 予想・結果・収支・スタイル別を 1 枚で全表示。
@@ -112,6 +113,17 @@ function TodaySummaryImpl({ predictions, onPickRace }) {
         <div className="text-xs opacity-70 mt-2">
           投資 {yen(data.totalStake)} / 払戻 {yen(data.totalReturn)} ({data.hits.length}的中 / {data.misses.length}外れ / {data.pending.length}未確定)
         </div>
+        {/* 平易な日本語説明 (Round 24) */}
+        {data.totalStake > 0 && (() => {
+          const roiEx = explainROI(data.totalRoi);
+          const hrEx = explainHitRate(data.hitRate);
+          return (
+            <div className="text-xs mt-2 pt-2" style={{ borderTop: "1px dashed rgba(255,255,255,0.1)", lineHeight: 1.55 }}>
+              <div style={{ color: toneColor[roiEx.tone] || "#bae6fd" }}>💬 回収率: {roiEx.text}</div>
+              <div className="mt-1" style={{ color: toneColor[hrEx.tone] || "#bae6fd" }}>💬 的中率: {hrEx.text}</div>
+            </div>
+          );
+        })()}
       </div>
 
       {/* エア / リアル */}
