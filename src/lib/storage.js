@@ -2,8 +2,14 @@
  * localStorage が壊れている / 利用不可 / quota 超過 でも落ちないラッパー。
  * 失敗時は console.warn で通知し、ステータスを返す。アプリは続行する。
  *
- * Round 43: 保存失敗の検知 + GC (90日以上前の AI スナップショットを削除)
- *           手動記録は GC 対象外 (永続保持)
+ * Round 43: 保存失敗の検知 + GC (90日以上前の AI スナップファトを削除)
+ *           手動記録は GC 対象外 (このブラウザ内では削除しない)
+ *
+ * Round 44 — 重要 (誤解させない仕様):
+ *   ・ログイン機能なし。 ユーザーごとのクラウド保存はしていない。
+ *   ・保存先: このブラウザの localStorage のみ
+ *   ・別端末・別ブラウザ・キャッシュクリア・シークレットモードでは消える
+ *   ・「永続保持」 という表現は使わず、「このブラウザに保存 (GC 対象外)」 と表現する
  */
 const KEY = "kyoteiAssistantV2";
 
@@ -99,9 +105,10 @@ export function getStorageStats(predictions) {
   };
 }
 
-/* === Round 43: 古い AI スナップショットを GC ===
-   ・90 日以上前の AI 自動記録を削除 (手動記録は永続保持)
-   ・直近 30 日は確実に保持 (ユーザーが見たい期間)
+/* === Round 43-44: 古い AI スナップショットを GC ===
+   ・90 日以上前の AI 自動記録を削除 (このブラウザ内のスペース確保)
+   ・直近 30 日はこのブラウザ内に保持 (ユーザーが見たい期間)
+   ・手動記録は GC しない (ただしブラウザデータ削除されると消える)
    ・GC 後の predictions オブジェクトを返す */
 export const GC_RETAIN_DAYS = 90;
 export function gcOldPredictions(predictions, retainDays = GC_RETAIN_DAYS) {
@@ -109,7 +116,7 @@ export function gcOldPredictions(predictions, retainDays = GC_RETAIN_DAYS) {
   const next = {};
   let removed = 0;
   for (const [key, p] of Object.entries(predictions || {})) {
-    // 手動記録は永続保持 (ユーザーが入れた大事な記録)
+    // 手動記録は GC 対象外 (このブラウザ内では消えない、ただしブラウザクリアでは消える)
     if (p.manuallyRecorded) {
       next[key] = p;
       continue;

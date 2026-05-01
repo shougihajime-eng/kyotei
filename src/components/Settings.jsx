@@ -116,9 +116,23 @@ export default function Settings({ settings, setSettings, switchVirtualMode, swi
         </div>
       </section>
 
-      {/* Round 43: 保存ステータスパネル */}
+      {/* Round 43-44: 保存ステータスパネル (正確な表記) */}
       <section className="card p-4">
-        <h2 className="text-lg font-bold mb-3">💾 保存ステータス</h2>
+        <h2 className="text-lg font-bold mb-3">💾 保存ステータス (この端末)</h2>
+
+        {/* 注意書き: 保存仕様 — 誤解させない */}
+        <div className="alert-warn text-xs mb-3" style={{ lineHeight: 1.55 }}>
+          ⚠️ <b>このアプリにはログイン機能がありません。</b><br/>
+          データは <b>このブラウザの localStorage に保存</b> されています。<br/>
+          以下の場合、データは <b>消える可能性</b> があります:
+          <ul className="mt-1" style={{ paddingLeft: 16, listStyle: "disc" }}>
+            <li>ブラウザのキャッシュ・サイトデータを削除した</li>
+            <li>シークレットモード (プライベートブラウズ) で利用した</li>
+            <li>別端末・別ブラウザでアクセスした (共有されません)</li>
+            <li>ブラウザ設定でストレージを制限している</li>
+          </ul>
+        </div>
+
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-xs">
           <Stat label="総保存件数" value={stats.total} />
           <Stat label="今日" value={stats.today} />
@@ -126,7 +140,7 @@ export default function Settings({ settings, setSettings, switchVirtualMode, swi
           <Stat label="直近 30 日" value={stats.last30days} />
           <Stat label="🧪 エア" value={stats.air} color="#67e8f9" />
           <Stat label="💰 リアル" value={stats.real} color="#fcd34d" />
-          <Stat label="✏️ 手動記録 (永続)" value={stats.manual} />
+          <Stat label="✏️ 手動記録" value={stats.manual} />
           <Stat label="✅ 確定済" value={stats.settled} />
           <Stat label="⏳ 未確定" value={stats.pending} />
         </div>
@@ -140,11 +154,17 @@ export default function Settings({ settings, setSettings, switchVirtualMode, swi
             : `❌ 保存失敗: ${lastSave.error || "不明なエラー"}`}
         </div>
         <div className="text-xs opacity-70 mt-3 p-2 rounded" style={{ background: "rgba(0,0,0,0.18)", lineHeight: 1.55 }}>
-          📦 <b>保存方針</b>:<br/>
-          ・直近 30 日の AI 自動記録を確実に保持<br/>
-          ・90 日以上前の AI 記録は自動整理 (GC)<br/>
-          ・<b>手動記録は永続保持</b> (削除されません)<br/>
-          ・エア / リアル / スタイル別 を完全分離
+          📦 <b>保存仕様</b> (このブラウザ内):<br/>
+          ・<b>このブラウザに直近 30 日の AI 記録を保持</b> (90 日超は自動整理)<br/>
+          ・<b>手動記録は GC されない</b> — ただしブラウザデータを削除すれば消えます<br/>
+          ・エア / リアル / スタイル別 を分離して集計<br/>
+          ・<b>サーバーには一切送信していません</b> (プライバシー優先)
+        </div>
+        <div className="text-xs opacity-60 mt-3 p-2 rounded" style={{ background: "rgba(56,189,248,0.08)", lineHeight: 1.55 }}>
+          💡 <b>長期保管したい場合の今の対処法</b>:<br/>
+          ・大事な記録は手動で控えを取る (スクリーンショット等)<br/>
+          ・常用ブラウザを固定する (キャッシュクリアの影響を最小化)<br/>
+          ・将来、ログイン + クラウド保存対応の予定はあります (現時点では未実装)
         </div>
       </section>
 
