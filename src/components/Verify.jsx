@@ -8,10 +8,11 @@ import ManualBetForm from "./ManualBetForm.jsx";
  *  ・各カードに 買い目 / 結果 / 着順 / 払戻 / 収支 を全部表示 (クリック不要)
  *  ・最低 1 週間分を時系列降順
  */
-export default function Verify({ predictions, onManualBet, onDeleteRecord }) {
+export default function Verify({ predictions, onManualBet, onDeleteRecord, currentProfile }) {
   const [tab, setTab] = useState("air"); // air | real
+  const [styleFilter, setStyleFilter] = useState("all"); // all | steady | balanced | aggressive
   const [formOpen, setFormOpen] = useState(false);
-  const [editing, setEditing] = useState(null); // 編集対象の prediction
+  const [editing, setEditing] = useState(null);
 
   const all = useMemo(() => Object.values(predictions || {}), [predictions]);
 
@@ -20,9 +21,11 @@ export default function Verify({ predictions, onManualBet, onDeleteRecord }) {
     const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
     return all.filter((p) => p.date >= weekAgo).filter((p) => {
       const isReal = p.virtual === false;
-      return tab === "real" ? isReal : !isReal;
+      const matchTab = tab === "real" ? isReal : !isReal;
+      const matchStyle = styleFilter === "all" || (p.profile || "balanced") === styleFilter;
+      return matchTab && matchStyle;
     });
-  }, [all, tab]);
+  }, [all, tab, styleFilter]);
 
   const buys = filtered.filter((p) => p.decision === "buy" && p.totalStake > 0);
   const settled = buys.filter((p) => p.result?.first);
@@ -60,6 +63,30 @@ export default function Verify({ predictions, onManualBet, onDeleteRecord }) {
           style={{ minHeight: 44, minWidth: 120, padding: "8px 14px", borderRadius: 10, fontSize: 14, fontWeight: 800, border: "none", cursor: "pointer", background: "#10b981", color: "#fff" }}>
           + 手動記録
         </button>
+      </div>
+
+      {/* スタイル別フィルタ */}
+      <div className="flex gap-2 items-center flex-wrap">
+        <span className="text-xs opacity-70">スタイル別:</span>
+        {[
+          { k: "all",        label: "全部",        color: "#9fb0c9" },
+          { k: "steady",     label: "🛡️ 安定",     color: "#3b82f6" },
+          { k: "balanced",   label: "⚖️ バランス", color: "#fbbf24" },
+          { k: "aggressive", label: "🎯 攻め",     color: "#ef4444" },
+        ].map((f) => (
+          <button key={f.k} onClick={() => setStyleFilter(f.k)}
+            className="pill"
+            style={{
+              padding: "6px 12px", fontSize: 12,
+              cursor: "pointer", border: "none",
+              background: styleFilter === f.k ? f.color : "rgba(15,24,48,0.6)",
+              color: styleFilter === f.k ? "#fff" : "#9fb0c9",
+              fontWeight: styleFilter === f.k ? 800 : 600,
+              transition: "all 0.12s",
+            }}>
+            {f.label}
+          </button>
+        ))}
       </div>
 
       {/* 集計 */}

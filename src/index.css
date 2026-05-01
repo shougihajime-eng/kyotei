@@ -190,3 +190,15 @@ body {
 .pulse-soft {
   animation: pulse-soft 2s infinite;
 }
+
+/* Toast スライドイン (スタイル切替フィードバック) */
+@keyframes toast-slide {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -16px);
+  }
+  100% {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}

@@ -33,6 +33,24 @@ export default function App() {
   const [refreshing, setRefreshing] = useState(false);
   const [refreshMsg, setRefreshMsg] = useState("");
   const [lastRefreshAt, setLastRefreshAt] = useState(null);
+  /* スタイル切替の即時フィードバック (トースト) */
+  const [toast, setToast] = useState(null);
+  const showToast = useCallback((msg, kind = "info") => {
+    const id = Date.now();
+    setToast({ msg, kind, id });
+    setTimeout(() => setToast((t) => (t && t.id === id ? null : t)), 2500);
+  }, []);
+  /* スタイル切替: 即時反応 + トースト発火 */
+  const switchProfile = useCallback((p) => {
+    if (settings.riskProfile === p) {
+      showToast("既に選択中のスタイルです", "info");
+      return;
+    }
+    // 同期で settings を更新 (React は次フレームで反映 = 16ms 以内)
+    setSettings((prev) => ({ ...prev, riskProfile: p }));
+    const label = { steady: "🛡️ 安定型", balanced: "⚖️ バランス型", aggressive: "🎯 攻め型" }[p] || p;
+    showToast(`${label} に切り替えました`, "ok");
+  }, [settings.riskProfile, showToast]);
   /* news: マウント時に 1 回だけ取得 (キャッシュ s-maxage=600s なので軽量) */
   const [news, setNews] = useState([]);
   useEffect(() => {
@@ -357,8 +375,21 @@ export default function App() {
     <div className="min-h-screen">
       <Header tab={tab} setTab={(t) => { setTab(t); setSelectedRaceId(null); }}
         today={today} settings={settings} setSettings={setSettings}
+        switchProfile={switchProfile}
         refreshing={refreshing} onRefresh={refreshAll} lastRefreshAt={lastRefreshAt}
         suggestedStyle={suggestStyle(evals, predictions)} />
+      {/* トースト: スタイル切替 / 操作フィードバック */}
+      {toast && (
+        <div style={{
+          position: "fixed", top: 12, left: "50%", transform: "translateX(-50%)",
+          zIndex: 100, padding: "10px 18px", borderRadius: 999,
+          background: toast.kind === "ok" ? "#10b981" : toast.kind === "neg" ? "#ef4444" : "#1d4ed8",
+          color: "#fff", fontWeight: 800, fontSize: 14, boxShadow: "0 4px 14px rgba(0,0,0,0.3)",
+          animation: "toast-slide 0.2s ease-out",
+        }}>
+          {toast.msg}
+        </div>
+      )}
 
       <main className="pb-20">
         {tab === "home" && (
@@ -388,6 +419,7 @@ export default function App() {
         )}
         {tab === "verify" && (
           <Verify predictions={predictions}
+            currentProfile={settings.riskProfile}
             onManualBet={handleManualBet}
             onDeleteRecord={handleDeleteRecord} />
         )}

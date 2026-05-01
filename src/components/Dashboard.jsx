@@ -51,7 +51,7 @@ export default function Dashboard({
       <RefreshBar onRefresh={onRefresh} refreshing={refreshing} refreshMsg={refreshMsg} lastRefreshAt={lastRefreshAt} />
 
       {/* 🚀 クイックジャッジ — 一目判定 */}
-      <QuickJudgeCard headlineRace={headline} recommendation={rec} today={today} />
+      <QuickJudgeCard headlineRace={headline} recommendation={rec} today={today} profile={settings.riskProfile} />
 
       {/* 詳細を見る (折りたたみ) */}
       {headline && rec && rec.decision === "buy" && (

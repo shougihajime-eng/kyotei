@@ -1,17 +1,17 @@
 import { yen } from "../lib/format.js";
 
+const PROFILE_LABELS = {
+  steady: { label: "🛡️ 安定型", color: "#3b82f6" },
+  balanced: { label: "⚖️ バランス型", color: "#fbbf24" },
+  aggressive: { label: "🎯 攻め型", color: "#ef4444" },
+};
+
 /**
  * 「クイックジャッジ」カード — ホーム最上部に巨大表示。
  * 初心者でも一瞬で「買う/穴/見送り」「EV」「過去成績」 が分かるレイアウト。
- *
- * 表示要素:
- *   ① 大きい判定: 🟢 買い / 🟡 穴狙い / 🔴 見送り
- *   ② 本命買い目 1 つを巨大に
- *   ③ 穴買い目 (あれば) 小さく
- *   ④ EV と 一言理由
- *   ⑤ エア / リアル の累計収支
  */
-export default function QuickJudgeCard({ headlineRace, recommendation, today }) {
+export default function QuickJudgeCard({ headlineRace, recommendation, today, profile }) {
+  const profileInfo = PROFILE_LABELS[profile] || PROFILE_LABELS.balanced;
   const air = today?.air || { stake: 0, pnl: 0 };
   const real = today?.real || { stake: 0, pnl: 0 };
   const dec = recommendation?.decision;
@@ -49,13 +49,16 @@ export default function QuickJudgeCard({ headlineRace, recommendation, today }) 
         ? "linear-gradient(135deg, rgba(245,158,11,0.2), rgba(11,18,32,1))"
         : "linear-gradient(135deg, rgba(127,29,29,0.3), rgba(11,18,32,1))",
     }}>
-      {/* ヘッダ: 判定 + レース */}
-      <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+      {/* ヘッダ: 判定 + レース + 現在スタイル */}
+      <div className="flex items-center justify-between flex-wrap gap-2 mb-1">
         <div style={{ fontSize: "min(28px,7vw)", fontWeight: 900, color }}>{headline}</div>
         <div className="text-sm opacity-80">
           <b>{headlineRace.venue} {headlineRace.raceNo}R</b>
           <span className="ml-2 text-xs">{headlineRace.startTime}</span>
         </div>
+      </div>
+      <div className="text-xs opacity-80 mb-3" style={{ color: profileInfo.color }}>
+        現在のスタイル: <b>{profileInfo.label}</b>
       </div>
 
       {/* 中央: 本命買い目 / 見送り理由 */}
