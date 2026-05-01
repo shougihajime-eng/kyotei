@@ -12,21 +12,37 @@ import { classifyLossPattern } from "../lib/venueBias.js";
 export default function Verify({ predictions, onManualBet, onDeleteRecord, currentProfile }) {
   const [tab, setTab] = useState("air"); // air | real
   const [styleFilter, setStyleFilter] = useState("all"); // all | steady | balanced | aggressive
+  const [periodFilter, setPeriodFilter] = useState("week"); // today | week | month | all
+  const [venueFilter, setVenueFilter] = useState("all");    // all | (venue name)
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState(null);
 
   const all = useMemo(() => Object.values(predictions || {}), [predictions]);
 
-  const filtered = useMemo(() => {
+  // 利用可能な会場一覧 (ヘッドライン)
+  const venueOptions = useMemo(() => {
+    const set = new Set();
+    for (const p of all) if (p.venue) set.add(p.venue);
+    return ["all", ...Array.from(set).sort()];
+  }, [all]);
+
+  const cutoff = useMemo(() => {
     const today = new Date();
-    const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-    return all.filter((p) => p.date >= weekAgo).filter((p) => {
+    if (periodFilter === "today") return today.toISOString().slice(0, 10);
+    if (periodFilter === "week")  return new Date(today.getTime() - 6 * 86400000).toISOString().slice(0, 10);
+    if (periodFilter === "month") return new Date(today.getTime() - 29 * 86400000).toISOString().slice(0, 10);
+    return "0000-00-00";
+  }, [periodFilter]);
+
+  const filtered = useMemo(() => {
+    return all.filter((p) => (p.date || "0000-00-00") >= cutoff).filter((p) => {
       const isReal = p.virtual === false;
       const matchTab = tab === "real" ? isReal : !isReal;
       const matchStyle = styleFilter === "all" || (p.profile || "balanced") === styleFilter;
-      return matchTab && matchStyle;
+      const matchVenue = venueFilter === "all" || p.venue === venueFilter;
+      return matchTab && matchStyle && matchVenue;
     });
-  }, [all, tab, styleFilter]);
+  }, [all, tab, styleFilter, venueFilter, cutoff]);
 
   const buys = filtered.filter((p) => p.decision === "buy" && p.totalStake > 0);
   const settled = buys.filter((p) => p.result?.first);
@@ -66,6 +82,30 @@ export default function Verify({ predictions, onManualBet, onDeleteRecord, curre
         </button>
       </div>
 
+      {/* 期間フィルタ */}
+      <div className="flex gap-2 items-center flex-wrap">
+        <span className="text-xs opacity-70">期間:</span>
+        {[
+          { k: "today", label: "📅 今日",   color: "#22d3ee" },
+          { k: "week",  label: "🗓️ 今週",   color: "#10b981" },
+          { k: "month", label: "📆 今月",   color: "#a855f7" },
+          { k: "all",   label: "📚 全期間", color: "#fbbf24" },
+        ].map((f) => (
+          <button key={f.k} onClick={() => setPeriodFilter(f.k)}
+            className="pill"
+            style={{
+              padding: "6px 12px", fontSize: 12,
+              cursor: "pointer", border: "none",
+              background: periodFilter === f.k ? f.color : "rgba(15,24,48,0.6)",
+              color: periodFilter === f.k ? "#0b1220" : "#9fb0c9",
+              fontWeight: periodFilter === f.k ? 800 : 600,
+              transition: "all 0.12s",
+            }}>
+            {f.label}
+          </button>
+        ))}
+      </div>
+
       {/* スタイル別フィルタ */}
       <div className="flex gap-2 items-center flex-wrap">
         <span className="text-xs opacity-70">スタイル別:</span>
@@ -90,10 +130,23 @@ export default function Verify({ predictions, onManualBet, onDeleteRecord, curre
         ))}
       </div>
 
+      {/* 会場フィルタ */}
+      {venueOptions.length > 1 && (
+        <div className="flex gap-2 items-center flex-wrap">
+          <span className="text-xs opacity-70">会場:</span>
+          <select className="select" style={{ width: "auto", minWidth: 140 }}
+            value={venueFilter} onChange={(e) => setVenueFilter(e.target.value)}>
+            {venueOptions.map((v) => <option key={v} value={v}>{v === "all" ? "全会場" : v}</option>)}
+          </select>
+        </div>
+      )}
+
       {/* 集計 */}
       <section className="card p-4" style={{ minHeight: 140 }}>
         <div className="text-xs opacity-70 uppercase tracking-widest mb-2">
-          {tab === "air" ? "エア舟券" : "リアル舟券"} - 直近 7 日間
+          {tab === "air" ? "エア舟券" : "リアル舟券"} - {
+            { today: "本日", week: "直近 7 日間", month: "直近 30 日間", all: "全期間" }[periodFilter]
+          }{venueFilter !== "all" ? ` / ${venueFilter}` : ""}
         </div>
         <div className="flex items-baseline gap-4 flex-wrap">
           <div>
@@ -148,6 +201,7 @@ export default function Verify({ predictions, onManualBet, onDeleteRecord, curre
 }
 
 function RaceCard({ p, onEdit, onDelete }) {
+  const [expanded, setExpanded] = useState(false);
   const settled = !!p.result?.first;
   const correct = settled ? `${p.result.first}-${p.result.second}-${p.result.third}` : null;
   const main = (p.combos || [])[0];
@@ -162,28 +216,42 @@ function RaceCard({ p, onEdit, onDelete }) {
               : "#475569";
 
   return (
-    <section style={{
-      padding: 14, borderRadius: 14, background: bg, border: `2px solid ${border}`,
-      color: "#fff", minHeight: 160,
+    <section onClick={() => setExpanded(v => !v)} style={{
+      padding: 12, borderRadius: 14, background: bg, border: `2px solid ${border}`,
+      color: "#fff", minHeight: expanded ? 160 : 56, cursor: "pointer",
+      transition: "min-height 0.18s ease",
     }}>
-      <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
-        <div className="text-sm opacity-90">
-          <span className="font-bold">{p.venue} {p.raceNo}R</span>
-          <span className="ml-2 opacity-70 text-xs">{p.date} {p.startTime}</span>
-          {p.manuallyRecorded && <span className="pill ml-2" style={{ background: "rgba(34,211,238,0.18)", color: "#a5f3fc", fontSize: 10 }}>📝 手動</span>}
+      {/* 一覧モード: 日付・場・R・的中/不的中・収支のみ */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          {status === "hit"  && <span className="pill" style={{ background: "#10b981", color: "#fff", flexShrink: 0 }}>🎯</span>}
+          {status === "miss" && <span className="pill" style={{ background: "#ef4444", color: "#fff", flexShrink: 0 }}>❌</span>}
+          {status === "pending" && <span className="pill badge-skip" style={{ flexShrink: 0 }}>⏳</span>}
+          <div className="text-sm font-bold truncate">{p.venue} {p.raceNo}R</div>
+          <div className="text-xs opacity-60">{p.date}</div>
+          {p.manuallyRecorded && <span className="pill" style={{ background: "rgba(34,211,238,0.18)", color: "#a5f3fc", fontSize: 10 }}>📝</span>}
         </div>
-        <div className="flex items-center gap-2">
-          {status === "hit"  && <span className="pill" style={{ background: "#10b981", color: "#fff" }}>🎯 的中</span>}
-          {status === "miss" && <span className="pill" style={{ background: "#ef4444", color: "#fff" }}>❌ 不的中</span>}
-          {status === "pending" && <span className="pill badge-skip">未確定</span>}
-          {onEdit && <button onClick={onEdit} className="btn btn-ghost text-xs" style={{ padding: "4px 8px" }}>✏️</button>}
-          {onDelete && <button onClick={onDelete} className="btn btn-ghost text-xs" style={{ padding: "4px 8px", color: "#f87171" }}>🗑</button>}
+        <div className="flex items-center gap-3">
+          {settled ? (
+            <div className="text-right">
+              <div className={"num " + (p.pnl >= 0 ? "text-pos" : "text-neg")} style={{ fontSize: 16, fontWeight: 800 }}>
+                {p.pnl >= 0 ? "+" : ""}{yen(p.pnl || 0)}
+              </div>
+              <div className="num text-xs opacity-70">
+                {p.totalStake > 0 ? Math.round(((p.payout || 0) / p.totalStake) * 100) + "%" : "—"}
+              </div>
+            </div>
+          ) : (
+            <div className="text-xs opacity-70">未確定</div>
+          )}
+          <div className="text-xs opacity-50">{expanded ? "▲" : "▼"}</div>
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
+      {expanded && (
+      <div className="grid grid-cols-2 gap-3 mt-3 pt-3" style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>
         <div>
-          <div className="text-xs opacity-70">買い目 (本命)</div>
+          <div className="text-xs opacity-70">買い目 (本命) <span className="opacity-50">{p.startTime}</span></div>
           {main ? (
             <>
               <div className="font-mono" style={{ fontSize: 20, fontWeight: 800, marginTop: 2 }}>{main.combo}</div>
@@ -196,6 +264,10 @@ function RaceCard({ p, onEdit, onDelete }) {
             </div>
           )}
           <div className="num text-xs opacity-80 mt-1">投資 {yen(p.totalStake)}</div>
+          <div className="flex gap-1 mt-2">
+            {onEdit  && <button onClick={(e) => { e.stopPropagation(); onEdit(); }}  className="btn btn-ghost text-xs" style={{ padding: "4px 8px" }}>✏️ 編集</button>}
+            {onDelete && <button onClick={(e) => { e.stopPropagation(); onDelete(); }} className="btn btn-ghost text-xs" style={{ padding: "4px 8px", color: "#f87171" }}>🗑 削除</button>}
+          </div>
         </div>
 
         <div>
@@ -203,9 +275,7 @@ function RaceCard({ p, onEdit, onDelete }) {
           {settled ? (
             <>
               <div className="font-mono" style={{ fontSize: 20, fontWeight: 800, color: "#fde68a", marginTop: 2 }}>{correct}</div>
-              <div className="num text-xs opacity-80 mt-1">
-                払戻 {yen(p.payout || 0)}
-              </div>
+              <div className="num text-xs opacity-80 mt-1">払戻 {yen(p.payout || 0)}</div>
               <div className={"num mt-2 " + (p.pnl >= 0 ? "text-pos" : "text-neg")} style={{ fontSize: 18, fontWeight: 800 }}>
                 {p.pnl >= 0 ? "+" : ""}{yen(p.pnl)}
               </div>
@@ -213,19 +283,24 @@ function RaceCard({ p, onEdit, onDelete }) {
           ) : <div className="opacity-70 mt-1">未確定</div>}
         </div>
       </div>
-      {p.memo && <div className="text-xs opacity-70 mt-2 italic border-l-2 pl-2 border-cyan-400">📝 {p.memo}</div>}
-      {/* 負けパターン (Round 17) */}
-      {(() => {
-        if (!settled || p.hit) return null;
-        const cls = classifyLossPattern({ jcd: p.jcd, venue: p.venue, apiResult: p.result }, p);
-        if (!cls) return null;
-        return (
-          <div className="text-xs mt-2 px-2 py-1 rounded" style={{ background: "rgba(239,68,68,0.10)", color: "#fecaca", border: "1px solid rgba(239,68,68,0.25)" }}>
-            😫 <b>{cls.kind}</b> — {cls.desc}
-          </div>
-        );
-      })()}
-      {p.reflection && <div className="text-xs opacity-70 mt-2 italic border-l-2 pl-2 border-amber-400">📝 反省: {p.reflection}</div>}
+      )}
+      {expanded && (
+        <>
+          {p.memo && <div className="text-xs opacity-70 mt-2 italic border-l-2 pl-2 border-cyan-400">📝 {p.memo}</div>}
+          {/* 負けパターン (Round 17) */}
+          {(() => {
+            if (!settled || p.hit) return null;
+            const cls = classifyLossPattern({ jcd: p.jcd, venue: p.venue, apiResult: p.result }, p);
+            if (!cls) return null;
+            return (
+              <div className="text-xs mt-2 px-2 py-1 rounded" style={{ background: "rgba(239,68,68,0.10)", color: "#fecaca", border: "1px solid rgba(239,68,68,0.25)" }}>
+                😫 <b>{cls.kind}</b> — {cls.desc}
+              </div>
+            );
+          })()}
+          {p.reflection && <div className="text-xs opacity-70 mt-2 italic border-l-2 pl-2 border-amber-400">📝 反省: {p.reflection}</div>}
+        </>
+      )}
     </section>
   );
 }

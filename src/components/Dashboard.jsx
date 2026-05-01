@@ -4,6 +4,7 @@ import QuickJudgeCard from "./QuickJudgeCard.jsx";
 import RefreshBar from "./RefreshBar.jsx";
 import NewsPanel from "./NewsPanel.jsx";
 import EVExplainer from "./EVExplainer.jsx";
+import TodaySummary from "./TodaySummary.jsx";
 import { yen } from "../lib/format.js";
 
 /**
@@ -46,44 +47,85 @@ export default function Dashboard({
   const rec = headline ? recommendations[headline.id] : null;
 
   return (
-    <div className="space-y-4 max-w-3xl mx-auto px-4 mt-4">
-      {/* 更新バー */}
+    <div className="space-y-4 max-w-3xl mx-auto px-4 mt-4 pb-20">
+      {/* 更新バー (常時) */}
       <RefreshBar onRefresh={onRefresh} refreshing={refreshing} refreshMsg={refreshMsg} lastRefreshAt={lastRefreshAt} />
 
-      {/* 🚀 クイックジャッジ — 一目判定 */}
+      {/* 🚀 クイックジャッジ — 一目判定 (最重要) */}
       <QuickJudgeCard headlineRace={headline} recommendation={rec} today={today} profile={settings.riskProfile} />
 
-      {/* 詳細を見る (折りたたみ) */}
-      {headline && rec && rec.decision === "buy" && (
-        <button onClick={() => setShowDetails(v => !v)}
-          className="btn btn-ghost text-xs w-full" style={{ padding: "8px 0" }}>
-          {showDetails ? "▲ 詳細を隠す" : "▼ 詳細を見る (買い目内訳・記録ボタン)"}
+      {/* 今日の収支 (1行ミニバー) */}
+      <TodayMiniBar today={today} />
+
+      {/* 主要ボタン (大きく) */}
+      <div className="grid grid-cols-2 gap-2">
+        <button className="btn btn-primary" style={{ minHeight: 48 }} onClick={() => onPickRace("verify")}>
+          📅 履歴・検証
         </button>
-      )}
+        <button className="btn btn-primary" style={{ minHeight: 48 }} onClick={() => onPickRace("stats")}>
+          📈 グラフ
+        </button>
+      </div>
+
+      {/* ▼ 詳細を見る (折りたたみ) — 一括展開 */}
+      <button onClick={() => setShowDetails(v => !v)}
+        className="btn btn-ghost w-full" style={{ minHeight: 44, fontSize: 14 }}>
+        {showDetails ? "▲ 詳細を隠す" : "▼ 詳細を見る (買い目内訳・予想理由・直近結果・1週間損益・ニュース)"}
+      </button>
 
       {showDetails && (
-        <BuyDecisionCard race={headline} recommendation={rec}
-          onRecord={onRecord} virtualMode={settings.virtualMode} />
+        <>
+          {/* 買い目詳細 */}
+          {headline && rec && rec.decision === "buy" && (
+            <BuyDecisionCard race={headline} recommendation={rec}
+              onRecord={onRecord} virtualMode={settings.virtualMode} />
+          )}
+
+          {/* 📅 今日のサマリ (予想/結果/収支/回収率/スタイル別) */}
+          <TodaySummary predictions={predictions} onPickRace={onPickRace} />
+
+          {/* 直近結果 */}
+          <RecentResult predictions={predictions} />
+
+          {/* 1週間損益 */}
+          <WeeklyTotalBadge weekly={weekly} />
+
+          {/* EV 解説 */}
+          <EVExplainer ev={rec?.main?.ev || rec?.items?.[0]?.ev || 0} />
+
+          {/* ニュース */}
+          <NewsPanel />
+
+          {/* 副次的なタブ */}
+          <div className="flex flex-wrap gap-2 justify-center pt-2">
+            <button className="btn btn-ghost text-xs" onClick={() => onPickRace("list")}>📋 全レース →</button>
+            <button className="btn btn-ghost text-xs" onClick={() => onPickRace("analysis")}>🔍 外れ分析 →</button>
+          </div>
+        </>
       )}
+    </div>
+  );
+}
 
-      {/* 直近結果 */}
-      <RecentResult predictions={predictions} />
-
-      {/* 1週間損益 */}
-      <WeeklyTotalBadge weekly={weekly} />
-
-      {/* EV 解説 */}
-      <EVExplainer ev={rec?.main?.ev || rec?.items?.[0]?.ev || 0} />
-
-      {/* ニュース */}
-      <NewsPanel />
-
-      {/* タブ移動ボタン */}
-      <div className="flex flex-wrap gap-2 justify-center">
-        <button className="btn btn-ghost text-xs" onClick={() => onPickRace("list")}>📋 全レース →</button>
-        <button className="btn btn-ghost text-xs" onClick={() => onPickRace("verify")}>📅 検証 →</button>
-        <button className="btn btn-primary text-xs" onClick={() => onPickRace("stats")}>📈 グラフを見る</button>
-        <button className="btn btn-ghost text-xs" onClick={() => onPickRace("analysis")}>🔍 外れ分析 →</button>
+/** 今日の収支ミニバー (1 行) */
+function TodayMiniBar({ today }) {
+  const air  = today?.air  || { stake: 0, pnl: 0 };
+  const real = today?.real || { stake: 0, pnl: 0 };
+  const total = (air.pnl || 0) + (real.pnl || 0);
+  const totalStake = (air.stake || 0) + (real.stake || 0);
+  const roi = totalStake > 0 ? ((air.ret || 0) + (real.ret || 0)) / totalStake : 0;
+  return (
+    <div className="card p-3 flex items-center justify-between gap-3 flex-wrap" style={{ minHeight: 64 }}>
+      <div className="flex items-center gap-2">
+        <span className="pill badge-brand">📅 今日</span>
+        <div className={"num font-bold " + (total >= 0 ? "text-pos" : "text-neg")} style={{ fontSize: 22 }}>
+          {totalStake === 0 ? "—" : (total >= 0 ? "+" : "") + yen(total)}
+        </div>
+      </div>
+      <div className="text-xs opacity-80">
+        回収率 <b className={roi >= 1 ? "text-pos" : "text-neg"}>{totalStake > 0 ? Math.round(roi * 100) + "%" : "—"}</b>
+        <span className="mx-2 opacity-50">|</span>
+        投資 {yen(totalStake)}
       </div>
     </div>
   );

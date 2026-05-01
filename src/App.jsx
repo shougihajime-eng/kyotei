@@ -179,14 +179,22 @@ export default function App() {
         const updated = {
           ...existing,
           key, date: r.date, raceId: r.id, venue: r.venue, jcd: r.jcd, raceNo: r.raceNo,
-          startTime: r.startTime, decision: rec.decision, combos,
+          startTime: r.startTime,             // 締切時刻 (発走時刻)
+          closingTime: r.startTime,           // alias (UI 用)
+          predictionTime: existing.predictionTime || stamp, // 予想を出した時刻 (初回のみ固定)
+          decision: rec.decision,             // buy / skip / no-odds
+          combos,
           reason: rec.reason || existing.reason || null,
           rationale: rec.rationale || existing.rationale || null,
           totalStake: rec.decision === "buy" ? rec.total : 0,
           grade: rec.grade || null,
-          profile: rec.profile || settings.riskProfile, // スタイル別集計のため
+          profile: rec.profile || settings.riskProfile,    // 予想スタイル (steady/balanced/aggressive)
+          predictionType: rec.profile || settings.riskProfile, // alias (UI 用)
           // virtual: AI スナップショットは settings.virtualMode に従う (既存値は尊重)
           virtual: existing.virtual != null ? existing.virtual : !!settings.virtualMode,
+          warnings: rec.warnings || [],
+          venueProfile: rec.venueProfile || null,
+          timeSlot: rec.timeSlot || null,
           snapshotAt: stamp,
         };
         const cmp = (o) => JSON.stringify({
