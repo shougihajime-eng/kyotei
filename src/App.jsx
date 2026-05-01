@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import Header from "./components/Header.jsx";
 import Dashboard from "./components/Dashboard.jsx";
 import RaceList from "./components/RaceList.jsx";
@@ -40,17 +40,60 @@ export default function App() {
     setToast({ msg, kind, id });
     setTimeout(() => setToast((t) => (t && t.id === id ? null : t)), 2500);
   }, []);
-  /* スタイル切替: 即時反応 + トースト発火 */
+  /* スタイル切替: 即時反応 + トースト発火 + 切替後の差分通知 */
+  const lastSwitchInfo = useRef(null);
   const switchProfile = useCallback((p) => {
     if (settings.riskProfile === p) {
       showToast("既に選択中のスタイルです", "info");
       return;
     }
-    // 同期で settings を更新 (React は次フレームで反映 = 16ms 以内)
+    // 切替前の「最も発走時刻が近い買い推奨」 を保存 (差分通知用)
+    const recsEntries = Object.entries(recommendations || {});
+    const headlineEntry = recsEntries.find(([_, r]) => r?.decision === "buy") || recsEntries[0];
+    const prevRec = headlineEntry?.[1];
+    lastSwitchInfo.current = {
+      prevDecision: prevRec?.decision,
+      prevMainCombo: prevRec?.main?.combo,
+      raceId: headlineEntry?.[0],
+      newProfile: p,
+      ts: Date.now(),
+    };
     setSettings((prev) => ({ ...prev, riskProfile: p }));
     const label = { steady: "🛡️ 安定型", balanced: "⚖️ バランス型", aggressive: "🎯 攻め型" }[p] || p;
     showToast(`${label} に切り替えました`, "ok");
-  }, [settings.riskProfile, showToast]);
+  }, [settings.riskProfile, recommendations, showToast]);
+
+  /* スタイル切替後、recommendations が再計算された結果を旧と比較してトーストで通知 */
+  useEffect(() => {
+    const info = lastSwitchInfo.current;
+    if (!info || !info.raceId) return;
+    if (Date.now() - info.ts > 1500) return;
+    const newRec = recommendations[info.raceId];
+    if (!newRec) return;
+    const newMainCombo = newRec.main?.combo;
+    const prevDecision = info.prevDecision;
+    const newDecision = newRec.decision;
+    let msg = null, kind = "info";
+    if (prevDecision !== newDecision) {
+      if (newDecision === "buy") { msg = "🟢 買い判定に変わりました"; kind = "ok"; }
+      else if (newDecision === "skip") { msg = "🔴 見送りに変わりました"; kind = "neg"; }
+      else { msg = "判定が変わりました"; }
+    } else if (newDecision === "buy" && info.prevMainCombo !== newMainCombo) {
+      msg = `📋 買い目が変わりました (${info.prevMainCombo || "—"} → ${newMainCombo || "—"})`;
+      kind = "ok";
+    } else if (newDecision === "buy") {
+      msg = "⚠️ スタイルは変わりましたが、このレースでは同じ買い目です";
+      kind = "info";
+    } else if (newDecision === "skip") {
+      msg = "⚠️ スタイルは変わりましたが、このレースでは見送り判定のままです";
+      kind = "info";
+    }
+    if (msg) {
+      const t = setTimeout(() => showToast(msg, kind), 600);
+      lastSwitchInfo.current = null;
+      return () => clearTimeout(t);
+    }
+  }, [recommendations, showToast]);
   /* news: マウント時に 1 回だけ取得 (キャッシュ s-maxage=600s なので軽量) */
   const [news, setNews] = useState([]);
   useEffect(() => {

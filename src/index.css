@@ -2,6 +2,48 @@
 @tailwind components;
 @tailwind utilities;
 
+/* === セマンティックカラーシステム ===
+   色は装飾ではなく「意味」 として固定する。
+   ・緑 = 買い (期待値プラス / 良好)
+   ・赤 = 見送り / 危険
+   ・紫 = 穴 (高配当狙い)
+   ・黄 = 判断微妙
+   ・グレー = データ不足 / 中立
+*/
+:root {
+  --c-buy: #10b981;         /* 緑: 買い */
+  --c-buy-bg: rgba(16, 185, 129, 0.18);
+  --c-buy-border: rgba(16, 185, 129, 0.45);
+  --c-buy-text: #6ee7b7;
+
+  --c-skip: #ef4444;        /* 赤: 見送り / 危険 */
+  --c-skip-bg: rgba(239, 68, 68, 0.18);
+  --c-skip-border: rgba(239, 68, 68, 0.45);
+  --c-skip-text: #fecaca;
+
+  --c-hole: #a855f7;        /* 紫: 穴 (高配当) */
+  --c-hole-bg: rgba(168, 85, 247, 0.18);
+  --c-hole-border: rgba(168, 85, 247, 0.45);
+  --c-hole-text: #d8b4fe;
+
+  --c-warn: #fbbf24;        /* 黄: 判断微妙 */
+  --c-warn-bg: rgba(251, 191, 36, 0.18);
+  --c-warn-border: rgba(251, 191, 36, 0.45);
+  --c-warn-text: #fde68a;
+
+  --c-mute: #6b7280;        /* グレー: データ不足 */
+  --c-mute-bg: rgba(107, 114, 128, 0.15);
+  --c-mute-border: rgba(107, 114, 128, 0.35);
+  --c-mute-text: #d1d5db;
+}
+
+/* セマンティック クラス */
+.sem-buy   { color: var(--c-buy-text); background: var(--c-buy-bg); border-color: var(--c-buy-border); }
+.sem-skip  { color: var(--c-skip-text); background: var(--c-skip-bg); border-color: var(--c-skip-border); }
+.sem-hole  { color: var(--c-hole-text); background: var(--c-hole-bg); border-color: var(--c-hole-border); }
+.sem-warn  { color: var(--c-warn-text); background: var(--c-warn-bg); border-color: var(--c-warn-border); }
+.sem-mute  { color: var(--c-mute-text); background: var(--c-mute-bg); border-color: var(--c-mute-border); }
+
 /* ベースカラー */
 body {
   background: #0b1220;
@@ -25,29 +67,52 @@ body {
   font-weight: 600;
   display: inline-block;
 }
+/* セマンティック (意味のある) badge */
 .badge-buy {
-  background: #065f46;
-  color: #a7f3d0;
+  background: var(--c-buy-bg);
+  color: var(--c-buy-text);
+  border: 1px solid var(--c-buy-border);
 }
 .badge-skip {
-  background: #7f1d1d;
-  color: #fecaca;
+  background: var(--c-skip-bg);
+  color: var(--c-skip-text);
+  border: 1px solid var(--c-skip-border);
 }
 .badge-warn {
-  background: #854d0e;
-  color: #fde68a;
+  background: var(--c-warn-bg);
+  color: var(--c-warn-text);
+  border: 1px solid var(--c-warn-border);
 }
+.badge-hole {
+  background: var(--c-hole-bg);
+  color: var(--c-hole-text);
+  border: 1px solid var(--c-hole-border);
+}
+.badge-mute {
+  background: var(--c-mute-bg);
+  color: var(--c-mute-text);
+  border: 1px solid var(--c-mute-border);
+}
+/* グレード: S=買い (緑) / A=買い候補 (緑薄) / B=判断微妙 (黄) / C=データ不足 (グレー) */
 .badge-grade-S {
-  background: linear-gradient(135deg, #c2410c, #9a3412);
-  color: #fff7ed;
+  background: linear-gradient(135deg, #10b981, #047857);
+  color: #fff;
+  font-weight: 800;
 }
 .badge-grade-A {
-  background: #065f46;
-  color: #a7f3d0;
+  background: var(--c-buy-bg);
+  color: var(--c-buy-text);
+  border: 1px solid var(--c-buy-border);
 }
 .badge-grade-B {
-  background: #1e3a8a;
-  color: #bfdbfe;
+  background: var(--c-warn-bg);
+  color: var(--c-warn-text);
+  border: 1px solid var(--c-warn-border);
+}
+.badge-grade-C {
+  background: var(--c-mute-bg);
+  color: var(--c-mute-text);
+  border: 1px solid var(--c-mute-border);
 }
 
 /* ボタン */

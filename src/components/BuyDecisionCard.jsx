@@ -84,16 +84,25 @@ function BuyDecisionCard({ race, recommendation, onRecord, virtualMode }) {
         </div>
       </div>
 
-      {/* 押さえ / 穴 — 小さく */}
+      {/* 押さえ / 穴 — 小さく (穴は紫で意味を強調) */}
       {others.length > 0 && (
         <div className="grid grid-cols-2 gap-2 mt-3">
-          {others.map((it, i) => (
-            <div key={i} className="text-center" style={{ background: "rgba(0,0,0,0.22)", borderRadius: 10, padding: "8px 6px", minHeight: 90 }}>
-              <div className="text-xs opacity-70">{it.role} ({it.kind})</div>
-              <div className="font-mono" style={{ fontSize: 18, fontWeight: 800, marginTop: 2 }}>{it.combo}</div>
-              <div className="text-xs opacity-70 mt-1">EV {it.ev.toFixed(2)} / {yen(it.stake)}</div>
-            </div>
-          ))}
+          {others.map((it, i) => {
+            const isHole = (it.role || "").includes("穴") || (it.role || "").includes("大穴");
+            return (
+              <div key={i} className="text-center" style={{
+                background: isHole ? "rgba(168,85,247,0.16)" : "rgba(0,0,0,0.22)",
+                borderRadius: 10, padding: "8px 6px", minHeight: 90,
+                border: isHole ? "1px solid rgba(168,85,247,0.45)" : "1px solid transparent",
+              }}>
+                <div className="text-xs opacity-80" style={{ color: isHole ? "#d8b4fe" : "#9fb0c9" }}>
+                  {isHole ? "🟣 " : ""}{it.role} ({it.kind})
+                </div>
+                <div className="font-mono" style={{ fontSize: 18, fontWeight: 800, marginTop: 2 }}>{it.combo}</div>
+                <div className="text-xs opacity-70 mt-1">EV {it.ev.toFixed(2)} / {yen(it.stake)}</div>
+              </div>
+            );
+          })}
         </div>
       )}
 

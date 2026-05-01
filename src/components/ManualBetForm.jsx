@@ -24,6 +24,9 @@ export default function ManualBetForm({ open, onClose, onSubmit, initial }) {
   const [combo, setCombo] = useState("");
   const [stake, setStake] = useState(1000);
   const [memo, setMemo] = useState("");
+  const [reflection, setReflection] = useState("");
+  const [imageData, setImageData] = useState(null);   // base64 (Data URL) — OCR は将来
+  const [matchedAi, setMatchedAi] = useState(null);   // "yes" | "no" | null
   const [hasResult, setHasResult] = useState(false);
   const [first, setFirst] = useState(1);
   const [second, setSecond] = useState(2);
@@ -49,12 +52,34 @@ export default function ManualBetForm({ open, onClose, onSubmit, initial }) {
         setThird(initial.result.third);
         setPayout(initial.payout || 0);
       }
+      setReflection(initial.reflection || "");
+      setImageData(initial.imageData || null);
+      setMatchedAi(initial.matchedAi != null ? (initial.matchedAi ? "yes" : "no") : null);
     } else {
-      // 新規作成時は今日の日付に
       setDate(todayDate());
       setError("");
+      setReflection("");
+      setImageData(null);
+      setMatchedAi(null);
     }
   }, [open, initial]);
+
+  /* 画像アップロード (OCR は将来。今は base64 で保存) */
+  function handleImageUpload(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 4 * 1024 * 1024) {
+      setError("画像サイズは 4MB 以下にしてください");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setImageData(reader.result);
+      setError("");
+    };
+    reader.onerror = () => setError("画像の読み込みに失敗しました");
+    reader.readAsDataURL(file);
+  }
 
   if (!open) return null;
 
@@ -133,7 +158,10 @@ export default function ManualBetForm({ open, onClose, onSubmit, initial }) {
       grade: null,
       virtual: mode === "air",
       manuallyRecorded: true,
-      memo,
+      memo,                                                 // 購入理由メモ
+      reflection,                                           // 反省メモ (新規)
+      imageData,                                            // base64 (画像アップロード — 将来 OCR)
+      matchedAi: matchedAi == null ? null : matchedAi === "yes",
       result: resultObj || undefined,
       payout: hasResult ? (payout || 0) : 0,
       hit,
@@ -206,9 +234,71 @@ export default function ManualBetForm({ open, onClose, onSubmit, initial }) {
             <input className="input mt-1 num" type="number" min="100" step="100" value={stake} onChange={(e) => setStake(+e.target.value || 0)} />
           </div>
           <div>
-            <label className="text-xs opacity-70">メモ (任意)</label>
+            <label className="text-xs opacity-70">購入理由 (任意)</label>
             <input className="input mt-1" value={memo} onChange={(e) => setMemo(e.target.value)} placeholder="例: 1号艇のイン逃げ狙い" />
           </div>
+        </div>
+
+        {/* AI 一致判定 (任意) */}
+        <div className="mt-3 p-2 rounded bg-[#0f1830]/60 border border-[#243154]">
+          <label className="text-xs opacity-70">🤖 この買い目は AI の予想と一致していましたか？ (任意)</label>
+          <div className="flex gap-2 mt-2">
+            <button
+              type="button"
+              onClick={() => setMatchedAi(matchedAi === "yes" ? null : "yes")}
+              className={"flex-1 p-2 rounded-lg border-2 text-xs " + (matchedAi === "yes" ? "border-emerald-400 bg-[#053527] text-emerald-200" : "border-[#243154] bg-[#0f1830] opacity-60")}>
+              ✅ 一致 (AI 推奨どおり)
+            </button>
+            <button
+              type="button"
+              onClick={() => setMatchedAi(matchedAi === "no" ? null : "no")}
+              className={"flex-1 p-2 rounded-lg border-2 text-xs " + (matchedAi === "no" ? "border-rose-400 bg-[#3b1d1d] text-rose-200" : "border-[#243154] bg-[#0f1830] opacity-60")}>
+              ❌ 不一致 (自分の判断)
+            </button>
+          </div>
+          <div className="text-xs opacity-60 mt-1">→ 自分の判断 vs AI の的中率を後で比較できます</div>
+        </div>
+
+        {/* 反省メモ (任意) */}
+        <div className="mt-3">
+          <label className="text-xs opacity-70">📝 反省メモ / 気付き (任意)</label>
+          <textarea
+            className="input mt-1"
+            rows={2}
+            value={reflection}
+            onChange={(e) => setReflection(e.target.value)}
+            placeholder="例: 強風だったのに穴を狙ってしまった / 1号艇のSTが遅かった"
+            style={{ resize: "vertical" }}
+          />
+        </div>
+
+        {/* 画像アップロード (スクショ / 写真 — OCR は将来) */}
+        <div className="mt-3">
+          <label className="text-xs opacity-70">📸 舟券画像 (スクショ / 写真 — 任意)</label>
+          <input
+            className="input mt-1 text-xs"
+            type="file"
+            accept="image/*"
+            onChange={handleImageUpload}
+            style={{ padding: "6px 8px" }}
+          />
+          {imageData && (
+            <div className="mt-2 relative">
+              <img
+                src={imageData}
+                alt="舟券画像"
+                style={{ maxWidth: "100%", maxHeight: 220, borderRadius: 8, border: "1px solid #243154", display: "block" }}
+              />
+              <button
+                type="button"
+                onClick={() => setImageData(null)}
+                className="btn btn-ghost text-xs"
+                style={{ position: "absolute", top: 4, right: 4, padding: "2px 8px" }}>
+                ✕ 削除
+              </button>
+            </div>
+          )}
+          <div className="text-xs opacity-60 mt-1">※ 画像 OCR で買い目を自動入力する機能は今後追加予定</div>
         </div>
 
         {/* 結果 (任意) */}
