@@ -495,10 +495,52 @@ export function relatedNews(race, newsItems) {
   }).slice(0, 5);
 }
 
+/* === Round 22: 評価結果キャッシュ ===
+   レースの「中身」 が変わらない限り再評価しない。
+   キー: raceId + (出走表/オッズ/天候の signature) + (learnedAdjustments の signature)
+*/
+const _evalCache = new Map();
+function _raceSig(r) {
+  return [
+    r.id,
+    r.boats?.length || 0,
+    Object.keys(r.apiOdds?.exacta   || {}).length,
+    Object.keys(r.apiOdds?.trifecta || {}).length,
+    Object.keys(r.apiOdds?.quinella || {}).length,
+    Object.keys(r.apiOdds?.trio     || {}).length,
+    r.wind ?? "", r.wave ?? "", r.windDir || "",
+    r.startTime || "",
+    // boats のうちオッズ妙味/モーター/展示は変わる可能性
+    (r.boats || []).map((b) => `${b.boatNo}:${b.motor2 ?? ""}:${b.exTime ?? ""}:${b.ST ?? ""}:${b.partsExchange?.length || 0}:${b.tilt ?? ""}`).join(","),
+  ].join("|");
+}
+function _cacheKey(race, learnedAdjustments) {
+  const ladj = learnedAdjustments
+    ? Object.entries(learnedAdjustments).map(([k, v]) => `${k}:${v?.toFixed?.(3) || v}`).join(",")
+    : "";
+  return _raceSig(race) + "@@" + ladj;
+}
+
 /* レース全体の評価
    learnedAdjustments: 過去の的中傾向から各因子の重み補正 (-0.05〜+0.05) を渡せる。
-                       null なら標準重みのまま動作。 */
+                       null なら標準重みのまま動作。
+   Round 22: race の中身が変わらない限りキャッシュから返す (useMemo より外側で作用) */
 export function evaluateRace(race, newsItems, learnedAdjustments) {
+  if (!race?.id) return _evaluateRaw(race, newsItems, learnedAdjustments);
+  const key = _cacheKey(race, learnedAdjustments);
+  const cached = _evalCache.get(race.id);
+  if (cached && cached.key === key) return cached.result;
+  const result = _evaluateRaw(race, newsItems, learnedAdjustments);
+  _evalCache.set(race.id, { key, result });
+  // バウンド: 同時に持つキャッシュは最大 60 (24 場 × 12R 程度)
+  if (_evalCache.size > 60) {
+    const firstKey = _evalCache.keys().next().value;
+    _evalCache.delete(firstKey);
+  }
+  return result;
+}
+
+function _evaluateRaw(race, newsItems, learnedAdjustments) {
   if (!race?.boats || race.boats.length !== 6) return { ok: false, reason: "no-boats", message: "出走表未取得" };
   // 学習済み補正があれば一時的に FACTOR_WEIGHTS を変更
   const orig = { ...FACTOR_WEIGHTS };

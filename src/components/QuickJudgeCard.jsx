@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { yen } from "../lib/format.js";
 
 const PROFILE_LABELS = {
@@ -10,7 +11,9 @@ const PROFILE_LABELS = {
  * 「クイックジャッジ」カード — ホーム最上部に巨大表示。
  * 初心者でも一瞬で「買う/穴/見送り」「EV」「過去成績」 が分かるレイアウト。
  */
-export default function QuickJudgeCard({ headlineRace, recommendation, today, profile }) {
+export default memo(QuickJudgeCardImpl);
+
+function QuickJudgeCardImpl({ headlineRace, recommendation, today, profile }) {
   const profileInfo = PROFILE_LABELS[profile] || PROFILE_LABELS.balanced;
   const air = today?.air || { stake: 0, pnl: 0 };
   const real = today?.real || { stake: 0, pnl: 0 };

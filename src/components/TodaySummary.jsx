@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { memo, useMemo } from "react";
 import { yen } from "../lib/format.js";
 
 /**
@@ -13,7 +13,9 @@ import { yen } from "../lib/format.js";
  *   - スタイル別 (安定 / バランス / 攻め)
  *   - 当日レース 1 件ずつのカード
  */
-export default function TodaySummary({ predictions, onPickRace }) {
+export default memo(TodaySummaryImpl);
+
+function TodaySummaryImpl({ predictions, onPickRace }) {
   const data = useMemo(() => {
     const today = new Date().toISOString().slice(0, 10);
     const list = Object.values(predictions || {}).filter((p) => p.date === today);
