@@ -723,21 +723,48 @@ function isBoat6CandidateValid(race, scores, probs, inTrust) {
   return evidence >= 2; // 2つ以上の強根拠が必要
 }
 
-/* 戦略別の買い目選定:
- *   攻め (aggressive): 3連単 / 多めの点数 (4-6)
- *   バランス (balanced): 2連単 + 3連単 / 中程度 (3-4)
- *   安全 (steady): 2連複 + 3連複 / 少なめ (1-3)
+/* === Round 28: 厳選版 EV 基準 ===
+ *   ・「全部のレースを買うアプリ」 ではなく
+ *     「勝てる可能性が高いレースだけ厳選するアプリ」
+ *   ・EV 下限を引き上げ (steady 1.20 / balanced 1.15 / aggressive 1.10)
+ *   ・複数の見送り条件を明示し、reasons[] で UI に表示
+ *   ・買えるレースが無ければ堂々と「本日は見送り」 で良い
  *
- * 6号艇から始まる買い目は明確根拠なしには採用しない。
+ * 戦略別:
+ *   steady     (本命党): 厳選 1〜2 点 / 2連複 + 3連複 + 2連単
+ *   balanced   (中堅党): 厳選 1〜3 点 / 2連単 + 3連単
+ *   aggressive (穴党)  : 厳選 1〜5 点 / 3連単 + 2連単
  */
+
+/* スタイル別 EV 下限 (Round 28 で厳格化) */
+export const EV_MIN_BY_PROFILE = {
+  steady:     1.20,  // 本命党: 期待回収率 120% 以上のみ
+  balanced:   1.15,  // 中堅党: 期待回収率 115% 以上のみ
+  aggressive: 1.10,  // 穴党:   期待回収率 110% 以上のみ
+};
+
+/* スタイル別 「点数上限」 (これを超えるなら買い目広すぎ → 見送り) */
+export const POINT_CAP_BY_PROFILE = {
+  steady:     2,
+  balanced:   4,
+  aggressive: 8,
+};
+
 export function buildBuyRecommendation(ev, riskProfile, perRaceCap) {
-  if (!ev) return { decision: "skip", reason: "未評価", items: [], total: 0 };
+  /* === 早期 skip 判定 === */
+  if (!ev) return { decision: "skip", reason: "未評価", reasons: ["評価対象なし"], items: [], total: 0 };
   if (ev.reason === "no-odds") {
-    return { decision: "no-odds", reason: ev.message || "オッズ取得不可", items: [], total: 0 };
+    return { decision: "no-odds", reason: ev.message || "オッズ取得不可", reasons: ["オッズが未公開のため評価不能"], items: [], total: 0 };
   }
   if (!ev.ok) {
-    return { decision: "skip", reason: ev.message || "データ不足", items: [], total: 0 };
+    return { decision: "skip", reason: ev.message || "データ不足", reasons: ["出走表/直前情報が未取得 — データ不足のため見送り"], items: [], total: 0 };
   }
+  if (perRaceCap <= 0) {
+    return { decision: "skip", reason: "予算上限ゼロ", reasons: ["1日予算/1レース上限が 0 円 — 設定で調整してください"], items: [], total: 0 };
+  }
+
+  const evMin = EV_MIN_BY_PROFILE[riskProfile] ?? 1.15;
+  const pointCap = POINT_CAP_BY_PROFILE[riskProfile] ?? 4;
 
   const allowed = {
     aggressive: ["3連単", "2連単"],
@@ -748,80 +775,143 @@ export function buildBuyRecommendation(ev, riskProfile, perRaceCap) {
   const boat6Valid = isBoat6CandidateValid(ev.race || {boats: []}, ev.scores || [], ev.probs || [], ev.inTrust);
   const inProbIdx = ev.scores?.findIndex((s) => s.boatNo === 1) ?? -1;
   const inProb = inProbIdx >= 0 ? (ev.probs?.[inProbIdx] ?? 0) : 0;
-  // 1号艇逃げ濃厚 (≥50%) / やや有利 (≥45%) のときは外艇ヘッドを強く抑制する
   const inDominant = inProb >= 0.50;
-  const inFavored = inProb >= 0.45;
+  const inFavored  = inProb >= 0.45;
 
+  /* === 候補を厳選 === */
   let candidates = ev.items.filter((t) => {
     if (!allowed.includes(t.kind)) return false;
-    if (t.ev < 1.05) return false; // 期待回収率 105% 以上を候補に
-    // 券種別 最低的中確率フィルタ — オッズが高いだけのスパイクを排除
+    if (t.ev < evMin) return false; // スタイル別 EV 下限 (1.20 / 1.15 / 1.10)
+    // 券種別 最低的中確率フィルタ
     const minP = MIN_PROB_BY_KIND[t.kind] ?? 0.005;
     if (t.prob < minP) return false;
-    // 6号艇本命チェック (展示◎/モーター/勝率/インドミナント低/荒れ/内側進入歴 の根拠)
+    // 6号艇本命チェック
     if (t.combo.startsWith("6") && !boat6Valid) return false;
-    // インドミナント時は外艇ヘッドの本線採用を抑制
+    // インドミナント時は外艇ヘッドを強く抑制
     if (inDominant) {
-      // 1号艇逃げ濃厚 — ヘッドが 1 以外は EV ≥ 1.30 + 確率 2倍 を超えなければ除外
       const head = t.combo[0];
       if (head !== "1") {
         const minProbForOuter = (MIN_PROB_BY_KIND[t.kind] ?? 0.005) * 2;
         if (t.ev < 1.30 || t.prob < minProbForOuter) return false;
       }
     } else if (inFavored) {
-      // やや有利 — 1ヘッド以外は EV 1.15 以上を要求
       const head = t.combo[0];
-      if (head !== "1" && t.ev < 1.15) return false;
+      if (head !== "1" && t.ev < 1.20) return false; // 厳格化: 1.15 → 1.20
     }
     return true;
   });
 
-  if (candidates.length === 0) {
-    return {
-      decision: "skip",
-      reason: `${allowed.join("/")}で EV 1.05 以上の候補なし`,
-      items: [], total: 0,
-      rationale: "妙味のあるオッズが見当たらないため見送り (回収率重視)",
-    };
-  }
+  /* === 見送り理由 (詳細) を集める === */
+  const skipReasons = [];
 
-  // === Round 21: 事故レース検知 → 見送り推奨 ===
+  // 1. データ整合性チェック
+  if (ev.probConsistency && Math.abs(ev.probConsistency.oneFirstSum - 1) > 0.05) {
+    skipReasons.push(`データ整合性なし (1着確率合計 ${(ev.probConsistency.oneFirstSum * 100).toFixed(0)}% — 期待値計算が信頼できません)`);
+  }
+  // 2. 危険レース (Round 21)
   if (ev.accident?.isAccident && riskProfile !== "aggressive") {
-    return {
-      decision: "skip",
-      reason: ev.accident.message || "危険レース — 見送り",
-      items: [], total: 0,
-      rationale: `不安要素: ${ev.accident.causes.join(" / ")}`,
-      accident: ev.accident,
-    };
+    skipReasons.push(`危険レース判定 (severity ${ev.accident.severity}/100) — 不安要素: ${ev.accident.causes.join(" / ")}`);
   }
-  if (perRaceCap <= 0) {
-    return { decision: "skip", reason: "1日予算/1レース上限が 0", items: [], total: 0 };
+  // 3. インドミナント低下
+  if (ev.inTrust?.level === "イン崩壊警戒" && riskProfile !== "aggressive") {
+    skipReasons.push(`本命信頼度不足 (1号艇 ${(inProb * 100).toFixed(0)}% — イン崩壊警戒)`);
   }
 
-  // === 見送り強化条件 (回収率最大化のための積極見送り) ===
-  const topEv = candidates[0]?.ev || 0;
+  /* === Round 29: スタイル別 性格付け === */
+  // 各スタイルが「3 人の予想家の異なる思想」 を持つよう、固有ルールを差し込む
+  if (riskProfile === "steady") {
+    // 本命型: 1号艇信頼度を最重視。イン逃げ濃厚 or 1号艇やや有利 のみ買う。
+    const trustLevel = ev.inTrust?.level;
+    const trustOk = (trustLevel === "イン逃げ濃厚" || trustLevel === "1号艇やや有利");
+    if (!trustOk) {
+      skipReasons.push(`本命型ルール: 1号艇信頼度不足 (${trustLevel || "判定不能"}) — 本命型は「イン逃げ濃厚」 「1号艇やや有利」 のみ対象`);
+    }
+    // 荒れ/混戦の兆候があれば見送り
+    if ((ev.race?.wind ?? 0) >= 5 || (ev.race?.wave ?? 0) >= 6
+        || ev.development?.scenario === "荒れ" || ev.development?.scenario === "混戦") {
+      skipReasons.push(`本命型ルール: 荒れ/混戦の兆候 — 本命型は安定したイン逃げのみ対象`);
+    }
+    // 候補は 1ヘッドのみ
+    candidates = candidates.filter((t) => t.combo.startsWith("1"));
+    if (candidates.length === 0 && skipReasons.length === 0) {
+      skipReasons.push("本命型ルール: 1号艇ヘッドの候補がない — 本命型は 1号艇1着固定が対象");
+    }
+  } else if (riskProfile === "balanced") {
+    // バランス型: 1号艇強すぎて安すぎる場合 (1.8倍未満) は妙味なしで見送り
+    if (inProb > 0.65 && candidates.length > 0 && candidates[0].odds < 1.8) {
+      skipReasons.push(`バランス型ルール: 1号艇圧倒的 ${(inProb*100).toFixed(0)}% かつ本命オッズ ${candidates[0].odds.toFixed(1)}倍 — 安すぎて妙味なし`);
+    }
+    // 中穴 (オッズ ≤ 50倍) を上限とする
+    candidates = candidates.filter((t) => t.odds <= 60);
+  } else if (riskProfile === "aggressive") {
+    // 穴狙い型: 4-6号艇ヘッド の候補は「根拠 2+」 が必須
+    candidates = candidates.filter((t) => {
+      const head = parseInt(t.combo[0]);
+      if (head <= 3) return true; // 内側ヘッドは通常通り
+      const boatIdx = head - 1;
+      const b = ev.race?.boats?.[boatIdx];
+      if (!b) return false;
+      let evidence = 0;
+      if (b.exTime != null && b.exTime <= 6.80) evidence++;            // 展示◎
+      if (b.motor2 != null && b.motor2 >= 40) evidence++;              // モーター高
+      if (b.winRate != null && b.winRate >= 5.5) evidence++;           // 選手勝率
+      if (Array.isArray(b.entryHistory) && b.entryHistory.some((l) => l <= 3)) evidence++; // 内側進入歴
+      if ((ev.race?.wind ?? 0) >= 5 || (ev.race?.wave ?? 0) >= 6) evidence++;             // 荒水面
+      if (ev.development?.scenario === "荒れ" || ev.development?.scenario === "まくり") evidence++;
+      if (b.tilt != null && b.tilt >= 1.5) evidence++;                 // 高チルト (外艇ターン強)
+      return evidence >= 2;                                             // 2つ以上の根拠
+    });
+    // 穴候補が無く、1号艇も濃厚でなければ見送り (穴狙いの本分から外れる)
+    const holeCount = candidates.filter((t) => parseInt(t.combo[0]) >= 4).length;
+    const innerOnly = candidates.length > 0 && holeCount === 0;
+    if (innerOnly && inProb < 0.45) {
+      skipReasons.push("穴狙い型ルール: 根拠ある穴候補がなく、1号艇本命も弱い — 穴狙いの本分から外れる");
+    }
+    if (candidates.length === 0 && skipReasons.length === 0) {
+      skipReasons.push("穴狙い型ルール: 根拠 (展示/モーター/進入歴/荒水面 など 2+) を満たす穴候補なし");
+    }
+  }
+
+  // 4. 候補が無い (style 固有フィルタ後)
+  if (candidates.length === 0 && skipReasons.length === 0) {
+    skipReasons.push(`オッズ妙味なし (期待回収率 ${Math.round(evMin * 100)}% 以上の候補が ${allowed.join("/")}に存在しない)`);
+  }
+  // 5. 候補のトップ EV が低い (薄プラスは見送り)
+  if (candidates.length > 0 && candidates[0].ev < evMin + 0.05) {
+    skipReasons.push(`妙味薄い (最高でも期待回収率 ${Math.round(candidates[0].ev * 100)}% — わずかなプラスは長期で消える)`);
+  }
+  // 6. 候補が広すぎる (穴狙い型のみ — 根拠ある穴に絞る思想なので、広すぎは不確定要素過多)
+  if (riskProfile === "aggressive" && candidates.length > pointCap * 2) {
+    skipReasons.push(`買い目が広すぎる (${candidates.length} 件 > 上限 ${pointCap * 2} 件 — 穴狙い型は根拠ある絞り込みが必要)`);
+  }
+  // 7. 荒れすぎ + S/A 級なし
+  const sCount = candidates.filter((c) => c.ev >= 1.30).length;
+  const aCount = candidates.filter((c) => c.ev >= 1.15 && c.ev < 1.30).length;
   const isRoughHard = (ev.development?.scenario === "荒れ") && ev.windWave?.roughLikelihood >= 70;
-  const inUnstableHard = ev.inTrust?.level === "イン崩壊警戒";
-  // S 級 (EV 1.30+) も A 級も無く、しかも荒れ要素強 → 見送り
-  const sCountForSkip = candidates.filter((c) => c.ev >= 1.30).length;
-  const aCountForSkip = candidates.filter((c) => c.ev >= 1.10 && c.ev < 1.30).length;
-  if (sCountForSkip === 0 && aCountForSkip === 0 && (isRoughHard || inUnstableHard)) {
+  if (sCount === 0 && aCount === 0 && isRoughHard) {
+    skipReasons.push(`荒れ判定が強い + S級・A級候補なし — 期待値プラスが望めない`);
+  }
+  // 8. 拮抗 + 低 EV
+  if (candidates.length > 0 && candidates[0].ev < 1.20 && ev.development?.scenario === "混戦") {
+    skipReasons.push(`混戦かつ妙味弱 — 不確定要素が多く期待値プラスが薄い`);
+  }
+
+  /* === skip 理由が 1 つでもあれば見送り === */
+  if (skipReasons.length > 0) {
     return {
       decision: "skip",
-      reason: "B級候補のみ + 荒れ/インドミナント低 — 回収率悪化リスクのため見送り",
+      reason: skipReasons[0],
+      reasons: skipReasons,
       items: [], total: 0,
-      rationale: "EV 1.10 未満かつ展開不透明。安易な購入は長期的にマイナスになるため見送り推奨",
+      rationale: "厳選した結果、勝てる可能性が高い買い目が見つかりませんでした。買えない日もあります。",
+      accident: ev.accident?.isAccident ? ev.accident : null,
     };
   }
 
   // === Round 20: 利益重視 + 本命レースは絞る + 荒れレースのみ広げる ===
   //   ・本命レース (1号艇 ≥55% かつ 荒れ要素なし) → 1〜2 点に厳格に絞る (トリガミ防止)
   //   ・荒れる根拠が複数ある場合のみ点数を増やす
-  //   ・S級1個だけ + 本命レース → 1点
-  //   ・荒れ要素あり → S+A 数だけ広げる
-  const sCount = candidates.filter((c) => c.ev >= 1.30).length;
-  const aCount = candidates.filter((c) => c.ev >= 1.10 && c.ev < 1.30).length;
+  // (sCount/aCount は skip 判定で既に算出済 — そのまま再利用)
   const isRough = ev.development?.scenario === "荒れ" || ev.development?.scenario === "混戦";
   const inUnstable = ev.inTrust?.level && (ev.inTrust.level === "荒れ注意" || ev.inTrust.level === "イン崩壊警戒");
   // 「荒れる根拠」 を点数化 (2 点以上で広げる対象)

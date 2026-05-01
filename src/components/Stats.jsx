@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import {
   ResponsiveContainer, AreaChart, Area, BarChart, Bar, LineChart, Line,
   XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine,
@@ -14,21 +14,32 @@ import { judgeAIReliability, evaluateSkipQuality } from "../lib/analysis.js";
  *   ・アニメーション無し (isAnimationActive=false) で揺れ防止
  *   ・トップに「最終更新: ◯ 秒前」表示
  */
-export default function Stats({ predictions, lastRefreshAt }) {
-  const [tab, setTab] = useState("air"); // air | real | compare
-  const [period, setPeriod] = useState("week"); // today | week | all
+export default function Stats({ predictions, lastRefreshAt, virtualMode }) {
+  // tab: Header の virtualMode を初期値にする (常に同期)
+  const [tab, setTab] = useState(virtualMode === false ? "real" : "air"); // air | real | compare
+  const [period, setPeriod] = useState("week"); // today | week | month | all
+
+  // Header のエア/リアル切替に追従 (compare 表示のときは維持)
+  useEffect(() => {
+    if (tab === "compare") return;
+    setTab(virtualMode === false ? "real" : "air");
+  }, [virtualMode]);
 
   // 期間フィルタ用の境界日
   const cutoff = useMemo(() => {
     const today = new Date().toISOString().slice(0, 10);
+    const d = new Date();
     if (period === "today") return today;
-    if (period === "week") {
-      const d = new Date();
-      d.setDate(d.getDate() - 6);
-      return d.toISOString().slice(0, 10);
-    }
+    if (period === "week")  { d.setDate(d.getDate() - 6);  return d.toISOString().slice(0, 10); }
+    if (period === "month") { d.setDate(d.getDate() - 29); return d.toISOString().slice(0, 10); }
     return "0000-00-00"; // all
   }, [period]);
+
+  // 全体統計 (どのモードに属するか把握用)
+  const allPredictions = useMemo(() => Object.values(predictions || {}), [predictions]);
+  const totalSaved = allPredictions.length;
+  const totalAirAll = allPredictions.filter(p => p.virtual !== false).length;
+  const totalRealAll = allPredictions.filter(p => p.virtual === false).length;
 
   const all = useMemo(() => Object.values(predictions || {})
     .filter((p) => p.decision === "buy" && p.totalStake > 0 && p.result?.first)
@@ -39,6 +50,17 @@ export default function Stats({ predictions, lastRefreshAt }) {
   const air = useMemo(() => all.filter((p) => p.virtual !== false), [all]);
   const real = useMemo(() => all.filter((p) => p.virtual === false), [all]);
 
+  // データ無しの理由を判定
+  const reason = useMemo(() => {
+    const targetSet = tab === "air" ? air : real;
+    if (targetSet.length > 0) return null;
+    if (totalSaved === 0) return { kind: "none", text: "まだ予想が一件も保存されていません。「🔄 更新」 を押してレース情報を取得してください。" };
+    const targetAll = tab === "air" ? totalAirAll : totalRealAll;
+    if (targetAll === 0) return { kind: "no-mode", text: tab === "air" ? "エアモードで保存した予想がまだありません。Header の「🧪 エア」 ボタンに切り替えて更新してください。" : "リアル舟券の記録がまだありません。Header の「💰 リアル」 に切り替えて記録するか、検証画面の「+ 手動記録」 で追加してください。" };
+    // モードでは保存があるが期間 + 結果確定で 0 件
+    return { kind: "no-period", text: `${tab === "air" ? "エア" : "リアル"} 舟券は ${targetAll} 件保存されていますが、選択中の期間 (${period === "today" ? "今日" : period === "week" ? "今週" : period === "month" ? "今月" : "全期間"}) + 結果確定済 で該当なし。期間を 「全期間」 に切り替えてみてください。` };
+  }, [tab, air, real, totalSaved, totalAirAll, totalRealAll, period]);
+
   return (
     <div className="max-w-4xl mx-auto px-4 mt-4 space-y-4">
       {/* タブ */}
@@ -48,12 +70,13 @@ export default function Stats({ predictions, lastRefreshAt }) {
         <button onClick={() => setTab("compare")} className={"tab-btn flex-1 " + (tab === "compare" ? "active" : "")}>⚖️ 比較</button>
       </div>
 
-      {/* 期間切替 (今日 / 今週 / 全期間) */}
+      {/* 期間切替 (今日 / 今週 / 今月 / 全期間) */}
       <div className="flex gap-2 items-center flex-wrap">
         <span className="text-xs opacity-70">期間:</span>
         {[
           { k: "today", label: "📅 今日",   color: "#22d3ee" },
           { k: "week",  label: "🗓️ 今週",   color: "#10b981" },
+          { k: "month", label: "📆 今月",   color: "#a855f7" },
           { k: "all",   label: "📚 全期間", color: "#fbbf24" },
         ].map((f) => (
           <button key={f.k} onClick={() => setPeriod(f.k)}
@@ -70,6 +93,15 @@ export default function Stats({ predictions, lastRefreshAt }) {
         ))}
       </div>
 
+      {/* 保存ステータス (常時表示) */}
+      <div className="text-xs opacity-70 flex items-center gap-2 flex-wrap">
+        <span>💾 保存済:</span>
+        <span className="num">全 <b style={{ color: "#bae6fd" }}>{totalSaved}</b> 件</span>
+        <span className="opacity-50">|</span>
+        <span className="num">🧪 エア <b style={{ color: "#67e8f9" }}>{totalAirAll}</b></span>
+        <span className="num">💰 リアル <b style={{ color: "#fcd34d" }}>{totalRealAll}</b></span>
+      </div>
+
       {/* 最終更新表示 */}
       <div className="text-xs opacity-60 text-right" style={{ minHeight: 16 }}>
         最終更新: {lastRefreshAt ? new Date(lastRefreshAt).toLocaleTimeString("ja-JP") : "—"}
@@ -80,7 +112,14 @@ export default function Stats({ predictions, lastRefreshAt }) {
 
       {tab === "compare"
         ? <CompareView air={air} real={real} />
-        : <SingleView items={tab === "air" ? air : real} label={tab === "air" ? "エア" : "リアル"} />}
+        : reason
+          ? (<section className="card p-6 text-center" style={{ minHeight: 200 }}>
+              <div className="opacity-70 text-sm">{reason.text}</div>
+              <div className="text-xs opacity-50 mt-3">
+                {reason.kind === "no-mode" && tab === "real" ? "💡 リアル切替後、レースが確定すると自動で集計されます" : reason.kind === "no-period" ? "💡 期間 「全期間」 ボタンを押してください" : "💡 「🔄 更新」 を押してください"}
+              </div>
+            </section>)
+          : <SingleView items={tab === "air" ? air : real} label={tab === "air" ? "エア" : "リアル"} />}
     </div>
   );
 }

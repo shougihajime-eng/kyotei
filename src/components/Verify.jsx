@@ -1,21 +1,26 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { yen, pct } from "../lib/format.js";
 import ManualBetForm from "./ManualBetForm.jsx";
 import { classifyLossPattern } from "../lib/venueBias.js";
 
 /**
  * 検証画面 — レース別カード一覧 + 集計。
- *  ・タブで [エア舟券] [リアル舟券] を切替
+ *  ・タブで [エア舟券] [リアル舟券] を切替 (Header の virtualMode に自動追従)
  *  ・各カードに 買い目 / 結果 / 着順 / 払戻 / 収支 を全部表示 (クリック不要)
  *  ・最低 1 週間分を時系列降順
  */
-export default function Verify({ predictions, onManualBet, onDeleteRecord, currentProfile }) {
-  const [tab, setTab] = useState("air"); // air | real
+export default function Verify({ predictions, onManualBet, onDeleteRecord, currentProfile, virtualMode }) {
+  const [tab, setTab] = useState(virtualMode === false ? "real" : "air"); // air | real
   const [styleFilter, setStyleFilter] = useState("all"); // all | steady | balanced | aggressive
   const [periodFilter, setPeriodFilter] = useState("week"); // today | week | month | all
   const [venueFilter, setVenueFilter] = useState("all");    // all | (venue name)
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState(null);
+
+  // Header の エア/リアル切替に同期
+  useEffect(() => {
+    setTab(virtualMode === false ? "real" : "air");
+  }, [virtualMode]);
 
   const all = useMemo(() => Object.values(predictions || {}), [predictions]);
 

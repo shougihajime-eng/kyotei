@@ -507,11 +507,13 @@ export default function App() {
         {tab === "verify" && (
           <Verify predictions={predictions}
             currentProfile={settings.riskProfile}
+            virtualMode={settings.virtualMode}
             onManualBet={handleManualBet}
             onDeleteRecord={handleDeleteRecord} />
         )}
         {tab === "stats" && (
-          <Stats predictions={predictions} lastRefreshAt={lastRefreshAt} />
+          <Stats predictions={predictions} lastRefreshAt={lastRefreshAt}
+            virtualMode={settings.virtualMode} />
         )}
         {tab === "analysis" && (
           <LossAnalysis predictions={predictions} races={races} />
