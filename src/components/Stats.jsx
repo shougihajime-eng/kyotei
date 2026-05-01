@@ -107,6 +107,9 @@ export default function Stats({ predictions, lastRefreshAt, virtualMode }) {
         最終更新: {lastRefreshAt ? new Date(lastRefreshAt).toLocaleTimeString("ja-JP") : "—"}
       </div>
 
+      {/* Round 39: 実績検証パネル — 7日 / 30日 / 全期間 並列 */}
+      <ActualPerformancePanel predictions={predictions} virtualMode={virtualMode} />
+
       {/* AI 信頼度パネル — 「このAIを信じていいか」 */}
       <AITrustPanel predictions={predictions} />
 
@@ -486,4 +489,164 @@ function buildByKind(items) {
   return order
     .map(k => m[k] && { kind: k, pnl: Math.round(m[k].ret - m[k].stake), stake: m[k].stake, ret: m[k].ret })
     .filter(Boolean);
+}
+
+/* === Round 39: 実績検証パネル ===
+   ・7日 / 30日 / 全期間 で「買い数」「的中率」「回収率」「見送り精度」「スタイル別」 を並列表示
+   ・推定 (シミュレーション) と区別して 「実績データ」 と明示 */
+function ActualPerformancePanel({ predictions, virtualMode }) {
+  const data = useMemo(() => {
+    const all = Object.values(predictions || {});
+    const today = new Date();
+    function cutoff(daysBack) {
+      if (daysBack == null) return "0000-00-00";
+      const d = new Date(today);
+      d.setDate(d.getDate() - daysBack + 1);
+      return d.toISOString().slice(0, 10);
+    }
+    function summarize(daysBack) {
+      const co = cutoff(daysBack);
+      const list = all.filter((p) => (p.date || "0000-00-00") >= co);
+      const targetMode = list.filter((p) => virtualMode === false ? p.virtual === false : p.virtual !== false);
+      const buys = targetMode.filter((p) => p.decision === "buy" && (p.totalStake || 0) > 0);
+      const skips = targetMode.filter((p) => p.decision === "skip");
+      const settled = buys.filter((p) => p.result?.first);
+      const skipsSettled = skips.filter((p) => p.result?.first);
+      let stake = 0, ret = 0, hits = 0;
+      settled.forEach((p) => { stake += p.totalStake; ret += p.payout || 0; if (p.hit) hits++; });
+      // 見送り精度: 見送ったレースの中で「見送って正解」 (= AI の本命買い目が外れた) の率
+      let skipCorrect = 0;
+      for (const p of skipsSettled) {
+        const expected = p.combos?.[0]?.combo;
+        if (!expected) { skipCorrect++; continue; } // skip + 買い目候補なし → 自動正解扱い
+        const winnerTri = `${p.result.first}-${p.result.second}-${p.result.third}`;
+        if (expected !== winnerTri) skipCorrect++;
+      }
+      return {
+        buys: buys.length,
+        skips: skips.length,
+        settled: settled.length,
+        hits,
+        skipCorrect,
+        skipsSettled: skipsSettled.length,
+        stake, ret,
+        roi: stake > 0 ? ret / stake : null,
+        hitRate: settled.length > 0 ? hits / settled.length : null,
+        skipQuality: skipsSettled.length > 0 ? skipCorrect / skipsSettled.length : null,
+        pnl: ret - stake,
+      };
+    }
+    function byStyle(daysBack) {
+      const co = cutoff(daysBack);
+      const list = all.filter((p) => (p.date || "0000-00-00") >= co);
+      const targetMode = list.filter((p) => virtualMode === false ? p.virtual === false : p.virtual !== false);
+      const m = {};
+      for (const p of targetMode) {
+        if (p.decision !== "buy" || !(p.totalStake > 0) || !p.result?.first) continue;
+        const k = p.profile || "balanced";
+        if (!m[k]) m[k] = { stake: 0, ret: 0, count: 0, hits: 0 };
+        m[k].stake += p.totalStake; m[k].ret += p.payout || 0; m[k].count++;
+        if (p.hit) m[k].hits++;
+      }
+      const labels = { steady: "🛡️ 本命型", balanced: "⚖️ バランス型", aggressive: "🎯 穴狙い型" };
+      return ["steady","balanced","aggressive"].map(k => ({
+        profile: k, label: labels[k],
+        stake: m[k]?.stake || 0,
+        ret:   m[k]?.ret   || 0,
+        count: m[k]?.count || 0,
+        hits:  m[k]?.hits  || 0,
+        roi: m[k]?.stake > 0 ? m[k].ret / m[k].stake : null,
+      }));
+    }
+    return {
+      d7:  summarize(7),
+      d30: summarize(30),
+      all: summarize(null),
+      byStyleD7:  byStyle(7),
+      byStyleD30: byStyle(30),
+    };
+  }, [predictions, virtualMode]);
+
+  function fmtPct(v) { return v == null ? "—" : `${Math.round(v * 100)}%`; }
+  function fmtPnl(v) {
+    const n = Math.round(v || 0);
+    const sign = n > 0 ? "+" : "";
+    return `${sign}${n.toLocaleString()}円`;
+  }
+  function tone(roi) {
+    if (roi == null) return "#9fb0c9";
+    if (roi >= 1.10) return "#34d399";
+    if (roi >= 1.00) return "#bae6fd";
+    if (roi >= 0.85) return "#fde68a";
+    return "#f87171";
+  }
+  const rows = [
+    { key: "d7",  label: "7日間",  data: data.d7  },
+    { key: "d30", label: "30日間", data: data.d30 },
+    { key: "all", label: "全期間", data: data.all },
+  ];
+  return (
+    <section className="card p-4" style={{ minHeight: 200 }}>
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+        <h3 className="font-bold text-sm">📊 実績検証 ({virtualMode === false ? "💰 リアル" : "🧪 エア"})</h3>
+        <span className="pill badge-buy" style={{ fontSize: 10 }}>確定済データ</span>
+      </div>
+      <div className="text-xs opacity-70 mb-3" style={{ lineHeight: 1.5 }}>
+        ※ ここは <b>実績データ</b> です (推定値ではなく、保存済の確定レース結果)。<br/>
+        買い目の「推定回収率」 は AI 予想に基づく見立てで、長期的にはこの実績ROIに収束します。
+      </div>
+      <div style={{ overflowX: "auto" }}>
+        <table className="w-full text-xs num" style={{ borderCollapse: "collapse", minWidth: 540 }}>
+          <thead>
+            <tr style={{ borderBottom: "1px solid #243154", color: "#9fb0c9" }}>
+              <th className="text-left p-2">期間</th>
+              <th className="text-right p-2">買い</th>
+              <th className="text-right p-2">確定</th>
+              <th className="text-right p-2">的中率</th>
+              <th className="text-right p-2">回収率</th>
+              <th className="text-right p-2">PnL</th>
+              <th className="text-right p-2">見送り精度</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.key} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+                <td className="p-2 font-bold">{r.label}</td>
+                <td className="text-right p-2">{r.data.buys}</td>
+                <td className="text-right p-2">{r.data.settled} ({r.data.hits}的中)</td>
+                <td className="text-right p-2">{fmtPct(r.data.hitRate)}</td>
+                <td className="text-right p-2 font-bold" style={{ color: tone(r.data.roi) }}>{fmtPct(r.data.roi)}</td>
+                <td className="text-right p-2" style={{ color: r.data.pnl >= 0 ? "#34d399" : "#f87171" }}>{fmtPnl(r.data.pnl)}</td>
+                <td className="text-right p-2 opacity-80">{fmtPct(r.data.skipQuality)} ({r.data.skipCorrect}/{r.data.skipsSettled})</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* スタイル別 (7日 と 30日 を並列) */}
+      <div className="text-xs opacity-70 mt-4 mb-2" style={{ fontWeight: 700 }}>スタイル別 実績</div>
+      <div className="grid grid-cols-3 gap-2">
+        {data.byStyleD30.map((s) => {
+          const d7 = data.byStyleD7.find((x) => x.profile === s.profile);
+          return (
+            <div key={s.profile} className="p-2 rounded text-center" style={{ background: "rgba(0,0,0,0.22)" }}>
+              <div className="text-xs opacity-80" style={{ fontWeight: 700 }}>{s.label}</div>
+              <div className="text-xs opacity-60 mt-1">7日 ROI</div>
+              <div className="num font-bold" style={{ fontSize: 14, color: tone(d7?.roi) }}>{fmtPct(d7?.roi)}</div>
+              <div className="text-xs opacity-60 mt-1">30日 ROI</div>
+              <div className="num font-bold" style={{ fontSize: 14, color: tone(s.roi) }}>{fmtPct(s.roi)}</div>
+              <div className="text-xs opacity-50 mt-1">7日 {d7?.count || 0}件 / 30日 {s.count}件</div>
+            </div>
+          );
+        })}
+      </div>
+
+      {data.all.settled === 0 && (
+        <div className="text-xs opacity-60 mt-3 text-center" style={{ background: "rgba(0,0,0,0.18)", padding: "8px 6px", borderRadius: 8 }}>
+          💡 確定済の実績データがまだありません。 数レース記録するとここに 実績の的中率・回収率 が表示されます。
+        </div>
+      )}
+    </section>
+  );
 }

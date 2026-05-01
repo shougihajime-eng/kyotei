@@ -164,17 +164,20 @@ function BuyDecisionCard({ race, recommendation, onRecord, virtualMode }) {
             <div className="num font-bold" style={{ fontSize: 16 }}>{main.odds.toFixed(1)}倍</div>
           </div>
           <div>
-            <div className="opacity-60">期待回収率</div>
+            <div className="opacity-60">推定回収率 <span style={{ fontSize: 9 }}>(予想値)</span></div>
             <div className="num font-bold" style={{ fontSize: 16, color: (main.expectedReturn ?? main.ev) >= 1 ? "#a7f3d0" : "#fca5a5" }}>
               {Math.round((main.expectedReturn ?? main.ev) * 100)}%
             </div>
           </div>
           <div>
-            <div className="opacity-60">EV (期待値)</div>
+            <div className="opacity-60">推定 EV <span style={{ fontSize: 9 }}>(予想値)</span></div>
             <div className="num font-bold" style={{ fontSize: 16, color: "#fde68a" }}>
               {((main.evMinus1 ?? (main.ev - 1)) >= 0 ? "+" : "")}{((main.evMinus1 ?? (main.ev - 1)) * 100).toFixed(0)}%
             </div>
           </div>
+        </div>
+        <div className="text-xs opacity-60 mt-1" style={{ fontSize: 10 }}>
+          ※ 上記は AI の予想に基づく推定値。実績は検証画面の確定済みデータをご確認ください。
         </div>
 
         {/* 平易な日本語説明 (Round 24) */}
