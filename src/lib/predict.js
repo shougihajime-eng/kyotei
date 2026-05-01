@@ -770,19 +770,47 @@ function isBoat6CandidateValid(race, scores, probs, inTrust) {
  *   aggressive (穴党)  : 厳選 1〜5 点 / 3連単 + 2連単
  */
 
-/* スタイル別 EV 下限 (Round 28 で厳格化) */
+/* スタイル別 EV 下限 (Round 36 で大幅引き上げ — 厳選見送り強化) */
 export const EV_MIN_BY_PROFILE = {
-  steady:     1.20,  // 本命党: 期待回収率 120% 以上のみ
-  balanced:   1.15,  // 中堅党: 期待回収率 115% 以上のみ
-  aggressive: 1.10,  // 穴党:   期待回収率 110% 以上のみ
+  steady:     1.30,  // 本命党: 期待回収率 130% 以上のみ
+  balanced:   1.25,  // 中堅党: 期待回収率 125% 以上のみ
+  aggressive: 1.20,  // 穴党:   期待回収率 120% 以上のみ
 };
 
-/* スタイル別 「点数上限」 (これを超えるなら買い目広すぎ → 見送り) */
+/* スタイル別 「点数上限」 */
 export const POINT_CAP_BY_PROFILE = {
   steady:     2,
   balanced:   4,
-  aggressive: 8,
+  aggressive: 6,
 };
+
+/* スタイル別 必要根拠数 (本命艇の有利な因子の数 — 1〜6) */
+export const MIN_EVIDENCE_BY_PROFILE = {
+  steady:     3,  // 本命型: 強根拠 3 つ以上
+  balanced:   2,  // バランス型: 2 つ以上
+  aggressive: 2,  // 穴狙い型: 2 つ以上 (穴ヘッドは別途厳格な根拠チェック)
+};
+
+/* 本命艇の根拠カウント:
+ *   ・1コース有利度 (factors.inAdvantage >= 0.6)
+ *   ・モーター高 (factors.motor >= 0.6)
+ *   ・展示◎ (factors.exhibition >= 0.7)
+ *   ・スタート力 (factors.startPower >= 0.6)
+ *   ・選手勝率 (factors.winRate >= 0.5)
+ *   ・コンディション補正プラス (conditionMod > 1.02)
+ */
+function countMainEvidence(score) {
+  if (!score?.factors) return 0;
+  const f = score.factors;
+  let c = 0;
+  if (f.inAdvantage >= 0.6) c++;
+  if (f.motor >= 0.6) c++;
+  if (f.exhibition >= 0.7) c++;
+  if (f.startPower >= 0.6) c++;
+  if (f.winRate >= 0.5) c++;
+  if (score.conditionMod > 1.02) c++;
+  return c;
+}
 
 export function buildBuyRecommendation(ev, riskProfile, perRaceCap) {
   /* === 早期 skip 判定 === */
@@ -1094,6 +1122,53 @@ export function buildBuyRecommendation(ev, riskProfile, perRaceCap) {
   items.length = 0;
   items.push(...profitable);
 
+  /* === Round 36: 7 条件チェック ===
+     EV だけで買わない。 全条件を満たしたときだけ「買い」 とする。 */
+  const checks = [];
+  // 1. データが最新 (apiOddsStale でない)
+  checks.push({ ok: !ev.apiOddsStale, label: "データが最新", detail: ev.apiOddsStale ? "オッズがキャッシュ参考値" : "OK" });
+  // 2. オッズ取得済み
+  const oddsOk = !!(ev.race?.apiOdds && (
+    Object.keys(ev.race.apiOdds.exacta || {}).length > 0
+    || Object.keys(ev.race.apiOdds.trifecta || {}).length > 0
+  ));
+  checks.push({ ok: oddsOk, label: "オッズ取得済み", detail: oddsOk ? "OK" : "未取得" });
+  // 3. 確率整合性
+  const probOk = !ev.probConsistency || Math.abs(ev.probConsistency.oneFirstSum - 1) < 0.05;
+  checks.push({ ok: probOk, label: "確率整合性 OK", detail: probOk ? "1着確率合計 ≒ 100%" : `1着確率合計 ${(ev.probConsistency.oneFirstSum * 100).toFixed(0)}%` });
+  // 4. 的中時に利益が出る (worst-case roi >= 1.05 暫定 — 本格判定は後段)
+  // ここでは main の prob×odds が evMin 以上なら OK とする
+  const profitOk = main.ev >= (EV_MIN_BY_PROFILE[riskProfile] || 1.20);
+  checks.push({ ok: profitOk, label: "的中時に利益が出る", detail: `期待回収率 ${Math.round(main.ev * 100)}%` });
+  // 5. 根拠が複数ある
+  const mainBoatNoForCheck = parseInt(main.combo[0]);
+  const mainScoreForCheck = ev.scores.find((s) => s.boatNo === mainBoatNoForCheck);
+  const evidenceCount = countMainEvidence(mainScoreForCheck);
+  const minEvidence = MIN_EVIDENCE_BY_PROFILE[riskProfile] || 2;
+  const evidenceOk = evidenceCount >= minEvidence;
+  checks.push({ ok: evidenceOk, label: `根拠 ${minEvidence} つ以上`, detail: `現在 ${evidenceCount} つ` });
+  // 6. 買い目が広がりすぎない (上限の 2 倍を超えない)
+  const widthOk = items.length <= (POINT_CAP_BY_PROFILE[riskProfile] || 4);
+  checks.push({ ok: widthOk, label: "買い目が広がりすぎない", detail: `${items.length} 点` });
+  // 7. 危険要素が少ない (severity < 50 or aggressive)
+  const dangerOk = !ev.accident?.isAccident || riskProfile === "aggressive";
+  checks.push({ ok: dangerOk, label: "危険要素が少ない", detail: ev.accident?.isAccident ? `severity ${ev.accident.severity}` : "OK" });
+
+  const failed = checks.filter((c) => !c.ok);
+  if (failed.length > 0) {
+    return {
+      decision: "skip",
+      reason: `7条件中 ${failed.length} 件未達 — 厳選見送り`,
+      reasons: [
+        ...failed.map((c) => `❌ ${c.label}: ${c.detail}`),
+        `✅ 通過: ${checks.length - failed.length} / ${checks.length}`,
+        "全 7 条件を満たすレースだけ買います",
+      ],
+      items: [], total: 0,
+      checks,
+    };
+  }
+
   /* === Round 35c: 「保証回収率 (最悪ケース)」 + 利益設計 ===
      最低オッズの買い目だけが的中したケースで損しないか確認。
      ・steady     (本命型): worstCaseRoi >= 1.10 (10% 以上の利益保証必須)
@@ -1160,6 +1235,9 @@ export function buildBuyRecommendation(ev, riskProfile, perRaceCap) {
     expectedPayout: wc.expectedPayout,
     minProfitGuard: minWorstRoi,
     allocationStyle,
+    /* Round 36: 7 条件チェック (全 OK だから買い) */
+    checks,
+    evidenceCount,
   };
 }
 

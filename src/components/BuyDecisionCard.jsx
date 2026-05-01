@@ -86,6 +86,23 @@ function BuyDecisionCard({ race, recommendation, onRecord, virtualMode }) {
         💡 {recommendation.reason}
       </div>
 
+      {/* Round 36: 7 条件チェック合格表示 */}
+      {Array.isArray(recommendation.checks) && recommendation.checks.length > 0 && (
+        <div className="mt-3 p-2 rounded text-xs" style={{ background: "rgba(16,185,129,0.10)", border: "1px solid rgba(16,185,129,0.4)" }}>
+          <div className="font-bold mb-1" style={{ color: "#a7f3d0" }}>
+            ✅ 厳選 7 条件 すべて通過
+          </div>
+          <div className="grid grid-cols-1 gap-0.5" style={{ lineHeight: 1.5 }}>
+            {recommendation.checks.map((c, i) => (
+              <div key={i} className="flex items-center justify-between gap-2" style={{ color: "#a7f3d0" }}>
+                <span>✓ {c.label}</span>
+                <span className="opacity-70 text-xs">{c.detail}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* 事故レース警告 (Round 21) — 買い決定でも危険要素ありなら強調表示 */}
       {recommendation.accident?.isAccident && (
         <div className="mt-3 p-2 rounded text-center" style={{ background: "rgba(239,68,68,0.20)", border: "1px solid rgba(239,68,68,0.6)" }}>
