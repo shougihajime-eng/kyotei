@@ -17,13 +17,14 @@ const PROFILE_INFO = {
   aggressive: { label: "🎯 攻め型", color: "#ef4444", bg: "rgba(239,68,68,0.18)" },
 };
 
-export default function Header({ tab, setTab, today, settings, setSettings, switchProfile, refreshing, onRefresh, lastRefreshAt, suggestedStyle }) {
+export default function Header({ tab, setTab, today, settings, setSettings, switchProfile, switchVirtualMode, refreshing, onRefresh, lastRefreshAt, suggestedStyle }) {
   const air = today?.air || { stake: 0, pnl: 0 };
   const real = today?.real || { stake: 0, pnl: 0 };
   const realLabel = real.stake === 0 ? "未入力" : (real.pnl >= 0 ? "+" + yen(real.pnl) : "−" + yen(Math.abs(real.pnl)));
   const airLabel = air.stake === 0 ? "—" : (air.pnl >= 0 ? "+" + yen(air.pnl) : "−" + yen(Math.abs(air.pnl)));
 
   const profileInfo = PROFILE_INFO[settings.riskProfile] || PROFILE_INFO.balanced;
+  const isVirtual = !!settings.virtualMode;
 
   function handleRefresh(e) {
     e.preventDefault();
@@ -34,6 +35,13 @@ export default function Header({ tab, setTab, today, settings, setSettings, swit
   function handleStyle(p) {
     if (switchProfile) switchProfile(p);
     else if (setSettings) setSettings({ ...settings, riskProfile: p });
+  }
+
+  function handleVirtualToggle(e) {
+    e?.preventDefault?.();
+    e?.stopPropagation?.();
+    if (switchVirtualMode) switchVirtualMode();
+    else if (setSettings) setSettings((prev) => ({ ...prev, virtualMode: !prev.virtualMode }));
   }
 
   return (
@@ -54,16 +62,37 @@ export default function Header({ tab, setTab, today, settings, setSettings, swit
           </div>
         </div>
 
-        {/* エア / リアル 損益 */}
+        {/* エア / リアル モード切替 (タップで即時切替) + 損益 */}
         {settings.onboardingDone && (
-          <div className="flex flex-col items-end gap-1 text-xs">
-            <div className="flex gap-2 items-center">
-              <span className="pill badge-brand" style={{ fontSize: 10 }}>エア</span>
-              <b className={"num " + (air.pnl >= 0 ? "text-pos" : "text-neg")} style={{ fontSize: 13 }}>{airLabel}</b>
-            </div>
-            <div className="flex gap-2 items-center">
-              <span className="pill badge-warn" style={{ fontSize: 10 }}>リアル</span>
-              <b className={"num " + (real.stake === 0 ? "opacity-60" : (real.pnl >= 0 ? "text-pos" : "text-neg"))} style={{ fontSize: 13 }}>{realLabel}</b>
+          <div className="flex items-center gap-2">
+            {/* モード切替トグル (大きめ) */}
+            <button
+              type="button"
+              onClick={handleVirtualToggle}
+              aria-label={isVirtual ? "エア舟券モード (タップでリアルに切替)" : "リアル舟券モード (タップでエアに切替)"}
+              title={isVirtual ? "🧪 エア中 — タップでリアルに切替" : "💰 リアル中 — タップでエアに切替"}
+              style={{
+                minHeight: 44, minWidth: 80, padding: "6px 10px",
+                borderRadius: 12, border: "2px solid " + (isVirtual ? "#22d3ee" : "#fbbf24"),
+                background: isVirtual ? "rgba(34,211,238,0.15)" : "rgba(251,191,36,0.16)",
+                color: isVirtual ? "#67e8f9" : "#fcd34d",
+                fontWeight: 800, fontSize: 12, cursor: "pointer",
+                display: "flex", flexDirection: "column", alignItems: "center", gap: 2,
+                transition: "all 0.12s ease",
+                lineHeight: 1.1,
+              }}>
+              <span>{isVirtual ? "🧪 エア" : "💰 リアル"}</span>
+              <span style={{ fontSize: 9, opacity: 0.75, fontWeight: 600 }}>タップで切替</span>
+            </button>
+            <div className="flex flex-col items-end gap-1 text-xs">
+              <div className="flex gap-2 items-center">
+                <span className="pill badge-brand" style={{ fontSize: 10 }}>エア</span>
+                <b className={"num " + (air.pnl >= 0 ? "text-pos" : "text-neg")} style={{ fontSize: 13 }}>{airLabel}</b>
+              </div>
+              <div className="flex gap-2 items-center">
+                <span className="pill badge-warn" style={{ fontSize: 10 }}>リアル</span>
+                <b className={"num " + (real.stake === 0 ? "opacity-60" : (real.pnl >= 0 ? "text-pos" : "text-neg"))} style={{ fontSize: 13 }}>{realLabel}</b>
+              </div>
             </div>
           </div>
         )}

@@ -3,7 +3,13 @@ import { yen } from "../lib/format.js";
 /**
  * 設定 — 資金管理 + リスク感覚 + 仮想モード切替 + リセット。
  */
-export default function Settings({ settings, setSettings, onReset }) {
+export default function Settings({ settings, setSettings, switchVirtualMode, onReset }) {
+  const isVirtual = !!settings.virtualMode;
+  function setMode(virtual) {
+    if (virtual === isVirtual) return;
+    if (switchVirtualMode) switchVirtualMode(virtual);
+    else setSettings((prev) => ({ ...prev, virtualMode: virtual }));
+  }
   function field(key, label) {
     return (
       <div>
@@ -49,14 +55,50 @@ export default function Settings({ settings, setSettings, onReset }) {
       </section>
 
       <section className="card p-4">
-        <h2 className="text-lg font-bold mb-3">🧪 購入モード</h2>
-        <label className="flex items-center gap-2 text-sm cursor-pointer">
-          <input type="checkbox" checked={!!settings.virtualMode}
-            onChange={(e) => setSettings({ ...settings, virtualMode: e.target.checked })} />
-          <span><b>エア舟券モード</b> (検証専用・実購入記録には反映しません)</span>
-        </label>
-        <div className="text-xs opacity-70 mt-2">
-          OFF にすると「リアル購入として記録」ボタンが各買い目に表示されます。
+        <h2 className="text-lg font-bold mb-3">🧪 購入モード (エア / リアル)</h2>
+        <div className="text-xs opacity-80 mb-3">
+          記録モードを切り替えます。Header の大ボタンからもいつでも切替できます。
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => setMode(true)}
+            style={{
+              padding: "14px 12px", minHeight: 64, borderRadius: 12,
+              border: "2px solid " + (isVirtual ? "#22d3ee" : "#243154"),
+              background: isVirtual ? "rgba(34,211,238,0.15)" : "rgba(15,24,48,0.6)",
+              color: isVirtual ? "#67e8f9" : "#9fb0c9",
+              fontWeight: 800, fontSize: 14, cursor: "pointer",
+              transition: "all 0.12s ease",
+              boxShadow: isVirtual ? "0 0 0 1px #22d3ee40, 0 4px 14px rgba(34,211,238,0.2)" : "none",
+              transform: isVirtual ? "scale(1.02)" : "scale(1)",
+            }}>
+            <div style={{ fontSize: 22 }}>🧪</div>
+            <div>エア舟券</div>
+            <div style={{ fontSize: 11, opacity: 0.7, fontWeight: 600, marginTop: 2 }}>検証用 (購入なし)</div>
+            {isVirtual && <div style={{ fontSize: 10, marginTop: 2 }}>✓ 選択中</div>}
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode(false)}
+            style={{
+              padding: "14px 12px", minHeight: 64, borderRadius: 12,
+              border: "2px solid " + (!isVirtual ? "#fbbf24" : "#243154"),
+              background: !isVirtual ? "rgba(251,191,36,0.16)" : "rgba(15,24,48,0.6)",
+              color: !isVirtual ? "#fcd34d" : "#9fb0c9",
+              fontWeight: 800, fontSize: 14, cursor: "pointer",
+              transition: "all 0.12s ease",
+              boxShadow: !isVirtual ? "0 0 0 1px #fbbf2440, 0 4px 14px rgba(251,191,36,0.2)" : "none",
+              transform: !isVirtual ? "scale(1.02)" : "scale(1)",
+            }}>
+            <div style={{ fontSize: 22 }}>💰</div>
+            <div>リアル舟券</div>
+            <div style={{ fontSize: 11, opacity: 0.7, fontWeight: 600, marginTop: 2 }}>実購入を記録</div>
+            {!isVirtual && <div style={{ fontSize: 10, marginTop: 2 }}>✓ 選択中</div>}
+          </button>
+        </div>
+        <div className="text-xs opacity-70 mt-3">
+          ※ 切替は localStorage に保存され、リロードしても維持されます。
         </div>
       </section>
 

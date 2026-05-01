@@ -146,6 +146,20 @@ export default function App() {
     }
   }, [recommendations, showToast]);
 
+  /* === エア / リアル モード切替 ===
+     functional setState で stale closure を回避 + 即時トースト発火 */
+  const switchVirtualMode = useCallback((forceValue) => {
+    setSettings((prev) => {
+      const next = { ...prev, virtualMode: forceValue != null ? !!forceValue : !prev.virtualMode };
+      // 同期的にトースト発火 (即時反応)
+      const msg = next.virtualMode
+        ? "🧪 エア舟券モードに切り替えました (検証用)"
+        : "💰 リアル舟券モードに切り替えました";
+      showToast(msg, next.virtualMode ? "info" : "ok");
+      return next;
+    });
+  }, [showToast]);
+
   /* === AI判断スナップショット ===
        無限ループ防止のため、races の変更時のみ記録 (recommendations 依存は削除)。
        記録のタイミング: 「最新にする」ボタンで races が更新された直後の 1 回のみ。 */
@@ -448,7 +462,7 @@ export default function App() {
     <div className="min-h-screen">
       <Header tab={tab} setTab={(t) => { setTab(t); setSelectedRaceId(null); }}
         today={today} settings={settings} setSettings={setSettings}
-        switchProfile={switchProfile}
+        switchProfile={switchProfile} switchVirtualMode={switchVirtualMode}
         refreshing={refreshing} onRefresh={refreshAll} lastRefreshAt={lastRefreshAt}
         suggestedStyle={suggestStyle(evals, predictions)} />
       {/* トースト: スタイル切替 / 操作フィードバック */}
@@ -503,7 +517,8 @@ export default function App() {
           <LossAnalysis predictions={predictions} races={races} />
         )}
         {tab === "settings" && (
-          <Settings settings={settings} setSettings={setSettings} onReset={handleReset} />
+          <Settings settings={settings} setSettings={setSettings}
+            switchVirtualMode={switchVirtualMode} onReset={handleReset} />
         )}
       </main>
     </div>
