@@ -45,7 +45,7 @@ export default function App() {
     return () => setStorageStatusListener(null);
   }, []);
 
-  /* === Round 45: Auth + クラウド同期 === */
+  /* === Round 45: Auth state (handler は showToast 定義後に作る — TDZ 回避) === */
   const [authUser, setAuthUser] = useState(null);
   const [showLogin, setShowLogin] = useState(false);
   const [syncStatus, setSyncStatus] = useState({ state: "idle", lastAt: null, error: null, stats: null });
@@ -57,6 +57,34 @@ export default function App() {
     const unsub = onAuthChange((u) => setAuthUser(u));
     return () => { try { unsub && unsub(); } catch {} };
   }, []);
+
+  /* === Volatile state === */
+  const [tab, setTab] = useState("home");
+  const [races, setRaces] = useState([]);
+  const [selectedRaceId, setSelectedRaceId] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshMsg, setRefreshMsg] = useState("");
+  const [lastRefreshAt, setLastRefreshAt] = useState(null);
+  /* スタイル切替の即時フィードバック (トースト) — Auth handler より前に定義 */
+  const [toast, setToast] = useState(null);
+  const showToast = useCallback((msg, kind = "info") => {
+    const id = Date.now();
+    setToast({ msg, kind, id });
+    setTimeout(() => setToast((t) => (t && t.id === id ? null : t)), 2500);
+  }, []);
+
+  /* === Round 49 TDZ 修正: Auth handler は showToast の後に作る === */
+  const handleLogin = useCallback((user) => {
+    setAuthUser(user);
+    showToast(`👋 ${user.username} でログイン — クラウド同期を開始`, "ok");
+  }, [showToast]);
+
+  const handleLogout = useCallback(async () => {
+    await authSignOut();
+    setAuthUser(null);
+    setSyncStatus({ state: "idle", lastAt: null, error: null, stats: null });
+    showToast("ログアウトしました — ローカル保存は継続", "info");
+  }, [showToast]);
 
   // ログイン直後の full sync (一度だけ) + 5 分ごと定期 fullSync
   const syncedForUserRef = useRef(null);
@@ -105,33 +133,6 @@ export default function App() {
     }, 5000);
     return () => clearTimeout(lightSyncTimerRef.current);
   }, [predictions, authUser]);
-
-  const handleLogin = useCallback((user) => {
-    setAuthUser(user);
-    showToast(`👋 ${user.username} でログイン — クラウド同期を開始`, "ok");
-  }, [showToast]);
-
-  const handleLogout = useCallback(async () => {
-    await authSignOut();
-    setAuthUser(null);
-    setSyncStatus({ state: "idle", lastAt: null, error: null, stats: null });
-    showToast("ログアウトしました — ローカル保存は継続", "info");
-  }, [showToast]);
-
-  /* === Volatile state === */
-  const [tab, setTab] = useState("home");
-  const [races, setRaces] = useState([]);
-  const [selectedRaceId, setSelectedRaceId] = useState(null);
-  const [refreshing, setRefreshing] = useState(false);
-  const [refreshMsg, setRefreshMsg] = useState("");
-  const [lastRefreshAt, setLastRefreshAt] = useState(null);
-  /* スタイル切替の即時フィードバック (トースト) */
-  const [toast, setToast] = useState(null);
-  const showToast = useCallback((msg, kind = "info") => {
-    const id = Date.now();
-    setToast({ msg, kind, id });
-    setTimeout(() => setToast((t) => (t && t.id === id ? null : t)), 2500);
-  }, []);
   /* スタイル切替の差分通知用 ref。switchProfile / useEffect は recommendations 定義後に作る (TDZ 回避) */
   const lastSwitchInfo = useRef(null);
   /* recommendations の最新値を ref に保持 (switchProfile が hoisted で参照できるようにする) */
