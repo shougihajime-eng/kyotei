@@ -23,6 +23,7 @@ export default function Dashboard({
   races, predictions, recommendations, today, weekly,
   refreshing, refreshMsg, lastRefreshAt, onRefresh,
   onRecord, settings, onPickRace,
+  switchProfile, strategyRanking,
 }) {
   const [showDetails, setShowDetails] = useState(false);
 
@@ -50,6 +51,11 @@ export default function Dashboard({
     <div className="space-y-4 max-w-3xl mx-auto px-4 mt-4 pb-20">
       {/* 更新バー (常時) */}
       <RefreshBar onRefresh={onRefresh} refreshing={refreshing} refreshMsg={refreshMsg} lastRefreshAt={lastRefreshAt} />
+
+      {/* 戦略ランキング (Round 32) — 「今日はどの戦い方が有利か」 */}
+      {strategyRanking && (
+        <StrategyRankingCard ranking={strategyRanking} currentProfile={settings.riskProfile} switchProfile={switchProfile} />
+      )}
 
       {/* 🚀 クイックジャッジ — 一目判定 (最重要) */}
       <QuickJudgeCard headlineRace={headline} recommendation={rec} today={today} profile={settings.riskProfile} />
@@ -216,4 +222,73 @@ function startEpoch(dateStr, startTime) {
     const d = new Date(`${dateStr}T${startTime}:00+09:00`);
     return isNaN(d.getTime()) ? null : d.getTime();
   } catch { return null; }
+}
+
+/* === 戦略ランキングカード (Round 32) ===
+   「今日はどの戦い方が有利か」 を 1 枚で見せる。クリックで該当スタイルに切替 */
+function StrategyRankingCard({ ranking, currentProfile, switchProfile }) {
+  const STYLE_COLORS = {
+    steady:     { bd: "#3b82f6", bg: "rgba(59,130,246,0.15)",  fg: "#93c5fd" },
+    balanced:   { bd: "#fbbf24", bg: "rgba(251,191,36,0.15)",  fg: "#fcd34d" },
+    aggressive: { bd: "#ef4444", bg: "rgba(239,68,68,0.15)",   fg: "#fca5a5" },
+  };
+  if (!ranking?.ranking || ranking.ranking.length === 0) return null;
+
+  return (
+    <section className="card p-4" style={{ minHeight: 180 }}>
+      <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+        <div>
+          <h3 className="font-bold text-sm">📊 今日の戦略ランキング</h3>
+          <div className="text-xs opacity-75 mt-1" style={{ color: "#fde68a", fontWeight: 700 }}>
+            {ranking.summary?.text}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-2">
+        {ranking.ranking.map((r, i) => {
+          const c = STYLE_COLORS[r.style] || STYLE_COLORS.balanced;
+          const active = currentProfile === r.style;
+          return (
+            <button
+              key={r.style}
+              type="button"
+              onClick={() => switchProfile && switchProfile(r.style)}
+              style={{
+                textAlign: "left",
+                padding: "10px 12px",
+                borderRadius: 12,
+                border: `2px solid ${active ? c.bd : "transparent"}`,
+                background: active ? c.bg : "rgba(0,0,0,0.22)",
+                color: active ? c.fg : "#e7eef8",
+                cursor: "pointer",
+                transition: "all 0.12s ease",
+              }}>
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-2">
+                  <span style={{ fontSize: 18, fontWeight: 900, color: i === 0 ? "#fde68a" : "#9fb0c9" }}>
+                    {i === 0 ? "🥇" : i === 1 ? "🥈" : "🥉"}
+                  </span>
+                  <span className="font-bold text-sm">{r.label}</span>
+                  {active && <span className="pill badge-brand" style={{ fontSize: 10 }}>選択中</span>}
+                </div>
+                <span className="num text-xs opacity-75">スコア {r.score}</span>
+              </div>
+              <div className="text-xs opacity-85 mt-2" style={{ lineHeight: 1.5 }}>
+                {(r.reasons || []).join(" / ")}
+              </div>
+              <div className="text-xs opacity-70 mt-1 num">
+                買い候補 {r.summary.buy} 件 · 平均 期待回収率 {Math.round((r.summary.avgEv || 0) * 100)}%
+                {r.summary.sCount > 0 && ` · S級 ${r.summary.sCount}`}
+                {r.summary.holes > 0 && ` · 穴 ${r.summary.holes}`}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+      <div className="text-xs opacity-70 mt-2 text-center">
+        💡 タップして該当スタイルに切替できます
+      </div>
+    </section>
+  );
 }

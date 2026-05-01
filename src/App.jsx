@@ -13,6 +13,7 @@ import { loadState, saveState, clearState } from "./lib/storage.js";
 import { fetchTodaySchedule, fetchRaceProgram, fetchRaceOdds, fetchRaceResult, fetchBeforeInfo } from "./lib/api.js";
 import { evaluateRace, buildBuyRecommendation, computeOverallGrade } from "./lib/predict.js";
 import { suggestStyle } from "./components/StyleSelector.jsx";
+import { computeStrategyRanking } from "./lib/strategyRanking.js";
 import { getLearnedWeights } from "./lib/learning.js";
 import { defaultSettings, summarizeToday, perRaceCap } from "./lib/money.js";
 import { todayDate, todayKey, startEpoch } from "./lib/format.js";
@@ -99,6 +100,12 @@ export default function App() {
   const recommendations = useMemo(() => {
     return allStyleRecommendations[settings.riskProfile] || {};
   }, [allStyleRecommendations, settings.riskProfile]);
+
+  /* Round 32: 戦略ランキング (allStyleRecommendations から導出) */
+  const strategyRanking = useMemo(
+    () => computeStrategyRanking(allStyleRecommendations),
+    [allStyleRecommendations]
+  );
 
   /* recommendations の最新値を ref にも反映 (switchProfile が安全に参照できるよう) */
   useEffect(() => { recsRef.current = recommendations; }, [recommendations]);
@@ -522,6 +529,8 @@ export default function App() {
             today={today} weekly={weekly}
             refreshing={refreshing} refreshMsg={refreshMsg} lastRefreshAt={lastRefreshAt}
             onRefresh={refreshAll} onRecord={handleRecord} settings={settings}
+            switchProfile={switchProfile}
+            strategyRanking={strategyRanking}
             onPickRace={(t) => setTab(t)}
           />
         )}
