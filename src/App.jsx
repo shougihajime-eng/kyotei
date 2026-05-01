@@ -535,7 +535,13 @@ export default function App() {
     // 現在のスタイルも記録に含めて、後で集計
     const enhanced = { ...record, profile: record.profile || settings.riskProfile };
     setPredictions((prev) => ({ ...prev, [record.key]: enhanced }));
-  }, [settings.riskProfile]);
+    // Round 48: 「本当に保存されてる?」 の不安を消すための明示的フィードバック
+    if (authUser) {
+      showToast("💾 ローカル保存完了 (5 秒以内にクラウド同期します)", "ok");
+    } else {
+      showToast("💾 このブラウザに保存しました", "ok");
+    }
+  }, [settings.riskProfile, authUser, showToast]);
 
   const handleDeleteRecord = useCallback((key) => {
     setPredictions((prev) => {
@@ -543,7 +549,8 @@ export default function App() {
       delete next[key];
       return next;
     });
-  }, []);
+    showToast("🗑 記録を削除しました", "info");
+  }, [showToast]);
 
   /* === ユーザーアクション: 結論カードから「記録する」 ===
         virtualOverride を渡せば仮想/実 の選択を強制 (例: 「リアル購入として記録」 ボタンから true) */
