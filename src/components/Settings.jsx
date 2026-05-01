@@ -1,9 +1,14 @@
+import { useMemo } from "react";
 import { yen } from "../lib/format.js";
+import { getStorageStats, estimateStorageSize, getLastSaveStatus } from "../lib/storage.js";
 
 /**
- * 設定 — 資金管理 + リスク感覚 + 仮想モード切替 + リセット。
+ * 設定 — 資金管理 + リスク感覚 + 仮想モード切替 + リセット + 保存ステータス
  */
-export default function Settings({ settings, setSettings, switchVirtualMode, switchProfile, onReset }) {
+export default function Settings({ settings, setSettings, switchVirtualMode, switchProfile, onReset, predictions }) {
+  const stats = useMemo(() => getStorageStats(predictions || {}), [predictions]);
+  const sz = useMemo(() => estimateStorageSize(), [predictions]);
+  const lastSave = getLastSaveStatus();
   const isVirtual = !!settings.virtualMode;
   function setMode(virtual) {
     if (virtual === isVirtual) return;
@@ -111,6 +116,38 @@ export default function Settings({ settings, setSettings, switchVirtualMode, swi
         </div>
       </section>
 
+      {/* Round 43: 保存ステータスパネル */}
+      <section className="card p-4">
+        <h2 className="text-lg font-bold mb-3">💾 保存ステータス</h2>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-xs">
+          <Stat label="総保存件数" value={stats.total} />
+          <Stat label="今日" value={stats.today} />
+          <Stat label="直近 7 日" value={stats.last7days} />
+          <Stat label="直近 30 日" value={stats.last30days} />
+          <Stat label="🧪 エア" value={stats.air} color="#67e8f9" />
+          <Stat label="💰 リアル" value={stats.real} color="#fcd34d" />
+          <Stat label="✏️ 手動記録 (永続)" value={stats.manual} />
+          <Stat label="✅ 確定済" value={stats.settled} />
+          <Stat label="⏳ 未確定" value={stats.pending} />
+        </div>
+        <div className="text-xs opacity-70 mt-3" style={{ lineHeight: 1.55 }}>
+          📅 最古: <b>{stats.oldestDate || "—"}</b> / 最新: <b>{stats.newestDate || "—"}</b>
+          {sz && <> / ストレージ使用: <b>{sz.kb} KB</b></>}
+        </div>
+        <div className="text-xs mt-2" style={{ lineHeight: 1.55, color: lastSave.ok ? "#a7f3d0" : "#fecaca" }}>
+          {lastSave.ok
+            ? `✅ 保存 OK${lastSave.lastSavedAt ? ` (最終 ${new Date(lastSave.lastSavedAt).toLocaleTimeString("ja-JP")})` : ""}`
+            : `❌ 保存失敗: ${lastSave.error || "不明なエラー"}`}
+        </div>
+        <div className="text-xs opacity-70 mt-3 p-2 rounded" style={{ background: "rgba(0,0,0,0.18)", lineHeight: 1.55 }}>
+          📦 <b>保存方針</b>:<br/>
+          ・直近 30 日の AI 自動記録を確実に保持<br/>
+          ・90 日以上前の AI 記録は自動整理 (GC)<br/>
+          ・<b>手動記録は永続保持</b> (削除されません)<br/>
+          ・エア / リアル / スタイル別 を完全分離
+        </div>
+      </section>
+
       <section className="card p-4">
         <h3 className="text-sm font-bold mb-2">リセット</h3>
         <div className="text-xs opacity-70 mb-2">壊れた状態をクリアして、初期化します。</div>
@@ -118,6 +155,15 @@ export default function Settings({ settings, setSettings, switchVirtualMode, swi
           🗑 全データを消去
         </button>
       </section>
+    </div>
+  );
+}
+
+function Stat({ label, value, color }) {
+  return (
+    <div className="p-2 rounded" style={{ background: "rgba(0,0,0,0.22)" }}>
+      <div className="opacity-70">{label}</div>
+      <div className="num font-bold mt-1" style={{ fontSize: 18, color: color || "#e7eef8" }}>{value}</div>
     </div>
   );
 }

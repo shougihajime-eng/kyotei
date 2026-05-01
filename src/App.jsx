@@ -9,7 +9,7 @@ import LossAnalysis from "./components/LossAnalysis.jsx";
 import Settings from "./components/Settings.jsx";
 import Onboarding from "./components/Onboarding.jsx";
 
-import { loadState, saveState, clearState } from "./lib/storage.js";
+import { loadState, saveState, clearState, setStorageStatusListener, gcOldPredictions, getStorageStats, estimateStorageSize } from "./lib/storage.js";
 import { fetchTodaySchedule, fetchRaceProgram, fetchRaceOdds, fetchRaceResult, fetchBeforeInfo } from "./lib/api.js";
 import { evaluateRace, buildBuyRecommendation, computeOverallGrade } from "./lib/predict.js";
 import { suggestStyle } from "./components/StyleSelector.jsx";
@@ -25,7 +25,21 @@ export default function App() {
   /* === Persistent state === */
   const initial = loadState() || {};
   const [settings, setSettings] = useState({ ...defaultSettings(), ...(initial.settings || {}) });
-  const [predictions, setPredictions] = useState(initial.predictions || {});
+  // Round 43: 起動時に 90 日以上前の AI スナップショットを GC (手動記録は永続)
+  const initialPredictions = useMemo(() => {
+    const raw = initial.predictions || {};
+    const { next, removed } = gcOldPredictions(raw);
+    if (removed > 0) console.log(`[gc] ${removed} 件の古い予測 (90 日超) を整理しました`);
+    return next;
+  }, []); // 起動時 1 回のみ
+  const [predictions, setPredictions] = useState(initialPredictions);
+
+  /* === Round 43: 保存ステータス (UI バナー用) === */
+  const [storageStatus, setStorageStatus] = useState({ ok: true, lastSavedAt: null, error: null });
+  useEffect(() => {
+    setStorageStatusListener(setStorageStatus);
+    return () => setStorageStatusListener(null);
+  }, []);
 
   /* === Volatile state === */
   const [tab, setTab] = useState("home");
@@ -517,6 +531,16 @@ export default function App() {
         nextRefreshAt={nextRefreshAt}
         savedCount={Object.keys(predictions || {}).length}
         suggestedStyle={suggestStyle(evals, predictions)} />
+      {/* Round 43: 保存失敗バナー (重要 — ユーザーがすぐ気づくべき情報) */}
+      {!storageStatus.ok && storageStatus.error && (
+        <div className="alert-error mx-4 mt-2 text-center" style={{ fontWeight: 700 }}>
+          ⚠️ 保存に失敗しています — {storageStatus.error}
+          <div className="text-xs opacity-80 mt-1" style={{ fontWeight: 500 }}>
+            ブラウザの設定でストレージが無効化されているか、容量上限の可能性があります。
+          </div>
+        </div>
+      )}
+
       {/* トースト: スタイル切替 / 操作フィードバック (iOS notch 対応) */}
       {toast && (
         <div style={{
@@ -577,6 +601,7 @@ export default function App() {
           <Settings settings={settings} setSettings={setSettings}
             switchVirtualMode={switchVirtualMode}
             switchProfile={switchProfile}
+            predictions={predictions}
             onReset={handleReset} />
         )}
       </main>
