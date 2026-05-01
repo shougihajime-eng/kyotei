@@ -825,16 +825,20 @@ export function buildBuyRecommendation(ev, riskProfile, perRaceCap) {
   const isRough = ev.development?.scenario === "荒れ" || ev.development?.scenario === "混戦";
   const inUnstable = ev.inTrust?.level && (ev.inTrust.level === "荒れ注意" || ev.inTrust.level === "イン崩壊警戒");
   // 「荒れる根拠」 を点数化 (2 点以上で広げる対象)
+  // 注: 1号艇逃げ濃厚 と判定されたレースでは「会場のまくり傾向」 は弱い根拠と見なし無視する
+  //     (inProb の方がレース個別情報として優先度高い)
   let roughEvidence = 0;
   if (isRough) roughEvidence += 1;
   if (inUnstable) roughEvidence += 2;
   if ((ev.race?.wind ?? 0) >= 6) roughEvidence += 1;
   if ((ev.race?.wave ?? 0) >= 8) roughEvidence += 1;
   if (ev.windWave?.roughLikelihood >= 60) roughEvidence += 1;
-  // 会場特性 (荒れやすい場)
-  if (ev.venueProfile?.makuri >= 3) roughEvidence += 1;
-  // 本命レース判定: 1号艇 ≥55% かつ 荒れ根拠 0
-  const isHonmei = inDominant && roughEvidence === 0;
+  // 会場特性 (荒れやすい場) — ただしイン逃げ濃厚なら無視
+  if (ev.venueProfile?.makuri >= 3 && ev.inTrust?.level !== "イン逃げ濃厚") roughEvidence += 1;
+  // 本命レース判定:
+  //   ・「イン逃げ濃厚」 (inProb 高 + 部品交換なし + チルト OK) なら強制 honmei
+  //   ・もしくは 1号艇 ≥50% かつ 荒れ根拠 0
+  const isHonmei = (ev.inTrust?.level === "イン逃げ濃厚") || (inDominant && roughEvidence === 0);
 
   // 上限 (本命レースは厳しく絞る)
   const upperByProfile = { steady: 3, balanced: 6, aggressive: 12 };
