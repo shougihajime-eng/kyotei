@@ -5,7 +5,7 @@ import { getStorageStats, estimateStorageSize, getLastSaveStatus } from "../lib/
 /**
  * 設定 — 資金管理 + リスク感覚 + 仮想モード切替 + リセット + 保存ステータス
  */
-export default function Settings({ settings, setSettings, switchVirtualMode, switchProfile, onReset, predictions }) {
+export default function Settings({ settings, setSettings, switchVirtualMode, switchProfile, onReset, predictions, authUser, onOpenLogin, onLogout, onManualSync, syncStatus }) {
   const stats = useMemo(() => getStorageStats(predictions || {}), [predictions]);
   const sz = useMemo(() => estimateStorageSize(), [predictions]);
   const lastSave = getLastSaveStatus();
@@ -114,6 +114,63 @@ export default function Settings({ settings, setSettings, switchVirtualMode, swi
         <div className="text-xs opacity-70 mt-3">
           ※ 切替は localStorage に保存され、リロードしても維持されます。
         </div>
+      </section>
+
+      {/* Round 45: クラウド同期パネル */}
+      <section className="card p-4">
+        <h2 className="text-lg font-bold mb-3">☁️ クラウド同期 (任意)</h2>
+        {authUser ? (
+          <div>
+            <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+              <div className="flex items-center gap-2">
+                <span style={{ fontSize: 22 }}>👤</span>
+                <div>
+                  <div className="font-bold text-sm">{authUser.username}</div>
+                  <div className="text-xs opacity-70">ログイン中 (個人情報なし)</div>
+                </div>
+              </div>
+              <button onClick={onLogout} className="btn btn-ghost text-xs" style={{ minHeight: 36 }}>
+                🚪 ログアウト
+              </button>
+            </div>
+            <div className="alert-ok text-xs mb-3" style={{ lineHeight: 1.55 }}>
+              ✅ 別端末・別ブラウザでも同じ履歴が見られます<br/>
+              5 秒ごとに変更を自動同期します (debounced)
+            </div>
+            <button onClick={onManualSync} className="btn btn-primary w-full text-xs"
+              disabled={syncStatus?.state === "syncing"}
+              style={{ minHeight: 44 }}>
+              {syncStatus?.state === "syncing" ? "🔄 同期中…" : "🔄 今すぐ全件同期"}
+            </button>
+            <div className="text-xs mt-2" style={{ lineHeight: 1.55 }}>
+              {syncStatus?.state === "synced" && (
+                <span style={{ color: "#a7f3d0" }}>
+                  ✅ 同期完了 ({syncStatus.lastAt ? new Date(syncStatus.lastAt).toLocaleTimeString("ja-JP") : "—"})
+                  {syncStatus.stats && (
+                    <> / pulled {syncStatus.stats.pulled || 0} pushed {syncStatus.stats.pushed || 0}</>
+                  )}
+                </span>
+              )}
+              {syncStatus?.state === "syncing" && <span style={{ color: "#bae6fd" }}>🔄 同期中…</span>}
+              {syncStatus?.state === "error" && (
+                <span style={{ color: "#fecaca" }}>❌ 同期失敗: {syncStatus.error}</span>
+              )}
+              {syncStatus?.state === "idle" && <span className="opacity-60">待機中</span>}
+            </div>
+          </div>
+        ) : (
+          <div>
+            <div className="alert-info text-xs mb-3" style={{ lineHeight: 1.55 }}>
+              💡 ログインすると <b>PC / iPhone / 別ブラウザ</b> で同じ履歴を共有できます。<br/>
+              <b>個人情報は不要</b> (ユーザー名 + パスワードのみ)。<br/>
+              ログインしなくても、これまで通り使えます。
+            </div>
+            <button onClick={onOpenLogin} className="btn btn-primary w-full"
+              style={{ minHeight: 48 }}>
+              🔑 ログイン / 新規登録
+            </button>
+          </div>
+        )}
       </section>
 
       {/* Round 43-44: 保存ステータスパネル (正確な表記) */}

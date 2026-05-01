@@ -4,13 +4,16 @@
   "private": true,
   "type": "module",
   "description": "Kyotei (boat-race) EV assistant — buy or skip, in 3 seconds.",
-  "engines": { "node": ">=18" },
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.105.1",
     "cheerio": "^1.0.0-rc.12",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

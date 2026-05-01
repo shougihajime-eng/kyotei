@@ -10,6 +10,10 @@ import Settings from "./components/Settings.jsx";
 import Onboarding from "./components/Onboarding.jsx";
 
 import { loadState, saveState, clearState, setStorageStatusListener, gcOldPredictions, getStorageStats, estimateStorageSize } from "./lib/storage.js";
+import { cloudEnabled } from "./lib/supabaseClient.js";
+import { getCurrentUser, onAuthChange, signOut as authSignOut } from "./lib/auth.js";
+import { fullSync, lightSync } from "./lib/cloudSync.js";
+import LoginModal from "./components/LoginModal.jsx";
 import { fetchTodaySchedule, fetchRaceProgram, fetchRaceOdds, fetchRaceResult, fetchBeforeInfo } from "./lib/api.js";
 import { evaluateRace, buildBuyRecommendation, computeOverallGrade } from "./lib/predict.js";
 import { suggestStyle } from "./components/StyleSelector.jsx";
@@ -40,6 +44,67 @@ export default function App() {
     setStorageStatusListener(setStorageStatus);
     return () => setStorageStatusListener(null);
   }, []);
+
+  /* === Round 45: Auth + クラウド同期 === */
+  const [authUser, setAuthUser] = useState(null);
+  const [showLogin, setShowLogin] = useState(false);
+  const [syncStatus, setSyncStatus] = useState({ state: "idle", lastAt: null, error: null, stats: null });
+
+  // セッション復元 + 監視
+  useEffect(() => {
+    if (!cloudEnabled()) return;
+    getCurrentUser().then((u) => { if (u) setAuthUser(u); });
+    const unsub = onAuthChange((u) => setAuthUser(u));
+    return () => { try { unsub && unsub(); } catch {} };
+  }, []);
+
+  // ログイン直後の full sync (一度だけ)
+  const syncedForUserRef = useRef(null);
+  useEffect(() => {
+    if (!authUser) { syncedForUserRef.current = null; return; }
+    if (syncedForUserRef.current === authUser.id) return;
+    syncedForUserRef.current = authUser.id;
+    setSyncStatus({ state: "syncing", lastAt: null, error: null, stats: null });
+    fullSync(authUser.id, predictions).then((res) => {
+      if (res.ok) {
+        setPredictions(res.merged);
+        setSyncStatus({ state: "synced", lastAt: Date.now(), error: null, stats: res.stats });
+      } else {
+        setSyncStatus({ state: "error", lastAt: Date.now(), error: res.error, stats: null });
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authUser]);
+
+  // 予測変化時の light sync (debounced 5 秒)
+  const lightSyncTimerRef = useRef(null);
+  useEffect(() => {
+    if (!authUser) return;
+    if (lightSyncTimerRef.current) clearTimeout(lightSyncTimerRef.current);
+    lightSyncTimerRef.current = setTimeout(() => {
+      setSyncStatus((s) => ({ ...s, state: "syncing" }));
+      lightSync(authUser.id, predictions).then((res) => {
+        if (res.ok) {
+          setSyncStatus({ state: "synced", lastAt: Date.now(), error: null, stats: { pushed: res.pushed } });
+        } else {
+          setSyncStatus({ state: "error", lastAt: Date.now(), error: res.error, stats: null });
+        }
+      });
+    }, 5000);
+    return () => clearTimeout(lightSyncTimerRef.current);
+  }, [predictions, authUser]);
+
+  const handleLogin = useCallback((user) => {
+    setAuthUser(user);
+    showToast(`👋 ${user.username} でログイン — クラウド同期を開始`, "ok");
+  }, [showToast]);
+
+  const handleLogout = useCallback(async () => {
+    await authSignOut();
+    setAuthUser(null);
+    setSyncStatus({ state: "idle", lastAt: null, error: null, stats: null });
+    showToast("ログアウトしました — ローカル保存は継続", "info");
+  }, [showToast]);
 
   /* === Volatile state === */
   const [tab, setTab] = useState("home");
@@ -530,7 +595,12 @@ export default function App() {
         refreshing={refreshing} onRefresh={refreshAll} lastRefreshAt={lastRefreshAt}
         nextRefreshAt={nextRefreshAt}
         savedCount={Object.keys(predictions || {}).length}
+        authUser={authUser} onOpenLogin={() => setShowLogin(true)} onLogout={handleLogout}
+        syncStatus={syncStatus}
         suggestedStyle={suggestStyle(evals, predictions)} />
+
+      {/* ログインモーダル */}
+      <LoginModal open={showLogin} onClose={() => setShowLogin(false)} onLogin={handleLogin} />
       {/* Round 43: 保存失敗バナー (重要 — ユーザーがすぐ気づくべき情報) */}
       {!storageStatus.ok && storageStatus.error && (
         <div className="alert-error mx-4 mt-2 text-center" style={{ fontWeight: 700 }}>
@@ -602,6 +672,21 @@ export default function App() {
             switchVirtualMode={switchVirtualMode}
             switchProfile={switchProfile}
             predictions={predictions}
+            authUser={authUser} onOpenLogin={() => setShowLogin(true)} onLogout={handleLogout}
+            syncStatus={syncStatus}
+            onManualSync={async () => {
+              if (!authUser) return;
+              setSyncStatus({ state: "syncing", lastAt: null, error: null, stats: null });
+              const res = await fullSync(authUser.id, predictions);
+              if (res.ok) {
+                setPredictions(res.merged);
+                setSyncStatus({ state: "synced", lastAt: Date.now(), error: null, stats: res.stats });
+                showToast("✅ クラウド同期 完了", "ok");
+              } else {
+                setSyncStatus({ state: "error", lastAt: Date.now(), error: res.error, stats: null });
+                showToast(`❌ 同期失敗: ${res.error}`, "neg");
+              }
+            }}
             onReset={handleReset} />
         )}
       </main>

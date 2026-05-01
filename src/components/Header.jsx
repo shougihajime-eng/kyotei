@@ -19,7 +19,7 @@ const PROFILE_INFO = {
 };
 
 export default memo(HeaderImpl);
-function HeaderImpl({ tab, setTab, today, settings, setSettings, switchProfile, switchVirtualMode, refreshing, onRefresh, lastRefreshAt, nextRefreshAt, savedCount, suggestedStyle }) {
+function HeaderImpl({ tab, setTab, today, settings, setSettings, switchProfile, switchVirtualMode, refreshing, onRefresh, lastRefreshAt, nextRefreshAt, savedCount, authUser, onOpenLogin, onLogout, syncStatus, suggestedStyle }) {
   const air = today?.air || { stake: 0, pnl: 0 };
   const real = today?.real || { stake: 0, pnl: 0 };
   const realLabel = real.stake === 0 ? "未入力" : (real.pnl >= 0 ? "+" + yen(real.pnl) : "−" + yen(Math.abs(real.pnl)));
@@ -101,10 +101,44 @@ function HeaderImpl({ tab, setTab, today, settings, setSettings, switchProfile, 
 
         {/* 更新ボタン (右上固定 / 大きめ) */}
         {settings.onboardingDone && (
-          <button onClick={handleRefresh} disabled={refreshing} className="btn btn-primary"
-            style={{ minHeight: 44, minWidth: 110, fontSize: 14 }}>
-            {refreshing ? "🔄 更新中…" : "🔄 更新"}
-          </button>
+          <div className="flex items-center gap-2">
+            {/* Round 45: ログインボタン / ユーザー表示 */}
+            {authUser ? (
+              <button onClick={onLogout}
+                title={`${authUser.username} (タップでログアウト)`}
+                style={{
+                  minHeight: 44, padding: "6px 10px", borderRadius: 10,
+                  border: "1px solid rgba(16,185,129,0.5)",
+                  background: "rgba(16,185,129,0.15)",
+                  color: "#a7f3d0", fontSize: 12, cursor: "pointer",
+                  fontWeight: 700, display: "flex", flexDirection: "column", alignItems: "center", lineHeight: 1.1,
+                }}>
+                <span>👤 {authUser.username}</span>
+                <span style={{ fontSize: 9, opacity: 0.85 }}>
+                  {syncStatus?.state === "syncing" ? "🔄 同期中…"
+                    : syncStatus?.state === "error" ? "⚠️ 同期失敗"
+                    : syncStatus?.state === "synced" ? "✅ 同期済"
+                    : "ログイン中"}
+                </span>
+              </button>
+            ) : (
+              <button onClick={onOpenLogin}
+                style={{
+                  minHeight: 44, padding: "6px 10px", borderRadius: 10,
+                  border: "1px solid rgba(56,189,248,0.5)",
+                  background: "rgba(56,189,248,0.10)",
+                  color: "#bae6fd", fontSize: 12, cursor: "pointer",
+                  fontWeight: 700, display: "flex", flexDirection: "column", alignItems: "center", lineHeight: 1.1,
+                }}>
+                <span>🔑 ログイン</span>
+                <span style={{ fontSize: 9, opacity: 0.85 }}>任意 (端末同期)</span>
+              </button>
+            )}
+            <button onClick={handleRefresh} disabled={refreshing} className="btn btn-primary"
+              style={{ minHeight: 44, minWidth: 100, fontSize: 14 }}>
+              {refreshing ? "🔄 更新中…" : "🔄 更新"}
+            </button>
+          </div>
         )}
       </div>
 
