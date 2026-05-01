@@ -784,12 +784,53 @@ export const POINT_CAP_BY_PROFILE = {
   aggressive: 6,
 };
 
-/* スタイル別 必要根拠数 (本命艇の有利な因子の数 — 1〜6) */
+/* スタイル別 必要根拠数 (Round 37 で更に引き上げ — 厳選見送り強化) */
 export const MIN_EVIDENCE_BY_PROFILE = {
-  steady:     3,  // 本命型: 強根拠 3 つ以上
-  balanced:   2,  // バランス型: 2 つ以上
-  aggressive: 2,  // 穴狙い型: 2 つ以上 (穴ヘッドは別途厳格な根拠チェック)
+  steady:     4,  // 本命型: 強根拠 4 つ以上 (1コース有利+モーター+展示+ST 等)
+  balanced:   3,  // バランス型: 3 つ以上
+  aggressive: 3,  // 穴狙い型: 3 つ以上 (穴ヘッドは別途厳格)
 };
+
+/* スタイル別 × 券種別 の本命買い目 最低的中確率 (Round 37b)
+   2連単/2連複 は本来 prob 高め、3連単は構造的に低いので、券種ごとに下限を分ける。 */
+export const MIN_MAIN_PROB_BY_PROFILE_KIND = {
+  steady:     { "2連単": 0.10, "2連複": 0.15, "3連単": 0.020, "3連複": 0.030 },
+  balanced:   { "2連単": 0.05, "2連複": 0.08, "3連単": 0.010, "3連複": 0.015 },
+  aggressive: { "2連単": 0.02, "2連複": 0.04, "3連単": 0.005, "3連複": 0.008 },
+};
+function getMinMainProb(profile, kind) {
+  return MIN_MAIN_PROB_BY_PROFILE_KIND[profile]?.[kind] ?? 0.01;
+}
+
+/* スタイル別 自信スコア下限 (0-100, Round 37 新設) */
+export const MIN_CONFIDENCE_BY_PROFILE = {
+  steady:     75,
+  balanced:   65,
+  aggressive: 60,
+};
+
+/* === 自信スコア (0-100) — 買い判断の総合信頼度 ===
+   高いほど「自信あり」。 全要素が揃っていなければ低いまま。 */
+function computeConfidence(ev, mainItem, mainScore, evidenceCount, riskProfile) {
+  let score = 0;
+  // (1) データ品質 (最大 25 点)
+  if (!ev.apiOddsStale) score += 15;
+  if (ev.probConsistency && Math.abs(ev.probConsistency.oneFirstSum - 1) < 0.05) score += 10;
+  // (2) EV 強さ (最大 25 点)
+  const evMin = EV_MIN_BY_PROFILE[riskProfile] || 1.20;
+  const evGap = mainItem.ev - evMin;
+  score += Math.max(0, Math.min(25, Math.round(evGap * 100)));
+  // (3) 根拠数 (最大 20 点)
+  score += Math.min(20, evidenceCount * 4);
+  // (4) 的中確率の高さ (最大 15 点)
+  score += Math.min(15, Math.round(mainItem.prob * 50));
+  // (5) 危険要素なし (最大 10 点)
+  if (!ev.accident?.isAccident) score += 10;
+  else score -= Math.min(20, ev.accident.severity || 0);
+  // (6) 1号艇信頼度 (最大 5 点) — steady のみ
+  if (riskProfile === "steady" && ev.inTrust?.level === "イン逃げ濃厚") score += 5;
+  return Math.max(0, Math.min(100, score));
+}
 
 /* 本命艇の根拠カウント:
  *   ・1コース有利度 (factors.inAdvantage >= 0.6)
@@ -1122,7 +1163,7 @@ export function buildBuyRecommendation(ev, riskProfile, perRaceCap) {
   items.length = 0;
   items.push(...profitable);
 
-  /* === Round 36: 7 条件チェック ===
+  /* === Round 36-37: 9 条件チェック ===
      EV だけで買わない。 全条件を満たしたときだけ「買い」 とする。 */
   const checks = [];
   // 1. データが最新 (apiOddsStale でない)
@@ -1136,36 +1177,45 @@ export function buildBuyRecommendation(ev, riskProfile, perRaceCap) {
   // 3. 確率整合性
   const probOk = !ev.probConsistency || Math.abs(ev.probConsistency.oneFirstSum - 1) < 0.05;
   checks.push({ ok: probOk, label: "確率整合性 OK", detail: probOk ? "1着確率合計 ≒ 100%" : `1着確率合計 ${(ev.probConsistency.oneFirstSum * 100).toFixed(0)}%` });
-  // 4. 的中時に利益が出る (worst-case roi >= 1.05 暫定 — 本格判定は後段)
-  // ここでは main の prob×odds が evMin 以上なら OK とする
+  // 4. 的中時に利益が出る (期待回収率 >= EV下限)
   const profitOk = main.ev >= (EV_MIN_BY_PROFILE[riskProfile] || 1.20);
-  checks.push({ ok: profitOk, label: "的中時に利益が出る", detail: `期待回収率 ${Math.round(main.ev * 100)}%` });
-  // 5. 根拠が複数ある
+  checks.push({ ok: profitOk, label: "期待回収率 OK", detail: `${Math.round(main.ev * 100)}% (下限 ${Math.round((EV_MIN_BY_PROFILE[riskProfile] || 1.20) * 100)}%)` });
+  // 5. 根拠が複数ある (Round 37: 引き上げ)
   const mainBoatNoForCheck = parseInt(main.combo[0]);
   const mainScoreForCheck = ev.scores.find((s) => s.boatNo === mainBoatNoForCheck);
   const evidenceCount = countMainEvidence(mainScoreForCheck);
-  const minEvidence = MIN_EVIDENCE_BY_PROFILE[riskProfile] || 2;
+  const minEvidence = MIN_EVIDENCE_BY_PROFILE[riskProfile] || 3;
   const evidenceOk = evidenceCount >= minEvidence;
-  checks.push({ ok: evidenceOk, label: `根拠 ${minEvidence} つ以上`, detail: `現在 ${evidenceCount} つ` });
-  // 6. 買い目が広がりすぎない (上限の 2 倍を超えない)
+  checks.push({ ok: evidenceOk, label: `根拠 ${minEvidence} つ以上`, detail: `現在 ${evidenceCount} / 6 つ` });
+  // 6. 買い目が広がりすぎない
   const widthOk = items.length <= (POINT_CAP_BY_PROFILE[riskProfile] || 4);
   checks.push({ ok: widthOk, label: "買い目が広がりすぎない", detail: `${items.length} 点` });
-  // 7. 危険要素が少ない (severity < 50 or aggressive)
+  // 7. 危険要素が少ない
   const dangerOk = !ev.accident?.isAccident || riskProfile === "aggressive";
   checks.push({ ok: dangerOk, label: "危険要素が少ない", detail: ev.accident?.isAccident ? `severity ${ev.accident.severity}` : "OK" });
+  // 8. (Round 37) 本命買い目の的中確率が「宝くじ過ぎない」 か (券種別)
+  const minMainProb = getMinMainProb(riskProfile, main.kind);
+  const probHighEnoughOk = main.prob >= minMainProb;
+  checks.push({ ok: probHighEnoughOk, label: "的中確率が宝くじ過ぎない", detail: `${(main.prob * 100).toFixed(1)}% (${main.kind} 下限 ${(minMainProb * 100).toFixed(1)}%)` });
+  // 9. (Round 37) 自信スコア
+  const confidence = computeConfidence(ev, main, mainScoreForCheck, evidenceCount, riskProfile);
+  const minConf = MIN_CONFIDENCE_BY_PROFILE[riskProfile] || 65;
+  const confOk = confidence >= minConf;
+  checks.push({ ok: confOk, label: "自信スコア OK", detail: `${confidence}/100 (下限 ${minConf})` });
 
   const failed = checks.filter((c) => !c.ok);
   if (failed.length > 0) {
     return {
       decision: "skip",
-      reason: `7条件中 ${failed.length} 件未達 — 厳選見送り`,
+      reason: `${checks.length} 条件中 ${failed.length} 件未達 — 厳選見送り`,
       reasons: [
         ...failed.map((c) => `❌ ${c.label}: ${c.detail}`),
         `✅ 通過: ${checks.length - failed.length} / ${checks.length}`,
-        "全 7 条件を満たすレースだけ買います",
+        "全条件を満たさない限り買い判定を出しません",
       ],
       items: [], total: 0,
       checks,
+      confidence,
     };
   }
 
@@ -1235,9 +1285,10 @@ export function buildBuyRecommendation(ev, riskProfile, perRaceCap) {
     expectedPayout: wc.expectedPayout,
     minProfitGuard: minWorstRoi,
     allocationStyle,
-    /* Round 36: 7 条件チェック (全 OK だから買い) */
+    /* Round 36-37: 9 条件チェック (全 OK だから買い) */
     checks,
     evidenceCount,
+    confidence,
   };
 }
 

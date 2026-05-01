@@ -86,11 +86,18 @@ function BuyDecisionCard({ race, recommendation, onRecord, virtualMode }) {
         💡 {recommendation.reason}
       </div>
 
-      {/* Round 36: 7 条件チェック合格表示 */}
+      {/* Round 36-37: 9 条件チェック合格表示 + 自信スコア */}
       {Array.isArray(recommendation.checks) && recommendation.checks.length > 0 && (
         <div className="mt-3 p-2 rounded text-xs" style={{ background: "rgba(16,185,129,0.10)", border: "1px solid rgba(16,185,129,0.4)" }}>
-          <div className="font-bold mb-1" style={{ color: "#a7f3d0" }}>
-            ✅ 厳選 7 条件 すべて通過
+          <div className="flex items-center justify-between mb-1">
+            <div className="font-bold" style={{ color: "#a7f3d0" }}>
+              ✅ 厳選 {recommendation.checks.length} 条件 すべて通過
+            </div>
+            {typeof recommendation.confidence === "number" && (
+              <div className="font-bold" style={{ color: "#fde68a" }}>
+                自信 {recommendation.confidence}/100
+              </div>
+            )}
           </div>
           <div className="grid grid-cols-1 gap-0.5" style={{ lineHeight: 1.5 }}>
             {recommendation.checks.map((c, i) => (
