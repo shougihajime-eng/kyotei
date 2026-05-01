@@ -60,6 +60,10 @@
 }
 
 /* === ベース === */
+/* Round 42: iOS Safari の 100vh バグ対応 — dvh (dynamic viewport height) を使う
+   100vh はアドレスバー分含むため画面が切れる / 100dvh は実際の表示領域 */
+.min-h-screen { min-height: 100vh; min-height: 100dvh; }
+
 html, body {
   background:
     radial-gradient(1200px 600px at 80% -100px, rgba(56,189,248,0.08), transparent 60%),
@@ -290,9 +294,9 @@ body {
   border-radius: 8px;
 }
 
-/* 全体: スクロールスムーズ */
-html { scroll-behavior: smooth; }
-body { -webkit-overflow-scrolling: touch; }
+/* 全体: スクロールスムーズ + pull-to-refresh 抑制 */
+html { scroll-behavior: smooth; overscroll-behavior-y: none; }
+body { -webkit-overflow-scrolling: touch; overscroll-behavior-y: none; }
 
 /* React のリストレンダリングで安定する prop */
 * { -webkit-touch-callout: none; }
