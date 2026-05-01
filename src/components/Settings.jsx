@@ -3,12 +3,17 @@ import { yen } from "../lib/format.js";
 /**
  * 設定 — 資金管理 + リスク感覚 + 仮想モード切替 + リセット。
  */
-export default function Settings({ settings, setSettings, switchVirtualMode, onReset }) {
+export default function Settings({ settings, setSettings, switchVirtualMode, switchProfile, onReset }) {
   const isVirtual = !!settings.virtualMode;
   function setMode(virtual) {
     if (virtual === isVirtual) return;
     if (switchVirtualMode) switchVirtualMode(virtual);
     else setSettings((prev) => ({ ...prev, virtualMode: virtual }));
+  }
+  function handleProfileChange(p) {
+    if (settings.riskProfile === p) return;
+    if (switchProfile) switchProfile(p);
+    else setSettings((prev) => ({ ...prev, riskProfile: p }));
   }
   function field(key, label) {
     return (
@@ -46,8 +51,9 @@ export default function Settings({ settings, setSettings, switchVirtualMode, onR
               { k: "aggressive", icon: "🎯", title: "攻め", desc: "3連単 / 高配当狙い" },
             ].map((o) => (
               <button key={o.k} type="button"
+                style={{ minHeight: 88, cursor: "pointer", transition: "all 0.12s" }}
                 className={"p-2 rounded-lg border-2 text-left " + (settings.riskProfile === o.k ? "border-cyan-400 bg-[#0e2440]" : "border-[#243154] bg-[#0f1830]")}
-                onClick={() => setSettings({ ...settings, riskProfile: o.k })}>
+                onClick={() => handleProfileChange(o.k)}>
                 <div style={{ fontSize: 22 }}>{o.icon}</div>
                 <div className="font-bold text-sm">{o.title}</div>
                 <div className="text-xs opacity-70">{o.desc}</div>

@@ -517,14 +517,15 @@ export default function App() {
         nextRefreshAt={nextRefreshAt}
         savedCount={Object.keys(predictions || {}).length}
         suggestedStyle={suggestStyle(evals, predictions)} />
-      {/* トースト: スタイル切替 / 操作フィードバック */}
+      {/* トースト: スタイル切替 / 操作フィードバック (iOS notch 対応) */}
       {toast && (
         <div style={{
-          position: "fixed", top: 12, left: "50%", transform: "translateX(-50%)",
+          position: "fixed", top: "calc(12px + env(safe-area-inset-top, 0px))", left: "50%", transform: "translateX(-50%)",
           zIndex: 100, padding: "10px 18px", borderRadius: 999,
           background: toast.kind === "ok" ? "#10b981" : toast.kind === "neg" ? "#ef4444" : "#1d4ed8",
           color: "#fff", fontWeight: 800, fontSize: 14, boxShadow: "0 4px 14px rgba(0,0,0,0.3)",
           animation: "toast-slide 0.2s ease-out",
+          maxWidth: "calc(100vw - 24px)", textAlign: "center",
         }}>
           {toast.msg}
         </div>
@@ -574,7 +575,9 @@ export default function App() {
         )}
         {tab === "settings" && (
           <Settings settings={settings} setSettings={setSettings}
-            switchVirtualMode={switchVirtualMode} onReset={handleReset} />
+            switchVirtualMode={switchVirtualMode}
+            switchProfile={switchProfile}
+            onReset={handleReset} />
         )}
       </main>
     </div>

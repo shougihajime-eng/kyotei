@@ -234,6 +234,13 @@ html, body {
   -webkit-backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--border-soft);
   box-shadow: 0 6px 24px rgba(0,0,0,0.25);
+  /* iOS notch 対応 (safe-area) */
+  padding-top: env(safe-area-inset-top, 0);
+}
+
+/* body もセーフエリア対応 */
+body {
+  padding-bottom: env(safe-area-inset-bottom, 0);
 }
 
 /* ブランドロゴ周り */

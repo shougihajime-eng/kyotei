@@ -38,11 +38,11 @@ export default function Verify({ predictions, onManualBet, onDeleteRecord, curre
 
   const cutoff = useMemo(() => {
     const today = new Date();
-    if (periodFilter === "today") return today.toISOString().slice(0, 10);
-    if (periodFilter === "week")  return new Date(today.getTime() - 6 * 86400000).toISOString().slice(0, 10);
-    if (periodFilter === "month") return new Date(today.getTime() - 29 * 86400000).toISOString().slice(0, 10);
+    if (periodDeferred === "today") return today.toISOString().slice(0, 10);
+    if (periodDeferred === "week")  return new Date(today.getTime() - 6 * 86400000).toISOString().slice(0, 10);
+    if (periodDeferred === "month") return new Date(today.getTime() - 29 * 86400000).toISOString().slice(0, 10);
     return "0000-00-00";
-  }, [periodFilter]);
+  }, [periodDeferred]);
 
   const filtered = useMemo(() => {
     return all.filter((p) => (p.date || "0000-00-00") >= cutoff).filter((p) => {
