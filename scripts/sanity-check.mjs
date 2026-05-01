@@ -136,7 +136,9 @@ for (const sc of scenarios) {
   const boats = makeBoats(sc.profile);
   const probs = buildProbsForOdds(sc.profile);
   const apiOdds = sc.noOdds ? null : buildOdds(probs);
-  const race = { id: `t_${sc.name}`, jcd: sc.jcd, venue: sc.venue, raceNo: 1, date: "2026-05-01",
+  // 締切前 (closedNow=false) になるよう、明日の日付を使う
+  const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+  const race = { id: `t_${sc.name}`, jcd: sc.jcd, venue: sc.venue, raceNo: 1, date: tomorrow,
     startTime: sc.startTime, wind: sc.wind, wave: sc.wave, windDir: sc.windDir, weather: "晴",
     boats, apiOdds: apiOdds || {} };
   const ev = evaluateRace(race, [], null);

@@ -26,6 +26,10 @@ function QuickJudgeCardImpl({ headlineRace, recommendation, today, profile }) {
     mode = "buy"; color = "#34d399"; headline = "🟢 買い";
   } else if (dec === "no-odds") {
     mode = "no-odds"; color = "#f59e0b"; headline = "⚠️ オッズ取得不可";
+  } else if (dec === "data-checking") {
+    mode = "checking"; color = "#3b82f6"; headline = "🔄 整合性チェック中";
+  } else if (dec === "closed") {
+    mode = "closed"; color = "#6b7280"; headline = "🔒 締切済み";
   } else {
     mode = "skip"; color = "#f87171"; headline = "🔴 見送り";
   }

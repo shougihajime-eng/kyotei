@@ -615,6 +615,20 @@ function _evaluateInner(race, newsItems, learnedAdjustments) {
     };
   }
 
+  // === Round 35: 古いキャッシュデータで「買い」 を出さない ===
+  // apiOdds.stale=true (last-success フォールバック) の場合は参考値扱い。
+  // EV 計算は行うが、買い判定は禁止 → buildBuyRecommendation で "data-checking" を返す。
+  const apiOddsStale = !!apiOdds.stale;
+  const apiOddsLastFetchedAt = apiOdds.lastFetchedAt || null;
+
+  // === Round 35: 締切後 (発走時刻を過ぎた未確定) のレースは閉じる ===
+  // 発走後はオッズも変わらず、途中経過は締め切られているため、
+  // 新規買い判定は禁止 (記録閲覧のみ)
+  const startEpoch = race.date && race.startTime
+    ? new Date(`${race.date}T${race.startTime}:00+09:00`).getTime()
+    : null;
+  const closedNow = startEpoch != null && Date.now() > startEpoch;
+
   const items = [];
   if (apiOdds.exacta) items.push(...enumerateExacta(probs, apiOdds.exacta));
   if (apiOdds.trifecta) items.push(...enumerateTrifecta(probs, apiOdds.trifecta));
@@ -647,6 +661,9 @@ function _evaluateInner(race, newsItems, learnedAdjustments) {
     probConsistency,
     venueProfile: venueRes.profile,
     timeSlot: venueRes.slot,
+    apiOddsStale,
+    apiOddsLastFetchedAt,
+    closedNow,
     learnedAdjustments: learnedAdjustments || null,
     related: relatedNews(race, newsItems),
     availableKinds: {
@@ -676,16 +693,33 @@ function computeAllocations(n, profile) {
 }
 
 /* 拡張版: 1〜20 点の任意の点数で配分計算
-   ・本命 (idx 0) に最も多く、後ろは指数的に減衰
-   ・aggressive では上位を厚くしすぎず、下位にも残す */
+   Round 35b: スタイル別の「資金配分」 思想を明確化:
+     ・steady     (本命党): 強い集中 (本命に 65%+) — メリハリ
+     ・balanced   (中堅党): 中間 (本命に 50%) — バランス
+     ・aggressive (穴党)  : 分散 (本命と他をほぼ均等) — 広く拾う
+*/
 function computeAllocationsExt(n, profile) {
   if (n <= 0) return [];
   if (n === 1) return [1.0];
-  // 上位ほど多い指数減衰: weight = base^i
-  const base = profile === "aggressive" ? 0.85 : profile === "steady" ? 0.65 : 0.75;
+  // base が小さいほど 本命に集中 (steady=0.55: 集中 / aggressive=0.88: 分散)
+  const base = profile === "aggressive" ? 0.88 : profile === "steady" ? 0.55 : 0.72;
   const raw = Array.from({ length: n }, (_, i) => Math.pow(base, i));
   const sum = raw.reduce((a, b) => a + b, 0);
   return raw.map((w) => w / sum);
+}
+
+/* スタイル別の「資金配分の思想」 を 1 行で説明 (UI 表示用) */
+export function describeAllocationStyle(profile, n) {
+  if (profile === "steady") {
+    if (n === 1) return "本命 1 点に全額集中 (本命型: メリハリ)";
+    return `本命に集中 (約 60%+) + 押さえ — 本命型の集中投資`;
+  }
+  if (profile === "aggressive") {
+    if (n === 1) return "1 点集中 (穴狙い型: 根拠が強い時のみ)";
+    return `分散投資 (各買い目に均等寄り) — 穴狙い型は広くカバー`;
+  }
+  if (n === 1) return "本命 1 点 (バランス型: 妙味が明確な時)";
+  return `本命寄り + 押さえ (バランス型: 中庸な配分)`;
 }
 
 /* 役割ラベル生成 */
@@ -761,6 +795,42 @@ export function buildBuyRecommendation(ev, riskProfile, perRaceCap) {
   }
   if (perRaceCap <= 0) {
     return { decision: "skip", reason: "予算上限ゼロ", reasons: ["1日予算/1レース上限が 0 円 — 設定で調整してください"], items: [], total: 0 };
+  }
+
+  /* === Round 35: 正確性最優先 — 古いキャッシュ + 締切後 では絶対に「買い」 判定しない === */
+  if (ev.closedNow) {
+    return {
+      decision: "closed",
+      reason: "締切済み",
+      reasons: ["発走時刻を過ぎているため新規購入判定はしません"],
+      items: [], total: 0,
+      lastFetchedAt: ev.apiOddsLastFetchedAt,
+    };
+  }
+  if (ev.apiOddsStale) {
+    return {
+      decision: "data-checking",
+      reason: "オッズ整合性チェック中",
+      reasons: [
+        "現在のオッズは前回成功時のキャッシュ (参考値) です",
+        "リトライ中 — 最新データ取得後に再評価します",
+        "古いオッズで「買い」 と判定するのは危険なため、確認中表示にしています",
+      ],
+      items: [], total: 0,
+      lastFetchedAt: ev.apiOddsLastFetchedAt,
+    };
+  }
+  // 確率分布が壊れている (合計 ≠ 1) ときも 「整合性チェック中」 として買わない
+  if (ev.probConsistency && Math.abs(ev.probConsistency.oneFirstSum - 1) > 0.10) {
+    return {
+      decision: "data-checking",
+      reason: "確率整合性チェック中",
+      reasons: [
+        `1着確率合計が ${(ev.probConsistency.oneFirstSum * 100).toFixed(0)}% (期待値計算が不安定)`,
+        "データ再取得後に再評価します",
+      ],
+      items: [], total: 0,
+    };
   }
 
   const evMin = EV_MIN_BY_PROFILE[riskProfile] ?? 1.15;
@@ -930,9 +1000,16 @@ export function buildBuyRecommendation(ev, riskProfile, perRaceCap) {
   //   ・もしくは 1号艇 ≥50% かつ 荒れ根拠 0
   const isHonmei = (ev.inTrust?.level === "イン逃げ濃厚") || (inDominant && roughEvidence === 0);
 
-  // 上限 (本命レースは厳しく絞る)
-  const upperByProfile = { steady: 3, balanced: 6, aggressive: 12 };
-  const upper = isHonmei ? Math.min(2, upperByProfile[riskProfile] || 3) : (upperByProfile[riskProfile] || 6);
+  /* === Round 35b: スタイル別「買い方」 を完全分離 ===
+     ・steady     (本命党): 1〜2 点 (本命レースなら 1 点)
+     ・balanced   (中堅党): 2〜4 点 (本命レースなら 1 点)
+     ・aggressive (穴党)  : 3〜6 点 (本命レースなら 2 点)
+     これにより 3 人の予想家が違う「買い方」 をする状態に。 */
+  const upperByProfile = { steady: 2, balanced: 4, aggressive: 6 };
+  const honmeiCapByProfile = { steady: 1, balanced: 1, aggressive: 2 };
+  const upper = isHonmei
+    ? (honmeiCapByProfile[riskProfile] || 1)
+    : (upperByProfile[riskProfile] || 4);
 
   let suggestedCount;
   let why;
@@ -1016,22 +1093,73 @@ export function buildBuyRecommendation(ev, riskProfile, perRaceCap) {
   // items を profitable に置き換え (本命1点しか残らない場合もある)
   items.length = 0;
   items.push(...profitable);
+
+  /* === Round 35c: 「保証回収率 (最悪ケース)」 + 利益設計 ===
+     最低オッズの買い目だけが的中したケースで損しないか確認。
+     ・steady     (本命型): worstCaseRoi >= 1.10 (10% 以上の利益保証必須)
+     ・balanced   (中堅型): worstCaseRoi >= 1.05
+     ・aggressive (穴狙い型): worstCaseRoi >= 1.00 (最悪ケースでも損なし)
+     満たさない場合は points を 1 まで削減して再試行。 */
+  const minWorstRoiByProfile = { steady: 1.10, balanced: 1.05, aggressive: 1.00 };
+  const minWorstRoi = minWorstRoiByProfile[riskProfile] || 1.05;
+  let totalStakeNow = items.reduce((s, it) => s + it.stake, 0);
+  function computeWorstCase(arr, totalStake) {
+    if (arr.length === 0) return { worstCasePayout: 0, worstCaseRoi: 0, expectedPayout: 0 };
+    const worst = Math.min(...arr.map((it) => Math.round(it.stake * it.odds)));
+    const exp = Math.round(arr.reduce((s, it) => s + it.prob * it.odds * it.stake, 0));
+    return {
+      worstCasePayout: worst,
+      worstCaseRoi: totalStake > 0 ? worst / totalStake : 0,
+      expectedPayout: exp,
+    };
+  }
+  let wc = computeWorstCase(items, totalStakeNow);
+  // 保証回収率を満たさない場合 → 本命1点 まで絞って再評価
+  if (wc.worstCaseRoi < minWorstRoi && items.length > 1) {
+    items.length = 0;
+    items.push(profitable[0]);
+    items[0].stake = perRaceCap; // 本命に全額集中
+    totalStakeNow = items[0].stake;
+    wc = computeWorstCase(items, totalStakeNow);
+    why = `${why}（保証回収率 ${Math.round(minWorstRoi*100)}% 未達のため本命 1 点集中に変更）`;
+  }
+  // それでも満たさない場合 → 見送り (利益確保不能)
+  if (wc.worstCaseRoi < minWorstRoi) {
+    return {
+      decision: "skip",
+      reason: `利益確保不能 — 最悪ケース回収率 ${Math.round(wc.worstCaseRoi*100)}% < 必要 ${Math.round(minWorstRoi*100)}%`,
+      reasons: [
+        `当たっても利益が出ない買い方は出しません`,
+        `${riskProfile}型の利益保証ライン: 回収率 ${Math.round(minWorstRoi*100)}% 以上`,
+        `最低オッズの買い目が的中しても、総投資を回収できません`,
+      ],
+      items: [], total: 0,
+    };
+  }
+
   const mainBoat = parseInt(main.combo[0]);
   const mainScore = ev.scores.find((s) => s.boatNo === mainBoat);
   const reason = oneLineReason(mainScore, main);
+  const allocationStyle = describeAllocationStyle(riskProfile, items.length);
 
   return {
     decision: "buy",
     reason,
     items,
-    main,
-    total: items.reduce((s, it) => s + it.stake, 0),
+    main: items[0],
+    total: totalStakeNow,
     grade: main.grade,
     development: ev.development,
     /* 「なぜこの点数か」 — UI で表示 */
     rationale: why,
     points: items.length,
     profile: riskProfile,
+    /* Round 35c: 利益設計 */
+    worstCasePayout: wc.worstCasePayout,
+    worstCaseRoi: +wc.worstCaseRoi.toFixed(2),
+    expectedPayout: wc.expectedPayout,
+    minProfitGuard: minWorstRoi,
+    allocationStyle,
   };
 }
 

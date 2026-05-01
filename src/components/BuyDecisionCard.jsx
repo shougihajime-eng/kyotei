@@ -26,6 +26,12 @@ function BuyDecisionCard({ race, recommendation, onRecord, virtualMode }) {
   if (dec === "no-odds") {
     return <NoOdds race={race} />;
   }
+  if (dec === "data-checking") {
+    return <DataChecking race={race} recommendation={recommendation} />;
+  }
+  if (dec === "closed") {
+    return <Closed race={race} recommendation={recommendation} />;
+  }
   if (dec !== "buy") {
     return <Skip race={race} reason={recommendation?.reason || "見送り"} recommendation={recommendation} />;
   }
@@ -265,6 +271,19 @@ const cardStyle = {
     border: "3px solid #f59e0b", color: "#fde68a",
     minHeight: 240,
   },
+  dataChecking: {
+    padding: "40px 20px", borderRadius: 20, textAlign: "center",
+    background: "linear-gradient(135deg,#1e3a5f,#0f1830)",
+    border: "3px solid #3b82f6", color: "#bfdbfe",
+    boxShadow: "0 0 24px -8px #3b82f6",
+    minHeight: 280,
+  },
+  closed: {
+    padding: "40px 20px", borderRadius: 20, textAlign: "center",
+    background: "linear-gradient(135deg,#1f2937,#0b1220)",
+    border: "3px solid #6b7280", color: "#d1d5db",
+    minHeight: 220,
+  },
   empty: {
     padding: "60px 20px", borderRadius: 20, textAlign: "center",
     background: "linear-gradient(135deg,#1e293b,#0f1830)",
@@ -315,6 +334,48 @@ function Skip({ race, reason, recommendation }) {
           )}
         </>
       )}
+    </section>
+  );
+}
+
+/* Round 35: オッズ整合性チェック中 (キャッシュデータあり、リトライ中) */
+function DataChecking({ race, recommendation }) {
+  const ago = recommendation?.lastFetchedAt ? formatAgo(recommendation.lastFetchedAt) : null;
+  return (
+    <section style={cardStyle.dataChecking}>
+      <div style={{ fontSize: 36, marginBottom: 6 }}>🔄</div>
+      <div style={{ fontSize: "min(28px,7vw)", fontWeight: 900 }}>オッズ整合性チェック中</div>
+      <div className="opacity-90 mt-3 text-sm">{race.venue} {race.raceNo}R ({race.startTime}発走)</div>
+      {ago && (
+        <div className="mt-2 inline-block px-3 py-1 rounded-full text-xs font-bold" style={{ background: "rgba(0,0,0,0.30)", color: "#fde68a" }}>
+          📅 最終取得 {ago} 前 (参考値)
+        </div>
+      )}
+      <div className="opacity-85 mt-3 text-xs px-3" style={{ lineHeight: 1.55 }}>
+        現在のオッズは <b>キャッシュ (参考値)</b> です。<br/>
+        古いデータで「買い」 と判定するのは危険なため、<br/>
+        最新データ取得後に再評価します。
+      </div>
+      {(recommendation?.reasons || []).slice(1).length > 0 && (
+        <ul className="text-xs opacity-80 mt-3 mx-4" style={{ paddingLeft: 14, textAlign: "left", lineHeight: 1.5 }}>
+          {(recommendation.reasons || []).slice(1).map((r, i) => <li key={i} style={{ listStyle: "disc", marginTop: 2 }}>{r}</li>)}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+/* Round 35: 締切済み (発走時刻を過ぎた) */
+function Closed({ race, recommendation }) {
+  return (
+    <section style={cardStyle.closed}>
+      <div style={{ fontSize: 36, marginBottom: 6 }}>🔒</div>
+      <div style={{ fontSize: "min(28px,7vw)", fontWeight: 900 }}>締切済み</div>
+      <div className="opacity-90 mt-3 text-sm">{race.venue} {race.raceNo}R ({race.startTime}発走)</div>
+      <div className="opacity-85 mt-2 text-xs px-3" style={{ lineHeight: 1.55 }}>
+        発走時刻を過ぎているため、<b>新規の買い判定は行いません</b>。<br/>
+        結果が確定したら検証画面で確認できます。
+      </div>
     </section>
   );
 }
