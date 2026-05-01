@@ -84,11 +84,26 @@
 
 ### 検証
 
+開発時のチェック (PR 前に実行):
+
 ```sh
-node scripts/sanity-check.mjs           # 予想ロジック 43 アサート
-node scripts/pnl-check.mjs              # 収支ロジック 31 アサート
-node scripts/storage-integrity-check.mjs # 保存ロジック 41 アサート
+npm run check          # 全テスト + ビルド (TDZ + sanity + pnl + storage + cloud + build)
+npm run test:all       # 全テストのみ (build なし)
+npm run tdz            # TDZ audit のみ (致命的初期化順バグの検出)
+npm run build          # ビルド (prebuild で TDZ audit が自動実行 → fail 時は build 中止)
 ```
+
+個別テスト:
+
+```sh
+npm run test:sanity    # 予想ロジック 43 アサート (12 シナリオ × 3 スタイル)
+npm run test:pnl       # 収支ロジック 31 アサート (期間/エア・リアル/スタイル)
+npm run test:storage   # 保存ロジック 41 アサート (リテンション/GC/分離)
+npm run test:cloud     # 同期安全性 29 アサート (TDZ なし/破壊なし)
+```
+
+`npm run build` は **必ず TDZ audit を先に実行** します (`prebuild` フック)。
+TDZ リスクが検出されたら build は中止 → Vercel デプロイも走りません (本番事故防止)。
 
 ## 禁止事項 (実装していません)
 

@@ -9,8 +9,16 @@
   },
   "scripts": {
     "dev": "vite",
+    "prebuild": "node scripts/tdz-audit.mjs",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "tdz": "node scripts/tdz-audit.mjs",
+    "test:sanity": "node scripts/sanity-check.mjs",
+    "test:pnl": "node scripts/pnl-check.mjs",
+    "test:storage": "node scripts/storage-integrity-check.mjs",
+    "test:cloud": "node scripts/cloud-sync-safety-check.mjs",
+    "test:all": "npm run tdz && npm run test:sanity && npm run test:pnl && npm run test:storage && npm run test:cloud",
+    "check": "npm run test:all && npm run build"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.105.1",
