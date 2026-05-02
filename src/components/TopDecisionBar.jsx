@@ -306,6 +306,21 @@ function TopDecisionBar({ visibleData, currentStyle, switchProfile, onRetry }) {
         </div>
       )}
 
+      {/* Round 60: 精度低下警告 (degrading / critical 時のみ) */}
+      {visibleData.accuracyHealth && (visibleData.accuracyHealth.level === "degrading" || visibleData.accuracyHealth.level === "critical") && (
+        <div className="mb-2 p-2 rounded text-xs" style={{
+          background: visibleData.accuracyHealth.level === "critical" ? "rgba(239,68,68,0.15)" : "rgba(251,191,36,0.12)",
+          border: `1px solid ${visibleData.accuracyHealth.level === "critical" ? "rgba(239,68,68,0.5)" : "rgba(251,191,36,0.4)"}`,
+          color: visibleData.accuracyHealth.level === "critical" ? "#fca5a5" : "#fde68a",
+          lineHeight: 1.5,
+        }}>
+          <b>{visibleData.accuracyHealth.label}</b>: {visibleData.accuracyHealth.message}<br/>
+          <span className="opacity-80" style={{ fontSize: 10 }}>
+            ※ EV 閾値を {visibleData.isDegraded ? "125%" : "120%"} に引き上げて保守運用中
+          </span>
+        </div>
+      )}
+
       {/* Round 59: 本日サマリ (短文) + 連勝バッジ */}
       {daySummary && (
         <div className="mb-2 flex items-center justify-between flex-wrap gap-2">

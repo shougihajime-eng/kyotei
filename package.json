@@ -17,7 +17,8 @@
     "test:pnl": "node scripts/pnl-check.mjs",
     "test:storage": "node scripts/storage-integrity-check.mjs",
     "test:cloud": "node scripts/cloud-sync-safety-check.mjs",
-    "test:all": "npm run tdz && npm run test:sanity && npm run test:pnl && npm run test:storage && npm run test:cloud",
+    "test:jst": "node scripts/jst-date-check.mjs",
+    "test:all": "npm run tdz && npm run test:sanity && npm run test:pnl && npm run test:storage && npm run test:cloud && npm run test:jst",
     "check": "npm run test:all && npm run build"
   },
   "dependencies": {

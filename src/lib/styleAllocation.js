@@ -240,8 +240,15 @@ export function pickHeadlineForEachStyle(races, evals, allStyleRecommendations, 
      excludedCount / excludedReasons: 除外件数とその理由
 */
 export const GO_CONFIDENCE_THRESHOLD = 60;
+/* Round 60: Go モード「かなり厳しめ」 基準 — 確信度高のみ採用 */
+export const GO_MIN_EV = 1.20;             // EV 120% 未満は除外
+export const GO_MIN_CONFIDENCE = 65;       // confidence 65 未満は除外
+export const GO_DEGRADED_EV = 1.25;        // 直近成績悪化時は 125% に引き上げ
 
-export function computeGoMode(races, evals, allStyleRecommendations, currentStyle = "balanced", topN = 3) {
+export function computeGoMode(races, evals, allStyleRecommendations, currentStyle = "balanced", topN = 3, opts = {}) {
+  // Round 60: 直近成績悪化時は EV 閾値を保守的に
+  const evMin = opts?.degraded ? GO_DEGRADED_EV : GO_MIN_EV;
+  const confMin = GO_MIN_CONFIDENCE;
   const candidates = [];
   const excludedReasons = []; // 除外されたレースとその理由
 
@@ -266,23 +273,27 @@ export function computeGoMode(races, evals, allStyleRecommendations, currentStyl
       const rec = allStyleRecommendations?.[style]?.[r.id];
       if (rec?.decision !== "buy") continue;
       const evScore = rec.main?.ev || 0;
+      const conf = rec.confidence || 0;
+      // Round 60: 厳格基準 — EV 120% 未満 OR 自信 65 未満は Go 候補から除外
+      if (evScore < evMin) continue;
+      if (conf < confMin) continue;
       if (!best || evScore > best.ev) {
         best = {
           raceId: r.id, race: r, ev: evScore, style, recommendation: rec,
-          confidence: rec.confidence || 0,
+          confidence: conf,
           mainCombo: rec.main?.combo,
           mainOdds: rec.main?.odds,
           mainProb: rec.main?.prob,
-          simpleReason: `${STYLE_LABELS_GO[style] || style} EV ${Math.round(evScore * 100)}% / 自信 ${rec.confidence || 0}`,
+          simpleReason: `${STYLE_LABELS_GO[style] || style} EV ${Math.round(evScore * 100)}% / 自信 ${conf}`,
         };
       }
     }
     if (best) candidates.push(best);
     else {
-      // 全スタイルが skip
+      // 全スタイルが Go 基準未達
       excludedReasons.push({
         raceId: r.id, venue: r.venue, raceNo: r.raceNo,
-        reason: "全スタイル skip (期待値不足)",
+        reason: `Go 基準未達 (EV<${Math.round(evMin*100)}% or 自信<${confMin})`,
       });
     }
   }
@@ -319,13 +330,24 @@ export function computeGoMode(races, evals, allStyleRecommendations, currentStyl
   confidence = Math.max(0, Math.min(100, Math.round(confidence)));
 
   let confidenceLabel, confidenceReason, suppressedReason = null;
+  // Round 60: 候補 0-1 件は「打たない判断」 を優先 (無理に出さない)
   if (candidates.length === 0) {
     confidenceLabel = "見送り推奨";
     confidenceReason = "本日は買い候補ゼロ。 厳選見送り日です。";
     confidence = 10;
     suppressedReason = excludedReasons.length > 0
-      ? `候補ゼロ — 除外 ${excludedReasons.length} 件 (オッズ未取得 / データ不足など)`
+      ? `候補ゼロ — 除外 ${excludedReasons.length} 件 (Go 基準未達: EV<${Math.round(evMin*100)}% or 自信<${confMin})`
       : "候補ゼロ — 期待値プラスのレースが見つかりませんでした";
+  } else if (candidates.length === 1) {
+    // 1 件のみは「少ないが強い」 ケース。 信頼度 80+ なら採用、 それ未満なら見送り推奨
+    if (confidence < 80) {
+      confidenceLabel = "見送り推奨";
+      confidenceReason = `候補 1 件のみ — 「少ないが強い」 基準 (信頼度 80+) 未達 → 打たない判断推奨`;
+      suppressedReason = `候補 1 件のみで信頼度 ${confidence}/100 < 80 — 単発勝負はリスク大`;
+    } else {
+      confidenceLabel = "Go";
+      confidenceReason = `単発勝負 (1 件) — 信頼度 ${confidence}/100、 EV ${Math.round(avgEv*100)}% — 高確信日`;
+    }
   } else if (confidence < GO_CONFIDENCE_THRESHOLD) {
     confidenceLabel = "見送り推奨";
     confidenceReason = `候補 ${candidates.length} 件あるが信頼度 ${confidence}/100 — 慎重に`;

@@ -20,6 +20,7 @@ import { suggestStyle } from "./components/StyleSelector.jsx";
 import { computeStrategyRanking } from "./lib/strategyRanking.js";
 import { allocateRacesToStyles, pickHeadlineForEachStyle, explainEmptyBucket, computeGoMode } from "./lib/styleAllocation.js";
 import { computeGoModeStats, computeSkipImpact, computeDaySummary, computeStreakStats } from "./lib/dayInsights.js";
+import { computeRollingStats, computeAdjustmentSuggestions, computePatternStrength, computeAccuracyHealth } from "./lib/operationalLog.js";
 import { getJstDateString, getEffectiveRaceDate, validateDateConsistency, detectDateChange } from "./lib/dateGuard.js";
 import { getLearnedWeights } from "./lib/learning.js";
 import { defaultSettings, summarizeToday, perRaceCap } from "./lib/money.js";
@@ -246,13 +247,32 @@ export default function App() {
     [races, evals, allStyleRecommendations, styleAllocation]
   );
 
-  /* Round 57-58: 実戦モード (Go) */
-  const goMode = useMemo(
-    () => computeGoMode(races, evals, allStyleRecommendations, settings.riskProfile, 3),
-    [races, evals, allStyleRecommendations, settings.riskProfile]
+  /* Round 60: 運用ロジック (精度監視) */
+  const rollingShort = useMemo(() => computeRollingStats(visiblePredictions, 10), [visiblePredictions]);
+  const rollingLong = useMemo(() => computeRollingStats(visiblePredictions, 50), [visiblePredictions]);
+  const accuracyHealth = useMemo(
+    () => computeAccuracyHealth(rollingShort, rollingLong),
+    [rollingShort, rollingLong]
+  );
+  const adjustmentSuggestions = useMemo(
+    () => computeAdjustmentSuggestions(rollingShort, rollingLong, settings),
+    [rollingShort, rollingLong, settings]
+  );
+  const patternStrength = useMemo(
+    () => computePatternStrength(visiblePredictions),
+    [visiblePredictions]
   );
 
-  /* Round 59: 日次インサイト (Go 実績 / 見送り効果 / 本日サマリ / 連勝) */
+  /* Round 60: 直近成績悪化 (degrading/critical) なら Go モード閾値を引き上げ */
+  const isDegraded = accuracyHealth?.level === "degrading" || accuracyHealth?.level === "critical";
+
+  /* Round 57-58-60: 実戦モード (Go) — degraded フラグで保守的に */
+  const goMode = useMemo(
+    () => computeGoMode(races, evals, allStyleRecommendations, settings.riskProfile, 3, { degraded: isDegraded }),
+    [races, evals, allStyleRecommendations, settings.riskProfile, isDegraded]
+  );
+
+  /* Round 59: 日次インサイト */
   const goModeStats = useMemo(() => computeGoModeStats(visiblePredictions, 10), [visiblePredictions]);
   const skipImpact = useMemo(() => computeSkipImpact(visiblePredictions), [visiblePredictions]);
   const daySummary = useMemo(() => computeDaySummary(goMode, races, evals), [goMode, races, evals]);
@@ -266,7 +286,7 @@ export default function App() {
     [visiblePredictions, effectiveRaceDate]
   );
 
-  /* visibleData に Round 59 のすべてを merge (TopDecisionBar 単一ソース) */
+  /* visibleData に Round 59-60 のすべてを merge (TopDecisionBar 単一ソース) */
   const visibleData = useMemo(
     () => ({
       ...visibleDataBase,
@@ -278,8 +298,17 @@ export default function App() {
       currentJst,
       effectiveRaceDate,
       dateConsistency,
+      // Round 60
+      rollingShort,
+      rollingLong,
+      accuracyHealth,
+      adjustmentSuggestions,
+      patternStrength,
+      isDegraded,
     }),
-    [visibleDataBase, goMode, goModeStats, skipImpact, daySummary, streakStats, currentJst, effectiveRaceDate, dateConsistency]
+    [visibleDataBase, goMode, goModeStats, skipImpact, daySummary, streakStats,
+     currentJst, effectiveRaceDate, dateConsistency,
+     rollingShort, rollingLong, accuracyHealth, adjustmentSuggestions, patternStrength, isDegraded]
   );
 
   /* Round 51-B: 「買い候補だけ速く見つける」 — スキャン結果サマリ
