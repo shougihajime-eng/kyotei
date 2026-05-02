@@ -21,7 +21,7 @@ import { computeStrategyRanking } from "./lib/strategyRanking.js";
 import { allocateRacesToStyles, pickHeadlineForEachStyle, explainEmptyBucket, computeGoMode } from "./lib/styleAllocation.js";
 import { computeGoModeStats, computeSkipImpact, computeDaySummary, computeStreakStats } from "./lib/dayInsights.js";
 import { computeRollingStats, computeAdjustmentSuggestions, computePatternStrength, computeAccuracyHealth } from "./lib/operationalLog.js";
-import { computeRecentPurchaseAnalysis, computeDeepReview } from "./lib/raceLabeler.js";
+import { computeRecentPurchaseAnalysis, computeDeepReview, computeLabelDistribution, applyLabelOverride } from "./lib/raceLabeler.js";
 import { getJstDateString, getEffectiveRaceDate, validateDateConsistency, detectDateChange } from "./lib/dateGuard.js";
 import { getLearnedWeights } from "./lib/learning.js";
 import { defaultSettings, summarizeToday, perRaceCap } from "./lib/money.js";
@@ -253,6 +253,7 @@ export default function App() {
   const rollingLong = useMemo(() => computeRollingStats(visiblePredictions, 50), [visiblePredictions]);
   const purchaseAnalysis = useMemo(() => computeRecentPurchaseAnalysis(visiblePredictions, 10), [visiblePredictions]);
   const deepReview = useMemo(() => computeDeepReview(visiblePredictions, 10), [visiblePredictions]);
+  const labelDistribution = useMemo(() => computeLabelDistribution(visiblePredictions, 10, 30), [visiblePredictions]);
   const accuracyHealth = useMemo(
     () => computeAccuracyHealth(rollingShort, rollingLong),
     [rollingShort, rollingLong]
@@ -308,14 +309,15 @@ export default function App() {
       adjustmentSuggestions,
       patternStrength,
       isDegraded,
-      // Round 61-62
+      // Round 61-63
       purchaseAnalysis,
       deepReview,
+      labelDistribution,
     }),
     [visibleDataBase, goMode, goModeStats, skipImpact, daySummary, streakStats,
      currentJst, effectiveRaceDate, dateConsistency,
      rollingShort, rollingLong, accuracyHealth, adjustmentSuggestions, patternStrength, isDegraded,
-     purchaseAnalysis, deepReview]
+     purchaseAnalysis, deepReview, labelDistribution]
   );
 
   /* Round 51-B: 「買い候補だけ速く見つける」 — スキャン結果サマリ

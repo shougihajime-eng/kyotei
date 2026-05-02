@@ -74,14 +74,30 @@ export function computeConditionMod(boat) {
       reasons.push({ kind: "pos", text: `チルト ${boat.tilt} 出足型 1号艇 +3%` });
     }
   }
+  /* Round 64: 定性情報 (気配コメント) は「例外的補正要素」 のみ。
+     ・買う理由ではなく、 主に「買わない理由」 として使う設計
+     ・加点は軽め (+3%) / 減点は強め (-10% or -15%)
+     ・明確な異常値は強く反映、 一般的な気配は軽くしか反映しない */
   const note = boat.exhibitionNote || "";
   if (note) {
-    if (/良い|良し|良$|伸び|出足良|気配良|上昇|ターン良/.test(note)) {
-      mod *= 1.05; reasons.push({ kind: "pos", text: `気配「${note}」+5%` });
-    } else if (/重い|悪|下降|伸びない|出足悪|気配悪/.test(note)) {
-      mod *= 0.95; reasons.push({ kind: "neg", text: `気配「${note}」−5%` });
+    // (a) 強い減点 (整備失敗 / 重大な不調) — -15%
+    if (/整備失敗|エンスト|エンジン不調|失格|転覆/.test(note)) {
+      mod *= 0.85; reasons.push({ kind: "neg", text: `🚨 異常「${note}」−15%` });
+    }
+    // (b) 中程度の減点 (足弱い / 気配悪) — -10%
+    else if (/足弱|重い|悪い|悪$|下降|伸びない|出足悪|気配悪|不調/.test(note)) {
+      mod *= 0.90; reasons.push({ kind: "neg", text: `⚠️ 不調「${note}」−10%` });
+    }
+    // (c) 軽い加点 (伸び抜群 / モーター好調) — +3% (買う理由には弱め)
+    else if (/伸び抜群|伸び良|抜群|上昇|気配良|出足良/.test(note)) {
+      mod *= 1.03; reasons.push({ kind: "pos", text: `気配「${note}」+3%` });
+    }
+    // (d) 一般的な気配良 — +1% (ノイズ防止)
+    else if (/良い|良し|良$|伸び|ターン良/.test(note)) {
+      mod *= 1.01; reasons.push({ kind: "pos", text: `気配「${note}」+1%` });
     }
   }
+  // (e) 明確な好材料 — モーター 2連率 50%+ ですでに加点済 (factor weight)、追加加点なし
   return { mod: Math.max(0.80, Math.min(1.20, mod)), reasons };
 }
 
