@@ -305,69 +305,79 @@ export default function App() {
 
   useEffect(() => {
     if (races.length === 0) return;
-    /* === Round 51-B: 買い候補のみ重く保存。 見送り/no-odds は localStorage から削除 ===
-       目的: localStorage の容量削減 + 保存読み書きの高速化 + 履歴をクリーンに保つ。
-       手動記録 (manuallyRecorded) は無関係に永続。 */
+    /* === Round 51-C: 3 スタイル完全分離保存 ===
+       各レースを 3 スタイル分 (steady / balanced / aggressive) すべて評価し、
+       「買い」 になったスタイルだけを style 別 key で保存。
+
+       key 形式: ${dateKey}_${raceId}_${style}  (例: 20260501_kr01_steady)
+
+       これにより:
+       ・3 スタイルそれぞれの成績が完全に分離して集計可能
+       ・同じレースが 3 回登録されても OK (各スタイルは独立)
+       ・スタイル切替で記録が消える / 上書きされる事故を撲滅
+    */
     setPredictions((prev) => {
       const next = { ...prev };
       let changed = false;
       const stamp = new Date().toISOString();
+      const STYLES = ["steady", "balanced", "aggressive"];
       for (const r of races) {
-        const rec = recommendations[r.id];
-        if (!rec) continue;
         const dateKey = (r.date || "").replace(/-/g, "");
-        const key = `${dateKey}_${r.id}`;
-        const existing = next[key] || {};
-        // 手動記録は AI スナップショットで一切触らない
-        if (existing.manuallyRecorded) continue;
-        // === 買いでないレースは保存しない (skip / no-odds / closed / data-checking) ===
-        if (rec.decision !== "buy") {
-          // 既存に AI 自動スナップショットが残っていれば削除 (容量削減)
-          if (next[key] && !existing.manuallyRecorded) {
-            delete next[key];
+        for (const style of STYLES) {
+          const rec = allStyleRecommendations[style]?.[r.id];
+          if (!rec) continue;
+          const key = `${dateKey}_${r.id}_${style}`;
+          const existing = next[key] || {};
+          // 手動記録 (このキーが手動で作られた場合) は触らない
+          if (existing.manuallyRecorded) continue;
+          // 「買い」 でないレースは保存しない (容量削減)
+          if (rec.decision !== "buy") {
+            if (next[key] && !existing.manuallyRecorded) {
+              delete next[key];
+              changed = true;
+            }
+            continue;
+          }
+          // 「買い」 のみ詳細保存
+          const combos = rec.items.map((it) => ({
+            kind: it.kind, combo: it.combo, stake: it.stake,
+            odds: it.odds, prob: it.prob, ev: it.ev,
+            expectedReturn: it.expectedReturn, evMinus1: it.evMinus1,
+            role: it.role, grade: it.grade, pickReason: it.pickReason,
+          }));
+          const updated = {
+            ...existing,
+            key, date: r.date, raceId: r.id, venue: r.venue, jcd: r.jcd, raceNo: r.raceNo,
+            startTime: r.startTime,
+            closingTime: r.startTime,
+            predictionTime: existing.predictionTime || stamp,
+            decision: "buy",
+            combos,
+            reason: rec.reason || existing.reason || null,
+            rationale: rec.rationale || existing.rationale || null,
+            totalStake: rec.total,
+            grade: rec.grade || null,
+            profile: style,                    // ← 必ず style を反映 (混ざらない)
+            predictionType: style,
+            virtual: existing.virtual != null ? existing.virtual : !!settings.virtualMode,
+            warnings: rec.warnings || [],
+            venueProfile: rec.venueProfile || null,
+            timeSlot: rec.timeSlot || null,
+            confidence: rec.confidence,
+            worstCaseRoi: rec.worstCaseRoi,
+            worstCasePayout: rec.worstCasePayout,
+            expectedPayout: rec.expectedPayout,
+            snapshotAt: stamp,
+          };
+          const cmp = (o) => JSON.stringify({
+            d: o.decision || "",
+            c: (o.combos || []).map(c => `${c.kind}:${c.combo}`).join("|"),
+            p: o.profile || "",
+          });
+          if (cmp(existing) !== cmp(updated)) {
+            next[key] = updated;
             changed = true;
           }
-          continue;
-        }
-        // === 買い候補のみ詳細を保存 ===
-        const combos = rec.items.map((it) => ({
-          kind: it.kind, combo: it.combo, stake: it.stake,
-          odds: it.odds, prob: it.prob, ev: it.ev,
-          expectedReturn: it.expectedReturn, evMinus1: it.evMinus1,
-          role: it.role, grade: it.grade, pickReason: it.pickReason,
-        }));
-        const updated = {
-          ...existing,
-          key, date: r.date, raceId: r.id, venue: r.venue, jcd: r.jcd, raceNo: r.raceNo,
-          startTime: r.startTime,
-          closingTime: r.startTime,
-          predictionTime: existing.predictionTime || stamp,
-          decision: "buy",
-          combos,
-          reason: rec.reason || existing.reason || null,
-          rationale: rec.rationale || existing.rationale || null,
-          totalStake: rec.total,
-          grade: rec.grade || null,
-          profile: rec.profile || settings.riskProfile,
-          predictionType: rec.profile || settings.riskProfile,
-          virtual: existing.virtual != null ? existing.virtual : !!settings.virtualMode,
-          warnings: rec.warnings || [],
-          venueProfile: rec.venueProfile || null,
-          timeSlot: rec.timeSlot || null,
-          confidence: rec.confidence,
-          worstCaseRoi: rec.worstCaseRoi,
-          worstCasePayout: rec.worstCasePayout,
-          expectedPayout: rec.expectedPayout,
-          snapshotAt: stamp,
-        };
-        const cmp = (o) => JSON.stringify({
-          d: o.decision || "",
-          c: (o.combos || []).map(c => `${c.kind}:${c.combo}`).join("|"),
-          p: o.profile || "",
-        });
-        if (cmp(existing) !== cmp(updated)) {
-          next[key] = updated;
-          changed = true;
         }
       }
       return changed ? next : prev;
@@ -440,40 +450,49 @@ export default function App() {
     });
     setRaces(merged);
 
-    /* ③ 結果をあずかる予測へマージ */
+    /* ③ 結果をあずかる予測へマージ — Round 51-C: 3 スタイル別 + 旧キー両方対応
+       新キー: ${dateKey}_${raceId}_${style}
+       旧キー: ${dateKey}_${raceId} (互換: 既存ユーザーのデータが残っていれば触る) */
     const dateKey = todayDate().replace(/-/g, "");
     const stamp = new Date().toISOString();
     setPredictions((prev) => {
       const out = { ...prev };
+      const STYLES = ["steady", "balanced", "aggressive"];
       for (const r of merged) {
         if (!r.apiResult?.first) continue;
-        const key = `${dateKey}_${r.id}`;
-        const existing = out[key];
-        if (!existing) continue;
-        if (existing.result?.first) continue;
         const winnerTri = `${r.apiResult.first}-${r.apiResult.second}-${r.apiResult.third}`;
         const winnerEx = `${r.apiResult.first}-${r.apiResult.second}`;
         const winnerWin = String(r.apiResult.first);
-        let payout = 0, hit = false;
-        for (const c of (existing.combos || [])) {
-          const yenPer100 = c.kind === "3連単" ? r.apiResult.payouts?.trifecta?.[winnerTri]
-                          : c.kind === "2連単" ? r.apiResult.payouts?.exacta?.[winnerEx]
-                          : c.kind === "単勝" ? r.apiResult.payouts?.tan?.[winnerWin]
-                          : 0;
-          const matched = c.combo === (c.kind === "3連単" ? winnerTri : c.kind === "2連単" ? winnerEx : winnerWin);
-          if (matched && yenPer100) {
-            payout += (c.stake / 100) * yenPer100;
-            hit = true;
+        // 同じレースの全スタイル分 (新キー) + 旧キー (互換) を更新
+        const candidateKeys = [
+          `${dateKey}_${r.id}`,                                // 旧キー
+          ...STYLES.map((s) => `${dateKey}_${r.id}_${s}`),     // 新キー (style 別)
+        ];
+        for (const key of candidateKeys) {
+          const existing = out[key];
+          if (!existing) continue;
+          if (existing.result?.first) continue; // 既に結果反映済
+          let payout = 0, hit = false;
+          for (const c of (existing.combos || [])) {
+            const yenPer100 = c.kind === "3連単" ? r.apiResult.payouts?.trifecta?.[winnerTri]
+                            : c.kind === "2連単" ? r.apiResult.payouts?.exacta?.[winnerEx]
+                            : c.kind === "単勝"  ? r.apiResult.payouts?.tan?.[winnerWin]
+                            : 0;
+            const matched = c.combo === (c.kind === "3連単" ? winnerTri : c.kind === "2連単" ? winnerEx : winnerWin);
+            if (matched && yenPer100) {
+              payout += (c.stake / 100) * yenPer100;
+              hit = true;
+            }
           }
+          out[key] = {
+            ...existing,
+            result: {
+              first: r.apiResult.first, second: r.apiResult.second, third: r.apiResult.third,
+              payouts: r.apiResult.payouts, fetchedAt: stamp,
+            },
+            payout, hit, pnl: payout - (existing.totalStake || 0),
+          };
         }
-        out[key] = {
-          ...existing,
-          result: {
-            first: r.apiResult.first, second: r.apiResult.second, third: r.apiResult.third,
-            payouts: r.apiResult.payouts, fetchedAt: stamp,
-          },
-          payout, hit, pnl: payout - (existing.totalStake || 0),
-        };
       }
       return out;
     });
@@ -589,10 +608,12 @@ export default function App() {
   }, [showToast]);
 
   /* === ユーザーアクション: 結論カードから「記録する」 ===
-        virtualOverride を渡せば仮想/実 の選択を強制 (例: 「リアル購入として記録」 ボタンから true) */
+        virtualOverride を渡せば仮想/実 の選択を強制 (例: 「リアル購入として記録」 ボタンから true)
+        Round 51-C: key は style-aware に (3 スタイル分離) */
   const handleRecord = useCallback((race, rec, opts = {}) => {
     const dateKey = (race.date || "").replace(/-/g, "");
-    const key = `${dateKey}_${race.id}`;
+    const style = rec?.profile || settings.riskProfile || "balanced";
+    const key = `${dateKey}_${race.id}_${style}`;
     const virtual = opts.real === true ? false
                   : opts.real === false ? true
                   : !!settings.virtualMode;
