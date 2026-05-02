@@ -18,6 +18,7 @@ import { fetchTodaySchedule, fetchRaceProgram, fetchRaceOdds, fetchRaceResult, f
 import { evaluateRace, buildBuyRecommendation, computeOverallGrade } from "./lib/predict.js";
 import { suggestStyle } from "./components/StyleSelector.jsx";
 import { computeStrategyRanking } from "./lib/strategyRanking.js";
+import { allocateRacesToStyles, pickHeadlineForEachStyle, explainEmptyBucket } from "./lib/styleAllocation.js";
 import { getLearnedWeights } from "./lib/learning.js";
 import { defaultSettings, summarizeToday, perRaceCap } from "./lib/money.js";
 import { todayDate, todayKey, startEpoch } from "./lib/format.js";
@@ -197,6 +198,19 @@ export default function App() {
   const strategyRanking = useMemo(
     () => computeStrategyRanking(allStyleRecommendations),
     [allStyleRecommendations]
+  );
+
+  /* Round 51-D: 全レースを 3 スタイルに「三等分割当」 (各モードに必ず headline)
+     ・buyability + style fit を計算
+     ・候補を steady / balanced / aggressive に分配
+     ・各スタイルが必ず 1 つ「ヘッドラインレース」 を持つ → 「押した瞬間に必ず表示」 */
+  const styleAllocation = useMemo(
+    () => allocateRacesToStyles(races, evals),
+    [races, evals]
+  );
+  const styleHeadlines = useMemo(
+    () => pickHeadlineForEachStyle(races, evals, allStyleRecommendations, styleAllocation),
+    [races, evals, allStyleRecommendations, styleAllocation]
   );
 
   /* Round 51-B: 「買い候補だけ速く見つける」 — スキャン結果サマリ
@@ -711,6 +725,8 @@ export default function App() {
             switchProfile={switchProfile}
             strategyRanking={strategyRanking}
             scanStats={scanStats}
+            styleAllocation={styleAllocation}
+            styleHeadlines={styleHeadlines}
             onPickRace={(t) => setTab(t)}
           />
         )}

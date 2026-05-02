@@ -24,10 +24,20 @@ export default function Dashboard({
   refreshing, refreshMsg, lastRefreshAt, onRefresh,
   onRecord, settings, onPickRace,
   switchProfile, strategyRanking, scanStats,
+  styleAllocation, styleHeadlines,
 }) {
   const [showDetails, setShowDetails] = useState(false);
 
+  /* Round 51-D: 現在スタイルの headline を styleHeadlines から取得
+     ・各スタイルが必ず headline race を持つ (空状態を許さない)
+     ・割当バケットの buy 優先 → fit 高い skip → fallback の順 */
   const headline = useMemo(() => {
+    const currentStyle = settings.riskProfile;
+    const pick = styleHeadlines?.[currentStyle];
+    if (pick?.raceId) {
+      return races.find((r) => r.id === pick.raceId) || null;
+    }
+    // フォールバック: 旧ロジック (発走 60-600 分以内で買い優先)
     if (!races || races.length === 0) return null;
     const now = Date.now();
     const annotated = races.map(r => {
@@ -43,9 +53,10 @@ export default function Dashboard({
       return a.untilStart - b.untilStart;
     });
     return sorted[0]?.race || null;
-  }, [races, recommendations]);
+  }, [races, recommendations, styleHeadlines, settings.riskProfile]);
 
   const rec = headline ? recommendations[headline.id] : null;
+  const headlineKind = styleHeadlines?.[settings.riskProfile]?.kind || null; // "buy" / "near-skip" / "fallback"
 
   return (
     <div className="space-y-4 max-w-3xl mx-auto px-4 mt-4 pb-20">
@@ -55,6 +66,15 @@ export default function Dashboard({
       {/* Round 51-B: 「買えるレースを探索中」 サマリ */}
       {scanStats && scanStats.total > 0 && (
         <ScanStatsBar stats={scanStats} refreshing={refreshing} />
+      )}
+
+      {/* Round 51-D: 3 スタイルへの「三等分割当」 状況 */}
+      {styleAllocation && (
+        <StyleAllocationBar
+          allocation={styleAllocation}
+          currentStyle={settings.riskProfile}
+          switchProfile={switchProfile}
+        />
       )}
 
       {/* 戦略ランキング (Round 32) — 「今日はどの戦い方が有利か」 */}
@@ -230,6 +250,52 @@ function startEpoch(dateStr, startTime) {
     const d = new Date(`${dateStr}T${startTime}:00+09:00`);
     return isNaN(d.getTime()) ? null : d.getTime();
   } catch { return null; }
+}
+
+/* === Round 51-D: 3 スタイル三等分割当バー (現在スタイル + 各スタイルの件数) === */
+const StyleAllocationBar = memo(StyleAllocationBarImpl);
+function StyleAllocationBarImpl({ allocation, currentStyle, switchProfile }) {
+  const bs = allocation?.buckets || {};
+  const total = allocation?.totalCandidates || 0;
+  if (total === 0) return null; // 候補ゼロのときは表示しない (ScanStatsBar で説明済)
+  const STYLE_INFO = {
+    steady:     { label: "🛡️ 本命型",   color: "#3b82f6" },
+    balanced:   { label: "⚖️ バランス型", color: "#fbbf24" },
+    aggressive: { label: "🎯 穴狙い型",  color: "#ef4444" },
+  };
+  return (
+    <section className="card p-3" style={{ minHeight: 80 }}>
+      <div className="text-xs opacity-75 mb-2 font-bold">📋 候補レース三等分 (タップでスタイル切替)</div>
+      <div className="grid grid-cols-3 gap-2">
+        {["steady", "balanced", "aggressive"].map((s) => {
+          const info = STYLE_INFO[s];
+          const count = bs[s]?.length || 0;
+          const active = currentStyle === s;
+          return (
+            <button key={s} type="button"
+              onClick={() => switchProfile && switchProfile(s)}
+              style={{
+                textAlign: "center",
+                padding: "8px 6px",
+                borderRadius: 10,
+                border: `2px solid ${active ? info.color : "transparent"}`,
+                background: active ? `${info.color}22` : "rgba(0,0,0,0.22)",
+                color: active ? info.color : "#e7eef8",
+                cursor: "pointer",
+                transition: "all 0.12s ease",
+                minHeight: 60,
+              }}>
+              <div className="text-xs font-bold">{info.label}</div>
+              <div className="num font-bold mt-1" style={{ fontSize: 22, color: count > 0 ? info.color : "#9fb0c9" }}>
+                {count}
+              </div>
+              <div className="text-xs opacity-70">候補</div>
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
 }
 
 /* === Round 51-B: スキャン結果サマリ (買えるレース探索中) === */

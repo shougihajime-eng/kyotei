@@ -78,7 +78,7 @@ export function clearState() {
   }
 }
 
-/* === Round 43: 保存件数・期間統計 === */
+/* === Round 43-51: 保存件数・期間統計 (3 スタイル別件数追加) === */
 export function getStorageStats(predictions) {
   const all = Object.values(predictions || {});
   const today = new Date().toISOString().slice(0, 10);
@@ -87,6 +87,7 @@ export function getStorageStats(predictions) {
   const air = (arr) => arr.filter((p) => p.virtual !== false);
   const real = (arr) => arr.filter((p) => p.virtual === false);
   const manual = all.filter((p) => p.manuallyRecorded);
+  const byProfile = (style) => all.filter((p) => (p.profile || "balanced") === style);
   const dates = all.map((p) => p.date).filter(Boolean).sort();
   const oldestDate = dates[0] || null;
   const newestDate = dates[dates.length - 1] || null;
@@ -98,6 +99,10 @@ export function getStorageStats(predictions) {
     air: air(all).length,
     real: real(all).length,
     manual: manual.length,
+    // Round 51: 3 スタイル別件数
+    steady: byProfile("steady").length,
+    balanced: byProfile("balanced").length,
+    aggressive: byProfile("aggressive").length,
     oldestDate,
     newestDate,
     settled: all.filter((p) => p.result?.first).length,
