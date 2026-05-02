@@ -21,6 +21,7 @@ import { computeStrategyRanking } from "./lib/strategyRanking.js";
 import { allocateRacesToStyles, pickHeadlineForEachStyle, explainEmptyBucket, computeGoMode } from "./lib/styleAllocation.js";
 import { computeGoModeStats, computeSkipImpact, computeDaySummary, computeStreakStats } from "./lib/dayInsights.js";
 import { computeRollingStats, computeAdjustmentSuggestions, computePatternStrength, computeAccuracyHealth } from "./lib/operationalLog.js";
+import { computeRecentPurchaseAnalysis, computeDeepReview } from "./lib/raceLabeler.js";
 import { getJstDateString, getEffectiveRaceDate, validateDateConsistency, detectDateChange } from "./lib/dateGuard.js";
 import { getLearnedWeights } from "./lib/learning.js";
 import { defaultSettings, summarizeToday, perRaceCap } from "./lib/money.js";
@@ -247,9 +248,11 @@ export default function App() {
     [races, evals, allStyleRecommendations, styleAllocation]
   );
 
-  /* Round 60: 運用ロジック (精度監視) */
+  /* Round 60-61: 運用ロジック + 購入レース分析 */
   const rollingShort = useMemo(() => computeRollingStats(visiblePredictions, 10), [visiblePredictions]);
   const rollingLong = useMemo(() => computeRollingStats(visiblePredictions, 50), [visiblePredictions]);
+  const purchaseAnalysis = useMemo(() => computeRecentPurchaseAnalysis(visiblePredictions, 10), [visiblePredictions]);
+  const deepReview = useMemo(() => computeDeepReview(visiblePredictions, 10), [visiblePredictions]);
   const accuracyHealth = useMemo(
     () => computeAccuracyHealth(rollingShort, rollingLong),
     [rollingShort, rollingLong]
@@ -305,10 +308,14 @@ export default function App() {
       adjustmentSuggestions,
       patternStrength,
       isDegraded,
+      // Round 61-62
+      purchaseAnalysis,
+      deepReview,
     }),
     [visibleDataBase, goMode, goModeStats, skipImpact, daySummary, streakStats,
      currentJst, effectiveRaceDate, dateConsistency,
-     rollingShort, rollingLong, accuracyHealth, adjustmentSuggestions, patternStrength, isDegraded]
+     rollingShort, rollingLong, accuracyHealth, adjustmentSuggestions, patternStrength, isDegraded,
+     purchaseAnalysis, deepReview]
   );
 
   /* Round 51-B: 「買い候補だけ速く見つける」 — スキャン結果サマリ

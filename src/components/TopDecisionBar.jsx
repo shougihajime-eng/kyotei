@@ -50,6 +50,57 @@ function determineUIState(vd) {
   return "ready";
 }
 
+/* === Round 61: 購入レース分析パネル (少数精鋭学習) === */
+function PurchaseAnalysisPanel({ analysis }) {
+  const { sampleSize, summary, winPatterns = [], lossPatterns = [], recent = [] } = analysis;
+  if (sampleSize === 0) return null;
+  const wins = recent.filter(r => r.label?.kind === "win").length;
+  const losses = recent.length - wins;
+  return (
+    <div className="mb-3 p-3 rounded" style={{
+      background: "rgba(56,189,248,0.06)",
+      border: "1px solid rgba(56,189,248,0.3)",
+    }}>
+      <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+        <div className="text-xs font-bold" style={{ color: "#bae6fd" }}>
+          🔬 直近 {sampleSize} 件の購入レース分析
+        </div>
+        <div className="text-xs opacity-80">{wins}勝{losses}敗</div>
+      </div>
+      <div className="text-xs opacity-90 mb-2" style={{ lineHeight: 1.5 }}>{summary}</div>
+      {/* 勝ちパターン */}
+      {winPatterns.length > 0 && (
+        <div className="mb-2">
+          <div className="text-xs opacity-70 mb-1" style={{ color: "#a7f3d0" }}>✅ 勝ちパターン:</div>
+          <div className="flex gap-1 flex-wrap">
+            {winPatterns.map((w, i) => (
+              <span key={i} className="pill" style={{ fontSize: 10, background: "rgba(16,185,129,0.18)", color: "#a7f3d0", border: "1px solid rgba(16,185,129,0.4)" }}>
+                {w.label} × {w.count}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+      {/* 負けパターン */}
+      {lossPatterns.length > 0 && (
+        <div className="mb-2">
+          <div className="text-xs opacity-70 mb-1" style={{ color: "#fca5a5" }}>❌ 負けパターン:</div>
+          <div className="flex gap-1 flex-wrap">
+            {lossPatterns.map((l, i) => (
+              <span key={i} className="pill" style={{ fontSize: 10, background: "rgba(239,68,68,0.18)", color: "#fca5a5", border: "1px solid rgba(239,68,68,0.4)" }}>
+                {l.key} × {l.count}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+      <div className="text-xs opacity-60 mt-2" style={{ lineHeight: 1.5 }}>
+        💡 「数をこなす」 でなく「1 戦ごとに精度を上げる」 設計 — 少数精鋭学習
+      </div>
+    </div>
+  );
+}
+
 /* === Round 57-58: Go モードパネル (実戦モード) ===
    visibleData.goMode を読み、 上位 3 件・本日の信頼度・抑制理由・除外件数を表示。
    閾値未満なら購買 UI を抑制し 「今日は見送り推奨」 を強制する。 */
@@ -358,6 +409,28 @@ function TopDecisionBar({ visibleData, currentStyle, switchProfile, onRetry }) {
       {/* Round 57: 実戦モード (Go) + 本日の信頼度 */}
       {goMode && (
         <GoModePanel goMode={goMode} />
+      )}
+
+      {/* Round 62: deepReview activeWarning (頻出ミス警告) */}
+      {visibleData.deepReview?.activeWarning && (
+        <div className="mb-2 p-2 rounded text-xs" style={{
+          background: "rgba(239,68,68,0.10)",
+          border: "1px solid rgba(239,68,68,0.4)",
+          color: "#fca5a5",
+          lineHeight: 1.5,
+        }}>
+          {visibleData.deepReview.activeWarning}
+          {visibleData.deepReview.dynamicGuards?.length > 0 && (
+            <div className="opacity-90 mt-1" style={{ fontSize: 11 }}>
+              💡 自動ガード: {visibleData.deepReview.dynamicGuards.map(g => g.action).join(" / ")}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Round 61: 直近購入レース分析 (勝ちパターン / 負けパターン) */}
+      {visibleData.purchaseAnalysis?.sampleSize > 0 && (
+        <PurchaseAnalysisPanel analysis={visibleData.purchaseAnalysis} />
       )}
 
       {/* Round 59: Go モード実績 + 見送り効果 */}
