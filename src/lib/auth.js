@@ -1,90 +1,176 @@
 /**
- * 簡易 Auth — username + password のみ (個人情報なし)
+ * Auth — email + password (Round 51-A 修正版)
  *
- * Supabase Auth は標準で email/password を要求するが、
- * 「username + password だけ」 を実現するため、
- * email = `${username}@kyotei.local` という擬似 email を生成する。
+ * Round 45 では「ユーザー名 + パスワード」 の擬似 email 方式だったが、
+ * Supabase の email 確認設定との相性が悪く、登録/ログインが正常動作しないケースがあった。
+ * Round 51-A で標準的な「email + password + 確認用パスワード」 に戻す。
  *
  * セキュリティ:
- * ・username は 3-32 文字 (英数字 + アンダースコア + ハイフン)
- * ・パスワードは 8 文字以上 (Supabase の最小値)
+ * ・email は Supabase に保存されるが、用途は認証のみ (個人特定はしない)
  * ・パスワードは Supabase が bcrypt でサーバー側ハッシュ
- * ・クライアントはパスワードを保持しない (送信後すぐ破棄)
+ * ・クライアントはパスワードを保持しない
+ * ・確認メール送信を OFF にする設定を Supabase 側で必須 (docs/supabase-setup.md 参照)
  */
-import { getSupabase } from "./supabaseClient.js";
+import { getSupabase, cloudEnabled, getCloudConfig } from "./supabaseClient.js";
 
-const FAKE_DOMAIN = "kyotei.local";
-const USERNAME_REGEX = /^[a-zA-Z0-9_-]{3,32}$/;
-
-export function validateUsername(username) {
-  if (!username) return "ユーザー名を入力してください";
-  if (!USERNAME_REGEX.test(username)) {
-    return "ユーザー名は半角英数字 / _ / - で 3〜32 文字";
-  }
+/* === バリデーション === */
+export function validateEmail(email) {
+  if (!email) return "メールアドレスを入力してください";
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return "有効なメールアドレスを入力してください";
+  if (email.length > 100) return "メールアドレスが長すぎます";
   return null;
 }
 
 export function validatePassword(password) {
   if (!password) return "パスワードを入力してください";
   if (password.length < 8) return "パスワードは 8 文字以上で設定してください";
+  if (password.length > 100) return "パスワードが長すぎます";
   return null;
 }
 
-function usernameToEmail(username) {
-  return `${username.toLowerCase()}@${FAKE_DOMAIN}`;
+export function validatePasswordConfirm(password, confirm) {
+  if (!confirm) return "確認用パスワードを入力してください";
+  if (password !== confirm) return "パスワードが一致しません";
+  return null;
+}
+
+/* === 診断: 設定が正しいか === */
+export function diagnoseAuth() {
+  const config = getCloudConfig();
+  const issues = [];
+  if (!config.enabled) {
+    issues.push({
+      severity: "error",
+      message: "Supabase 環境変数が未設定",
+      detail: "VITE_SUPABASE_URL と VITE_SUPABASE_ANON_KEY を Vercel に設定 + Redeploy が必要",
+      action: "docs/supabase-setup.md を参照",
+    });
+  } else {
+    issues.push({
+      severity: "ok",
+      message: "Supabase URL 設定済",
+      detail: config.urlPreview,
+    });
+  }
+  return { ok: issues.every(i => i.severity !== "error"), issues, config };
 }
 
 /* === サインアップ === */
-export async function signUp(username, password) {
+export async function signUp(email, password, confirmPassword) {
   const supabase = getSupabase();
-  if (!supabase) return { ok: false, error: "クラウド機能が無効です (環境変数未設定)" };
-  const errU = validateUsername(username);
-  if (errU) return { ok: false, error: errU };
+  if (!supabase) {
+    return {
+      ok: false,
+      error: "Supabase が未設定です",
+      detail: "Vercel の環境変数 VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY を確認してください",
+    };
+  }
+  const errE = validateEmail(email);
+  if (errE) return { ok: false, error: errE };
   const errP = validatePassword(password);
   if (errP) return { ok: false, error: errP };
+  if (confirmPassword != null) {
+    const errC = validatePasswordConfirm(password, confirmPassword);
+    if (errC) return { ok: false, error: errC };
+  }
   try {
-    const email = usernameToEmail(username);
-    const { data, error } = await supabase.auth.signUp({ email, password });
+    const normalizedEmail = email.toLowerCase().trim();
+    const { data, error } = await supabase.auth.signUp({
+      email: normalizedEmail,
+      password,
+    });
     if (error) {
-      // 重複チェック
-      if (/already registered|already exists/i.test(error.message)) {
-        return { ok: false, error: "このユーザー名は既に使われています" };
+      console.error("[auth.signUp] error:", error);
+      if (/already registered|already exists|user already registered/i.test(error.message)) {
+        return { ok: false, error: "このメールアドレスは既に登録されています", detail: "ログインタブから入ってください" };
       }
-      return { ok: false, error: error.message };
+      if (/rate limit|too many/i.test(error.message)) {
+        return { ok: false, error: "登録試行が多すぎます", detail: "数分待ってから再試行してください" };
+      }
+      if (/invalid email/i.test(error.message)) {
+        return { ok: false, error: "メールアドレスの形式が不正", detail: error.message };
+      }
+      if (/password/i.test(error.message)) {
+        return { ok: false, error: "パスワードが要件を満たしていません", detail: error.message };
+      }
+      return { ok: false, error: "登録失敗", detail: error.message };
     }
-    return { ok: true, user: data.user, session: data.session, username };
+    // email 確認 OFF の場合は session が即発行される
+    // email 確認 ON の場合は session=null (確認メール送信される)
+    if (!data.session) {
+      return {
+        ok: false,
+        error: "Supabase の email 確認が ON のままです",
+        detail: "Authentication → Providers → Email → 'Confirm email' を OFF にしてください (docs/supabase-setup.md 3 番)",
+      };
+    }
+    return {
+      ok: true,
+      user: data.user,
+      session: data.session,
+      email: normalizedEmail,
+      displayName: normalizedEmail.split("@")[0],
+    };
   } catch (e) {
-    return { ok: false, error: String(e?.message || e) };
+    console.error("[auth.signUp] exception:", e);
+    return { ok: false, error: "通信エラー", detail: String(e?.message || e) };
   }
 }
 
 /* === ログイン === */
-export async function signIn(username, password) {
+export async function signIn(email, password) {
   const supabase = getSupabase();
-  if (!supabase) return { ok: false, error: "クラウド機能が無効です (環境変数未設定)" };
-  const errU = validateUsername(username);
-  if (errU) return { ok: false, error: errU };
+  if (!supabase) {
+    return {
+      ok: false,
+      error: "Supabase が未設定です",
+      detail: "Vercel の環境変数 VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY を確認してください",
+    };
+  }
+  const errE = validateEmail(email);
+  if (errE) return { ok: false, error: errE };
   const errP = validatePassword(password);
   if (errP) return { ok: false, error: errP };
   try {
-    const email = usernameToEmail(username);
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    const normalizedEmail = email.toLowerCase().trim();
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: normalizedEmail,
+      password,
+    });
     if (error) {
+      console.error("[auth.signIn] error:", error);
       if (/invalid|credentials/i.test(error.message)) {
-        return { ok: false, error: "ユーザー名またはパスワードが違います" };
+        return { ok: false, error: "メールアドレスまたはパスワードが違います" };
       }
-      return { ok: false, error: error.message };
+      if (/email not confirmed/i.test(error.message)) {
+        return {
+          ok: false,
+          error: "メール確認が必要です",
+          detail: "Supabase の 'Confirm email' を OFF にするか、登録したメールから確認リンクをクリックしてください",
+        };
+      }
+      if (/rate limit|too many/i.test(error.message)) {
+        return { ok: false, error: "ログイン試行が多すぎます", detail: "数分待ってから再試行" };
+      }
+      return { ok: false, error: "ログイン失敗", detail: error.message };
     }
-    return { ok: true, user: data.user, session: data.session, username };
+    return {
+      ok: true,
+      user: data.user,
+      session: data.session,
+      email: normalizedEmail,
+      displayName: normalizedEmail.split("@")[0],
+    };
   } catch (e) {
-    return { ok: false, error: String(e?.message || e) };
+    console.error("[auth.signIn] exception:", e);
+    return { ok: false, error: "通信エラー", detail: String(e?.message || e) };
   }
 }
 
 /* === ログアウト === */
 export async function signOut() {
   const supabase = getSupabase();
-  if (!supabase) return { ok: false, error: "クラウド機能が無効です" };
+  if (!supabase) return { ok: false, error: "Supabase 未設定" };
   try {
     const { error } = await supabase.auth.signOut();
     if (error) return { ok: false, error: error.message };
@@ -94,33 +180,37 @@ export async function signOut() {
   }
 }
 
-/* === 現在のユーザーを取得 === */
+/* === 現在のユーザー === */
 export async function getCurrentUser() {
   const supabase = getSupabase();
   if (!supabase) return null;
   try {
     const { data, error } = await supabase.auth.getUser();
     if (error || !data?.user) return null;
+    const email = data.user.email || "";
     return {
       id: data.user.id,
-      username: data.user.email?.replace(`@${FAKE_DOMAIN}`, "") || "?",
-      email: data.user.email,
+      email,
+      username: email.split("@")[0] || "?", // 後方互換 (UI で username 表示)
+      displayName: email.split("@")[0] || "?",
     };
   } catch {
     return null;
   }
 }
 
-/* === セッション変更を購読 === */
+/* === セッション変更購読 === */
 export function onAuthChange(callback) {
   const supabase = getSupabase();
   if (!supabase) return () => {};
   const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
     if (session?.user) {
+      const email = session.user.email || "";
       callback({
         id: session.user.id,
-        username: session.user.email?.replace(`@${FAKE_DOMAIN}`, "") || "?",
-        email: session.user.email,
+        email,
+        username: email.split("@")[0] || "?",
+        displayName: email.split("@")[0] || "?",
       });
     } else {
       callback(null);
@@ -128,3 +218,8 @@ export function onAuthChange(callback) {
   });
   return () => subscription.unsubscribe();
 }
+
+/* === 後方互換: 旧 username 系 API は signUp/signIn に転送 (deprecated) ===
+   旧コード (LoginModal の古い版) で validateUsername 等を呼んでいた箇所は、
+   新規エラーを出さないために stubs を残す。 */
+export function validateUsername(_) { return null; }

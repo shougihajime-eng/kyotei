@@ -521,11 +521,68 @@ function _cacheKey(race, learnedAdjustments) {
   return _raceSig(race) + "@@" + ladj;
 }
 
+/* === Round 51: 軽量判定ゲート ===
+   全レースを完璧に予想しない。 まず構造的に「買えるレースかどうか」 を高速判定。
+   失敗したら詳細分析・買い目生成・重い保存をスキップ。
+   返り値: { pass: bool, reason: string, message: string }
+*/
+export function lightGate(race) {
+  // 1. 出走表データあり (6 艇)
+  if (!race?.boats || race.boats.length !== 6) {
+    return { pass: false, reason: "no-boats", message: "出走表未取得" };
+  }
+  // 2. オッズ取得済み
+  const apiOdds = race.apiOdds || {};
+  const oddsCount = Object.keys(apiOdds.exacta || {}).length
+                  + Object.keys(apiOdds.trifecta || {}).length
+                  + Object.keys(apiOdds.quinella || {}).length
+                  + Object.keys(apiOdds.trio || {}).length;
+  if (oddsCount === 0) {
+    return { pass: false, reason: "no-odds", message: "オッズ公開待ち" };
+  }
+  // 3. stale オッズ (キャッシュ) は深堀り回避
+  if (apiOdds.stale) {
+    return { pass: false, reason: "stale-odds", message: "オッズ整合性チェック中" };
+  }
+  // 4. 締切済み (発走時刻を過ぎた)
+  const startMs = race.date && race.startTime
+    ? new Date(`${race.date}T${race.startTime}:00+09:00`).getTime()
+    : null;
+  if (startMs != null && Date.now() > startMs) {
+    return { pass: false, reason: "closed", message: "締切済み" };
+  }
+  // 5. 暴荒れ (風 ≥ 10m or 波 ≥ 12cm) — 不確定すぎて買えない
+  const wave = race.wave ?? 0;
+  const wind = race.wind ?? 0;
+  if (wave >= 12 || wind >= 10) {
+    return { pass: false, reason: "extreme-rough", message: `大荒れ (風${wind}m / 波${wave}cm)` };
+  }
+  // 6. 部品交換が複数艇 (3 艇以上 ペラ/エンジン) — 信頼性低
+  const partsExchCount = (race.boats || []).filter(b =>
+    Array.isArray(b.partsExchange) && b.partsExchange.some(p => /ペラ|プロペラ|エンジン/.test(p))
+  ).length;
+  if (partsExchCount >= 3) {
+    return { pass: false, reason: "many-parts-exchange", message: `部品交換が ${partsExchCount} 艇 — 不確定` };
+  }
+  return { pass: true, reason: null, message: "OK" };
+}
+
 /* レース全体の評価
    learnedAdjustments: 過去の的中傾向から各因子の重み補正 (-0.05〜+0.05) を渡せる。
                        null なら標準重みのまま動作。
-   Round 22: race の中身が変わらない限りキャッシュから返す (useMemo より外側で作用) */
+   Round 22: race の中身が変わらない限りキャッシュから返す (useMemo より外側で作用)
+   Round 51: 先頭で lightGate を呼び、不適格レースは深堀りせずに即帰る (高速化) */
 export function evaluateRace(race, newsItems, learnedAdjustments) {
+  // === 軽量判定 (高速) — 失敗なら深堀りしない ===
+  const gate = lightGate(race);
+  if (!gate.pass) {
+    return {
+      ok: false,
+      reason: gate.reason,
+      message: gate.message,
+      lightSkipped: true,
+    };
+  }
   if (!race?.id) return _evaluateRaw(race, newsItems, learnedAdjustments);
   const key = _cacheKey(race, learnedAdjustments);
   const cached = _evalCache.get(race.id);
