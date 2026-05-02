@@ -107,6 +107,9 @@ export default function Stats({ predictions, lastRefreshAt, virtualMode }) {
         最終更新: {lastRefreshAt ? new Date(lastRefreshAt).toLocaleTimeString("ja-JP") : "—"}
       </div>
 
+      {/* Round 51-G: 速報サマリ (開いた瞬間に大きな数値で表示) */}
+      <QuickSummaryPanel predictions={predictions} virtualMode={virtualMode} />
+
       {/* Round 39: 実績検証パネル — 7日 / 30日 / 全期間 並列 */}
       <ActualPerformancePanel predictions={predictions} virtualMode={virtualMode} />
 
@@ -123,6 +126,101 @@ export default function Stats({ predictions, lastRefreshAt, virtualMode }) {
               </div>
             </section>)
           : <SingleView items={tab === "air" ? air : real} label={tab === "air" ? "エア" : "リアル"} />}
+    </div>
+  );
+}
+
+/* === Round 51-G: 速報サマリ (即時表示・大きな数値・色分け) === */
+const QuickSummaryPanel = memo(QuickSummaryPanelImpl);
+function QuickSummaryPanelImpl({ predictions, virtualMode }) {
+  const summary = useMemo(() => {
+    const all = Object.values(predictions || {});
+    const today = new Date().toISOString().slice(0, 10);
+    const ago = (d) => new Date(Date.now() - d * 86400000).toISOString().slice(0, 10);
+    function calc(filterMode, daysBack) {
+      const cutoff = ago(daysBack);
+      const list = all.filter((p) => (p.date || "0000-00-00") >= cutoff)
+        .filter((p) => filterMode === "air" ? p.virtual !== false : p.virtual === false);
+      const buys = list.filter((p) => p.decision === "buy" && (p.totalStake || 0) > 0);
+      const settled = buys.filter((p) => p.result?.first);
+      let stake = 0, ret = 0, hits = 0;
+      settled.forEach((p) => { stake += p.totalStake; ret += p.payout || 0; if (p.hit) hits++; });
+      return {
+        buys: buys.length,
+        settled: settled.length,
+        hits,
+        stake,
+        ret,
+        pnl: ret - stake,
+        roi: stake > 0 ? ret / stake : null,
+        hitRate: settled.length > 0 ? hits / settled.length : null,
+      };
+    }
+    return {
+      airToday: calc("air", 0),
+      airWeek: calc("air", 6),
+      realToday: calc("real", 0),
+      realWeek: calc("real", 6),
+    };
+  }, [predictions]);
+
+  const isAir = virtualMode !== false;
+  const today = isAir ? summary.airToday : summary.realToday;
+  const week = isAir ? summary.airWeek : summary.realWeek;
+  const pairLabel = isAir ? "🧪 エア" : "💰 リアル";
+  const otherLabel = isAir ? "💰 リアル" : "🧪 エア";
+  const otherWeek = isAir ? summary.realWeek : summary.airWeek;
+
+  return (
+    <section className="card p-4" style={{ minHeight: 180 }}>
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+        <h3 className="font-bold text-sm">⚡ 速報サマリ ({pairLabel})</h3>
+        <span className="pill badge-buy" style={{ fontSize: 10 }}>0.5 秒で把握</span>
+      </div>
+
+      {/* 現在モードの 大きな数値 */}
+      <div className="grid grid-cols-2 gap-3 mb-3">
+        <BigStat label="今日 PnL" value={today.pnl} type="pnl" />
+        <BigStat label="今週 PnL" value={week.pnl} type="pnl" />
+        <BigStat label="今週 回収率" value={week.roi} type="pct" />
+        <BigStat label="今週 的中率" value={week.hitRate} type="pct" subdued />
+      </div>
+
+      {/* 反対モードのミニ表示 */}
+      <div className="text-xs opacity-70 mt-2 pt-2" style={{ borderTop: "1px dashed rgba(255,255,255,0.1)" }}>
+        参考: {otherLabel} 今週 — PnL <b className={otherWeek.pnl >= 0 ? "text-pos" : "text-neg"}>
+          {otherWeek.pnl >= 0 ? "+" : ""}{Math.round(otherWeek.pnl).toLocaleString()}円
+        </b>
+        / 買い <b>{otherWeek.buys}</b> / 確定 <b>{otherWeek.settled}</b>
+      </div>
+    </section>
+  );
+}
+function BigStat({ label, value, type, subdued }) {
+  let display, color;
+  if (value == null) {
+    display = "—";
+    color = "#9fb0c9";
+  } else if (type === "pnl") {
+    const n = Math.round(value);
+    display = `${n >= 0 ? "+" : ""}${n.toLocaleString()}円`;
+    color = n > 0 ? "#34d399" : n < 0 ? "#f87171" : "#9fb0c9";
+  } else if (type === "pct") {
+    display = `${Math.round(value * 100)}%`;
+    color = value >= 1.10 ? "#34d399" : value >= 1.0 ? "#bae6fd" : "#f87171";
+  } else {
+    display = value;
+    color = "#e7eef8";
+  }
+  return (
+    <div className="p-3 rounded text-center" style={{ background: "rgba(0,0,0,0.22)", minHeight: 70 }}>
+      <div className="text-xs opacity-70">{label}</div>
+      <div className="num font-bold mt-1" style={{
+        fontSize: subdued ? 18 : 24,
+        color,
+        letterSpacing: "-0.02em",
+        lineHeight: 1.05,
+      }}>{display}</div>
     </div>
   );
 }

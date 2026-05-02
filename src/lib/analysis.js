@@ -114,19 +114,25 @@ export function analyzePrediction(prediction, race) {
  */
 export function evaluateSkipQuality(predictions) {
   const all = Object.values(predictions || {}).filter((p) => p.result?.first);
-  let skippedCorrect = 0; // 見送り → 高配当 (荒れ) だった
-  let skippedMissed = 0;  // 見送り → 本命通りだった (買えばよかった)
+  let skippedCorrect = 0; // 見送り正解 (intendedMain が外れた)
+  let skippedMissed = 0;  // 見送り失敗 (intendedMain が当たった = 買えばよかった)
   let boughtHit = 0;
   let boughtMiss = 0;
   for (const p of all) {
     if (p.decision === "skip") {
-      // 結果の本命らしさ: 1号艇の 1着 = 普通 / それ以外 = 荒れ
-      if (p.result.first === 1) skippedMissed++;
-      else skippedCorrect++;
-    } else {
+      // Round 51-F: skipCorrect/skipMissed フラグ優先 (intendedMain ベースで正確判定)
+      if (p.skipCorrect === true) skippedCorrect++;
+      else if (p.skipMissed === true) skippedMissed++;
+      else {
+        // 旧データ (Round 51-F 以前) のフォールバック: 1号艇1着なら見送り失敗扱い
+        if (p.result.first === 1) skippedMissed++;
+        else skippedCorrect++;
+      }
+    } else if (p.decision === "buy") {
       if (p.hit) boughtHit++;
       else boughtMiss++;
     }
+    // no-odds / data-checking / closed は集計から除外
   }
   const skipQuality = (skippedCorrect + skippedMissed) > 0
     ? skippedCorrect / (skippedCorrect + skippedMissed) : null;

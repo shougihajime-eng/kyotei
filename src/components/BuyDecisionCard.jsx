@@ -24,7 +24,7 @@ function BuyDecisionCard({ race, recommendation, onRecord, virtualMode }) {
   const dec = recommendation?.decision;
 
   if (dec === "no-odds") {
-    return <NoOdds race={race} />;
+    return <NoOdds race={race} recommendation={recommendation} />;
   }
   if (dec === "data-checking") {
     return <DataChecking race={race} recommendation={recommendation} />;
@@ -407,28 +407,61 @@ function Closed({ race, recommendation }) {
   );
 }
 
-function NoOdds({ race }) {
-  // Round 34: 「取得不可」 で逃げない。 必ず "更新中" or "公開待ち" を表示
+function NoOdds({ race, recommendation }) {
+  // Round 51-G: 4 状態に細分化 — 「壊れている」 印象を与えない
+  // 1. 再取得待ち (stale): 直前のキャッシュあり、リトライ中
+  // 2. 候補維持 (structural high/medium): オッズ無しでも構造的に有望
+  // 3. 見送り (structural skip): 構造的にも弱い
+  // 4. 公開待ち (default): 発走前で未公開
   const hasStale = !!race?.apiOdds?.stale;
   const lastFetchedAt = race?.apiOdds?.lastFetchedAt;
   const ago = lastFetchedAt ? formatAgo(lastFetchedAt) : null;
+  const sa = recommendation?.structuralAssessment;
+  const candidateLevel = sa?.candidateLevel;
+  let mode, emoji, title, body;
+  if (hasStale) {
+    mode = "retry"; emoji = "🔄"; title = "オッズ再取得待ち";
+    body = `リトライ中です。 ${ago ? `最終取得 ${ago} 前` : ""} 仮オッズでの推奨は行いません。`;
+  } else if (candidateLevel === "high" || candidateLevel === "medium") {
+    mode = "structural-keep"; emoji = "📋"; title = "オッズなしでも候補維持";
+    body = `構造的には有望 (1号艇モーター/展示/勝率などが揃っている)。 オッズ公開後に詳細判定します。`;
+  } else if (candidateLevel === "low" || candidateLevel === "skip") {
+    mode = "skip-early"; emoji = "📊"; title = "オッズ未取得 + 構造弱い → 見送り";
+    body = `1 号艇の信頼度や条件が弱く、 オッズが出ても買わない可能性が高いです。`;
+  } else {
+    mode = "waiting"; emoji = "⏳"; title = "オッズ公開待ち";
+    body = "発走 60〜90 分前から公開されます。 まだ公開されていない可能性があります。";
+  }
+  const reasons = sa?.reasons || [];
   return (
     <section style={cardStyle.noOdds}>
-      <div style={{ fontSize: 36, marginBottom: 6 }}>{hasStale ? "🔄" : "⏳"}</div>
-      <div style={{ fontSize: "min(28px,7vw)", fontWeight: 900 }}>
-        {hasStale ? "オッズ更新中" : "オッズ公開待ち"}
-      </div>
+      <div style={{ fontSize: 36, marginBottom: 6 }}>{emoji}</div>
+      <div style={{ fontSize: "min(26px,6.5vw)", fontWeight: 900 }}>{title}</div>
       <div className="opacity-90 mt-3 text-sm">{race.venue} {race.raceNo}R ({race.startTime}発走)</div>
-      {hasStale && ago && (
+      {ago && (
         <div className="opacity-90 mt-2 text-xs" style={{ color: "#fde68a" }}>
           最終取得 {ago} 前
         </div>
       )}
-      <div className="opacity-80 mt-2 text-xs px-3" style={{ lineHeight: 1.5 }}>
-        {hasStale
-          ? "リトライ中です。仮オッズでの推奨は行いません (期待値計算が崩れるため)。次の自動更新で再取得します。"
-          : "発走 60〜90 分前から公開されます。まだ公開されていない可能性があります。"}
+      <div className="opacity-85 mt-3 text-xs px-3" style={{ lineHeight: 1.55 }}>
+        {body}
       </div>
+      {sa && (
+        <div className="mt-3 inline-block px-3 py-1 rounded-full text-xs" style={{
+          background: "rgba(0,0,0,0.30)",
+          color: candidateLevel === "high" ? "#a7f3d0"
+               : candidateLevel === "medium" ? "#bae6fd"
+               : candidateLevel === "low" ? "#fde68a"
+               : "#fca5a5",
+        }}>
+          構造スコア {sa.score}/100 ({candidateLevel})
+        </div>
+      )}
+      {reasons.length > 0 && (
+        <div className="text-xs opacity-75 mt-3 px-3" style={{ lineHeight: 1.5 }}>
+          {reasons.slice(0, 3).join(" / ")}
+        </div>
+      )}
     </section>
   );
 }
