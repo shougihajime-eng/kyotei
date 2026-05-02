@@ -878,18 +878,22 @@ export default function App() {
           />
         )}
         {tab === "verify" && (
-          <Verify predictions={visiblePredictions}
+          <Verify predictions={visibleData.predictions}
+            visibleData={visibleData}
             currentProfile={settings.riskProfile}
             virtualMode={settings.virtualMode}
             onManualBet={handleManualBet}
             onDeleteRecord={handleDeleteRecord} />
         )}
         {tab === "stats" && (
-          <Stats predictions={visiblePredictions} lastRefreshAt={lastRefreshAt}
+          <Stats predictions={visibleData.predictions}
+            visibleData={visibleData}
+            lastRefreshAt={lastRefreshAt}
             virtualMode={settings.virtualMode} />
         )}
         {tab === "analysis" && (
-          <LossAnalysis predictions={visiblePredictions} races={races} />
+          <LossAnalysis predictions={visibleData.predictions}
+            visibleData={visibleData} races={races} />
         )}
         {tab === "settings" && (
           <Settings settings={settings} setSettings={setSettings}

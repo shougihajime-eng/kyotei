@@ -65,10 +65,10 @@ export default function Dashboard({
       {/* 更新バー (常時) */}
       <RefreshBar onRefresh={onRefresh} refreshing={refreshing} refreshMsg={refreshMsg} lastRefreshAt={lastRefreshAt} />
 
-      {/* Round 52-53: Top Decision Bar (visibleData 単一駆動) */}
+      {/* Round 52-54: Top Decision Bar (純粋コンポーネント, visibleData + currentStyle のみ) */}
       <TopDecisionBar
         visibleData={visibleData}
-        styleAllocation={styleAllocation}
+        currentStyle={settings.riskProfile}
         switchProfile={switchProfile}
       />
 
