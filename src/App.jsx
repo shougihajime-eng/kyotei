@@ -199,6 +199,28 @@ export default function App() {
     [allStyleRecommendations]
   );
 
+  /* Round 51-B: 「買い候補だけ速く見つける」 — スキャン結果サマリ
+     ・total: 全スキャンレース数
+     ・candidates: 買い候補 (現在スタイルで decision=buy のレース数)
+     ・lightSkipped: 軽量ゲートで弾いたレース (オッズなし/締切/暴荒れ等)
+     ・skip: 9 条件未達で見送り
+     ・noOdds / closed / dataChecking: それぞれ */
+  const scanStats = useMemo(() => {
+    const total = races.length;
+    const map = recommendations || {};
+    let buy = 0, skip = 0, noOdds = 0, closed = 0, dataChecking = 0, lightSkipped = 0;
+    for (const r of races) {
+      const rec = map[r.id];
+      if (!rec) continue;
+      if (rec.decision === "buy") buy++;
+      else if (rec.decision === "no-odds") { noOdds++; lightSkipped++; }
+      else if (rec.decision === "closed") closed++;
+      else if (rec.decision === "data-checking") { dataChecking++; lightSkipped++; }
+      else skip++;
+    }
+    return { total, candidates: buy, skip, noOdds, closed, dataChecking, lightSkipped };
+  }, [races, recommendations]);
+
   /* recommendations の最新値を ref にも反映 (switchProfile が安全に参照できるよう) */
   useEffect(() => { recsRef.current = recommendations; }, [recommendations]);
 
@@ -283,8 +305,9 @@ export default function App() {
 
   useEffect(() => {
     if (races.length === 0) return;
-    // recommendations が未計算の場合があるため、recommendations を直接読み取らず
-    // races のみに依存して snapshot
+    /* === Round 51-B: 買い候補のみ重く保存。 見送り/no-odds は localStorage から削除 ===
+       目的: localStorage の容量削減 + 保存読み書きの高速化 + 履歴をクリーンに保つ。
+       手動記録 (manuallyRecorded) は無関係に永続。 */
     setPredictions((prev) => {
       const next = { ...prev };
       let changed = false;
@@ -295,40 +318,52 @@ export default function App() {
         const dateKey = (r.date || "").replace(/-/g, "");
         const key = `${dateKey}_${r.id}`;
         const existing = next[key] || {};
-        // 手動記録 (manuallyRecorded) は AI スナップショットで上書きしない
+        // 手動記録は AI スナップショットで一切触らない
         if (existing.manuallyRecorded) continue;
-        const combos = rec.decision === "buy"
-          ? rec.items.map((it) => ({
-              kind: it.kind, combo: it.combo, stake: it.stake,
-              odds: it.odds, prob: it.prob, ev: it.ev,
-              expectedReturn: it.expectedReturn, evMinus1: it.evMinus1,
-              role: it.role, grade: it.grade, pickReason: it.pickReason,
-            }))
-          : [];
+        // === 買いでないレースは保存しない (skip / no-odds / closed / data-checking) ===
+        if (rec.decision !== "buy") {
+          // 既存に AI 自動スナップショットが残っていれば削除 (容量削減)
+          if (next[key] && !existing.manuallyRecorded) {
+            delete next[key];
+            changed = true;
+          }
+          continue;
+        }
+        // === 買い候補のみ詳細を保存 ===
+        const combos = rec.items.map((it) => ({
+          kind: it.kind, combo: it.combo, stake: it.stake,
+          odds: it.odds, prob: it.prob, ev: it.ev,
+          expectedReturn: it.expectedReturn, evMinus1: it.evMinus1,
+          role: it.role, grade: it.grade, pickReason: it.pickReason,
+        }));
         const updated = {
           ...existing,
           key, date: r.date, raceId: r.id, venue: r.venue, jcd: r.jcd, raceNo: r.raceNo,
-          startTime: r.startTime,             // 締切時刻 (発走時刻)
-          closingTime: r.startTime,           // alias (UI 用)
-          predictionTime: existing.predictionTime || stamp, // 予想を出した時刻 (初回のみ固定)
-          decision: rec.decision,             // buy / skip / no-odds
+          startTime: r.startTime,
+          closingTime: r.startTime,
+          predictionTime: existing.predictionTime || stamp,
+          decision: "buy",
           combos,
           reason: rec.reason || existing.reason || null,
           rationale: rec.rationale || existing.rationale || null,
-          totalStake: rec.decision === "buy" ? rec.total : 0,
+          totalStake: rec.total,
           grade: rec.grade || null,
-          profile: rec.profile || settings.riskProfile,    // 予想スタイル (steady/balanced/aggressive)
-          predictionType: rec.profile || settings.riskProfile, // alias (UI 用)
-          // virtual: AI スナップショットは settings.virtualMode に従う (既存値は尊重)
+          profile: rec.profile || settings.riskProfile,
+          predictionType: rec.profile || settings.riskProfile,
           virtual: existing.virtual != null ? existing.virtual : !!settings.virtualMode,
           warnings: rec.warnings || [],
           venueProfile: rec.venueProfile || null,
           timeSlot: rec.timeSlot || null,
+          confidence: rec.confidence,
+          worstCaseRoi: rec.worstCaseRoi,
+          worstCasePayout: rec.worstCasePayout,
+          expectedPayout: rec.expectedPayout,
           snapshotAt: stamp,
         };
         const cmp = (o) => JSON.stringify({
           d: o.decision || "",
           c: (o.combos || []).map(c => `${c.kind}:${c.combo}`).join("|"),
+          p: o.profile || "",
         });
         if (cmp(existing) !== cmp(updated)) {
           next[key] = updated;
@@ -338,7 +373,7 @@ export default function App() {
       return changed ? next : prev;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [racesSignature]); // ⚠ 重要: recommendations 依存を外して無限ループ撃退
+  }, [racesSignature]);
 
   /* === 「最新にする」ボタン: 一括取得 ===
      try-finally で setRefreshing(false) を保証。
@@ -654,6 +689,7 @@ export default function App() {
             onRefresh={refreshAll} onRecord={handleRecord} settings={settings}
             switchProfile={switchProfile}
             strategyRanking={strategyRanking}
+            scanStats={scanStats}
             onPickRace={(t) => setTab(t)}
           />
         )}

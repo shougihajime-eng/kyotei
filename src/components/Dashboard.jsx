@@ -23,7 +23,7 @@ export default function Dashboard({
   races, predictions, recommendations, today, weekly,
   refreshing, refreshMsg, lastRefreshAt, onRefresh,
   onRecord, settings, onPickRace,
-  switchProfile, strategyRanking,
+  switchProfile, strategyRanking, scanStats,
 }) {
   const [showDetails, setShowDetails] = useState(false);
 
@@ -51,6 +51,11 @@ export default function Dashboard({
     <div className="space-y-4 max-w-3xl mx-auto px-4 mt-4 pb-20">
       {/* 更新バー (常時) */}
       <RefreshBar onRefresh={onRefresh} refreshing={refreshing} refreshMsg={refreshMsg} lastRefreshAt={lastRefreshAt} />
+
+      {/* Round 51-B: 「買えるレースを探索中」 サマリ */}
+      {scanStats && scanStats.total > 0 && (
+        <ScanStatsBar stats={scanStats} refreshing={refreshing} />
+      )}
 
       {/* 戦略ランキング (Round 32) — 「今日はどの戦い方が有利か」 */}
       {strategyRanking && (
@@ -225,6 +230,47 @@ function startEpoch(dateStr, startTime) {
     const d = new Date(`${dateStr}T${startTime}:00+09:00`);
     return isNaN(d.getTime()) ? null : d.getTime();
   } catch { return null; }
+}
+
+/* === Round 51-B: スキャン結果サマリ (買えるレース探索中) === */
+const ScanStatsBar = memo(ScanStatsBarImpl);
+function ScanStatsBarImpl({ stats, refreshing }) {
+  const { total, candidates, skip, noOdds, closed, dataChecking } = stats;
+  // 状態判定: 候補あり / 探索中 / 候補なし
+  let mode, color, headline;
+  if (refreshing) {
+    mode = "scanning"; color = "#bae6fd"; headline = "🔍 買えるレースを探索中…";
+  } else if (candidates > 0) {
+    mode = "found"; color = "#a7f3d0"; headline = `🎯 買い候補 ${candidates} 件 / 全 ${total} レース`;
+  } else if (total === 0) {
+    mode = "empty"; color = "#9fb0c9"; headline = "🤖 「🔄 更新」 を押すとスキャンが始まります";
+  } else {
+    mode = "no-candidate"; color = "#fde68a"; headline = `📊 候補なし — 全 ${total} レース 厳選見送り`;
+  }
+  return (
+    <section className="card p-3" style={{ minHeight: 70, borderColor: color, borderWidth: 1 }}>
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div>
+          <div className="font-bold text-sm" style={{ color }}>{headline}</div>
+          {mode !== "empty" && (
+            <div className="text-xs opacity-70 mt-1" style={{ lineHeight: 1.5 }}>
+              候補 <b style={{ color: "#a7f3d0" }}>{candidates}</b>
+              <span className="mx-1 opacity-50">/</span>
+              見送り <b>{skip}</b>
+              {noOdds > 0 && <> <span className="mx-1 opacity-50">/</span> オッズ待ち <b>{noOdds}</b></>}
+              {dataChecking > 0 && <> <span className="mx-1 opacity-50">/</span> 確認中 <b>{dataChecking}</b></>}
+              {closed > 0 && <> <span className="mx-1 opacity-50">/</span> 締切 <b>{closed}</b></>}
+            </div>
+          )}
+          {mode === "no-candidate" && (
+            <div className="text-xs opacity-60 mt-1" style={{ lineHeight: 1.5 }}>
+              💡 厳選見送り — 期待値が出るレースは限られます。 無理に買わない判断もアプリの価値です。
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
+  );
 }
 
 /* === 戦略ランキングカード (Round 32) ===
