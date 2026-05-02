@@ -22,7 +22,7 @@ import { yen } from "../lib/format.js";
  */
 export default function Dashboard({
   races, predictions, recommendations, today, weekly,
-  refreshing, refreshMsg, lastRefreshAt, onRefresh,
+  refreshing, refreshMsg, lastRefreshAt, onRefresh, onRetry,
   onRecord, settings, onPickRace,
   switchProfile, strategyRanking, scanStats,
   styleAllocation, styleHeadlines,
@@ -65,11 +65,12 @@ export default function Dashboard({
       {/* 更新バー (常時) */}
       <RefreshBar onRefresh={onRefresh} refreshing={refreshing} refreshMsg={refreshMsg} lastRefreshAt={lastRefreshAt} />
 
-      {/* Round 52-54: Top Decision Bar (純粋コンポーネント, visibleData + currentStyle のみ) */}
+      {/* Round 52-56: Top Decision Bar (純粋コンポーネント, 4 状態対応) */}
       <TopDecisionBar
         visibleData={visibleData}
         currentStyle={settings.riskProfile}
         switchProfile={switchProfile}
+        onRetry={onRetry || onRefresh}
       />
 
       {/* Round 51-B: 「買えるレースを探索中」 サマリ */}

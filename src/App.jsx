@@ -852,7 +852,7 @@ export default function App() {
             visibleData={visibleData}
             today={today} weekly={weekly}
             refreshing={refreshing} refreshMsg={refreshMsg} lastRefreshAt={lastRefreshAt}
-            onRefresh={refreshAll} onRecord={handleRecord} settings={settings}
+            onRefresh={refreshAll} onRetry={refreshAll} onRecord={handleRecord} settings={settings}
             switchProfile={switchProfile}
             strategyRanking={strategyRanking}
             scanStats={scanStats}
