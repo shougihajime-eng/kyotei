@@ -1,49 +1,53 @@
 /**
- * Top Decision Bar (Round 54-55) — 純粋コンポーネント (state なし / effect なし)
+ * Top Decision Bar (Round 54-56) — 純粋コンポーネント (state なし / effect なし)
  *
  * @typedef {Object} VisibleData
+ * 必須フィールド:
  * @property {Object<string, Object>} predictions  - フィルタ済み予測データ
  * @property {boolean} hasData                     - データあり
  * @property {boolean} isEmpty                     - データなし
- * @property {boolean} isLegacyMixed              - legacy 混在
- * @property {string|null} lastUpdated            - 最終 snapshotAt (ISO)
- * @property {boolean} isReady                    - 準備完了
- * @property {boolean} isLoading                  - 読込中
- * @property {string|null} error                  - エラー (なければ null)
- * @property {Object} countsByStyle               - { steady, balanced, aggressive }
- * @property {Object} roiByStyle                  - 各スタイル ROI (null 可)
- * @property {Object} pnlSummary                  - { air, real } 集計
- * @property {string|null} bestStyle              - 最良 ROI スタイル
- * @property {boolean} driftDetected              - 選択 vs 最良のズレ
- * @property {string|null} currentStyle           - 現在選択中
- * @property {boolean} showLegacy                 - legacy 表示モード
- * @property {Object} versionInfo                 - { v2Count, legacyCount, ... }
+ * @property {Object} countsByStyle                - { steady, balanced, aggressive }
+ * @property {Object} roiByStyle                   - 各スタイル ROI (null 可)
+ * @property {Object} pnlSummary                   - { air, real } 集計
+ * 任意フィールド:
+ * @property {boolean} [isLegacyMixed]            - legacy 混在
+ * @property {string|null} [lastUpdated]          - 最終 snapshotAt (ISO)
+ * @property {boolean} [isReady]                  - 準備完了
+ * @property {boolean} [isLoading]                - 読込中
+ * @property {string|null} [error]                - エラー (なければ null)
+ * @property {string|null} [bestStyle]            - 最良 ROI スタイル
+ * @property {boolean} [driftDetected]            - 選択 vs 最良のズレ
+ * @property {string|null} [currentStyle]         - 現在選択中
+ * @property {boolean} [showLegacy]               - legacy 表示モード
+ * @property {Object} [versionInfo]               - { v2Count, legacyCount, ... }
  *
  * @typedef {Object} TopDecisionBarProps
  * @property {VisibleData} visibleData            - getVisibleData() の戻り値
  * @property {string} currentStyle                - "steady" | "balanced" | "aggressive"
- * @property {function(string): void} switchProfile - スタイル切替コールバック
- *
- * 設計契約 (絶対):
- *   ・props は visibleData / currentStyle / switchProfile のみ
- *   ・useState / useEffect / useMemo / useCallback は使わない (純粋描画のみ)
- *   ・predictions / races / settings には触れない
- *   ・shallow compare (memo) で参照等価性を保証 → 不要再描画なし
- *   ・visibleData の必須フィールドが欠けていれば理由付きプレースホルダ
- *   ・visibleData.error があれば エラーバッジ表示
- *   ・無反応状態は絶対作らない
+ * @property {function(string): void} switchProfile
+ * @property {function(): void} [onRetry]         - エラー時の再取得コールバック (任意)
  */
 import { memo } from "react";
 import { yen } from "../lib/format.js";
 
-/* visibleData の必須フィールドを検証 */
-function validateVisibleData(vd) {
+/* === 型ガード: visibleData の必須フィールドを検証 === */
+export function validateVisibleData(vd) {
   if (!vd || typeof vd !== "object") return "visibleData prop が未指定";
-  const required = ["countsByStyle", "roiByStyle", "pnlSummary", "isEmpty"];
+  const required = ["predictions", "countsByStyle", "roiByStyle", "pnlSummary", "isEmpty", "hasData"];
   for (const k of required) {
     if (!(k in vd)) return `visibleData.${k} が欠落`;
   }
+  if (typeof vd.countsByStyle !== "object" || vd.countsByStyle == null) return "countsByStyle 不正";
+  if (typeof vd.pnlSummary !== "object" || vd.pnlSummary == null) return "pnlSummary 不正";
   return null;
+}
+
+/* === 4 系統状態判定: isLoading / error / empty / ready === */
+function determineUIState(vd) {
+  if (vd.error) return "error";
+  if (vd.isLoading) return "loading";
+  if (vd.isEmpty || !vd.hasData) return "empty";
+  return "ready";
 }
 
 const STYLE_LABELS = {
@@ -54,8 +58,8 @@ const STYLE_LABELS = {
 
 export default memo(TopDecisionBar);
 /** @param {TopDecisionBarProps} props */
-function TopDecisionBar({ visibleData, currentStyle, switchProfile }) {
-  // 必須プロップ検証 (純粋に描画する前のガード)
+function TopDecisionBar({ visibleData, currentStyle, switchProfile, onRetry }) {
+  // 1. 型ガード — 不整合なら安全フォールバック
   const validationError = validateVisibleData(visibleData);
   if (validationError) {
     return (
@@ -67,6 +71,66 @@ function TopDecisionBar({ visibleData, currentStyle, switchProfile }) {
       </section>
     );
   }
+
+  // 2. 4 系統状態判定
+  const uiState = determineUIState(visibleData);
+
+  // === 状態 A: error ===
+  if (uiState === "error") {
+    return (
+      <section className="card p-4" style={{ minHeight: 120, borderColor: "#ef4444", borderWidth: 2 }} aria-live="polite" role="alert">
+        <div className="font-bold mb-2" style={{ color: "#fecaca" }}>⚠️ 通信エラー</div>
+        <div className="text-xs opacity-90 mb-3" style={{ lineHeight: 1.55 }}>
+          {visibleData.error}<br/>
+          ローカル保存は影響を受けていません。 再取得を試してください。
+        </div>
+        {visibleData.lastUpdated && (
+          <div className="text-xs opacity-70 mb-2">
+            最終更新: {new Date(visibleData.lastUpdated).toLocaleTimeString("ja-JP")}
+          </div>
+        )}
+        {onRetry && (
+          <button onClick={onRetry} className="btn btn-primary text-xs" style={{ minHeight: 36 }}>
+            🔄 再取得
+          </button>
+        )}
+      </section>
+    );
+  }
+
+  // === 状態 B: loading ===
+  if (uiState === "loading") {
+    return (
+      <section className="card p-4" style={{ minHeight: 120, borderColor: "#3b82f6", borderWidth: 2 }} aria-live="polite" role="status">
+        <div className="font-bold mb-2" style={{ color: "#bae6fd" }}>⏳ データ取得中…</div>
+        <div className="text-xs opacity-80" style={{ lineHeight: 1.55 }}>
+          AI がレース情報を確認しています。 通常 5-10 秒で完了します。
+        </div>
+        <div className="skeleton mt-3" style={{ height: 60 }}></div>
+      </section>
+    );
+  }
+
+  // === 状態 C: empty ===
+  if (uiState === "empty") {
+    return (
+      <section className="card p-4" style={{ minHeight: 120, borderColor: "#6b7280", borderWidth: 1 }} aria-live="polite" role="status">
+        <div className="font-bold mb-2">📭 該当データなし</div>
+        <div className="text-xs opacity-80 mb-3" style={{ lineHeight: 1.55 }}>
+          v2 データがまだ蓄積されていません。<br/>
+          以下のいずれかをお試しください:
+        </div>
+        <ul className="text-xs opacity-90" style={{ paddingLeft: 16, listStyle: "disc", lineHeight: 1.7 }}>
+          <li>「🔄 更新」 を押して当日のレース情報を取得</li>
+          <li>開催時間中 (10-22 時) にアクセス</li>
+          <li>「📅 検証」 → 「+ 手動記録」 で過去のレースを記録</li>
+          <li>条件を緩める (Settings で EV 下限調整)</li>
+        </ul>
+      </section>
+    );
+  }
+
+  // === 状態 D: ready (本来の表示) ===
   const {
     countsByStyle = { steady: 0, balanced: 0, aggressive: 0 },
     roiByStyle = { steady: null, balanced: null, aggressive: null },
@@ -74,10 +138,10 @@ function TopDecisionBar({ visibleData, currentStyle, switchProfile }) {
     bestStyle = null,
     driftDetected = false,
     lastUpdated = null,
-    hasData = false,
-    isEmpty = true,
-    error = null,
   } = visibleData;
+  const hasData = visibleData.hasData;
+  const isEmpty = visibleData.isEmpty;
+  const error = visibleData.error;
 
   /* ヘッドライン (visibleData の値だけで決定) */
   let headline, headlineMode;
