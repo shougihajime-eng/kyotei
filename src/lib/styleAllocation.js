@@ -226,6 +226,92 @@ export function pickHeadlineForEachStyle(races, evals, allStyleRecommendations, 
   return out;
 }
 
+/* === Round 57: Go モード — その日最も期待値の高いレースを top N (デフォルト 3) に絞る ===
+   引数:
+     races / evals / allStyleRecommendations: 通常データ
+     currentStyle: 現在選択中のスタイル
+     topN: 絞り込み件数 (デフォルト 3)
+   返り値:
+     topPicks: [{ raceId, race, ev, style, recommendation }] (買い候補のみ、最大 topN)
+     todayConfidence: 0-100 (本日の信頼度スコア)
+     confidenceLabel: "Go" | "様子見" | "見送り推奨"
+     confidenceReason: 1 行説明
+*/
+export function computeGoMode(races, evals, allStyleRecommendations, currentStyle = "balanced", topN = 3) {
+  // 各レースの「最良 EV」 を全スタイルから集約
+  const candidates = [];
+  for (const r of races || []) {
+    const ev = evals?.[r.id];
+    if (!ev?.ok) continue;
+    let best = null;
+    for (const style of ["steady", "balanced", "aggressive"]) {
+      const rec = allStyleRecommendations?.[style]?.[r.id];
+      if (rec?.decision !== "buy") continue;
+      const evScore = rec.main?.ev || 0;
+      if (!best || evScore > best.ev) {
+        best = {
+          raceId: r.id, race: r, ev: evScore, style, recommendation: rec,
+          confidence: rec.confidence || 0,
+          mainCombo: rec.main?.combo,
+          mainOdds: rec.main?.odds,
+          mainProb: rec.main?.prob,
+        };
+      }
+    }
+    if (best) candidates.push(best);
+  }
+  // EV 高い順に並べて top N
+  candidates.sort((a, b) => b.ev - a.ev);
+  const topPicks = candidates.slice(0, topN);
+
+  // === 本日の信頼度スコア (0-100) ===
+  let confidence = 30; // ベース
+  // 買い候補数: 1 件で +15、 2 件で +25、 3+ 件で +35
+  if (candidates.length >= 3) confidence += 35;
+  else if (candidates.length === 2) confidence += 25;
+  else if (candidates.length === 1) confidence += 15;
+  // EV 平均: 1.30+ で +20、 1.20+ で +10
+  const avgEv = topPicks.length > 0
+    ? topPicks.reduce((s, p) => s + p.ev, 0) / topPicks.length
+    : 0;
+  if (avgEv >= 1.30) confidence += 20;
+  else if (avgEv >= 1.20) confidence += 10;
+  // 自信スコア平均
+  const avgConfidence = topPicks.length > 0
+    ? topPicks.reduce((s, p) => s + (p.confidence || 0), 0) / topPicks.length
+    : 0;
+  if (avgConfidence >= 75) confidence += 15;
+  else if (avgConfidence >= 65) confidence += 8;
+
+  confidence = Math.max(0, Math.min(100, Math.round(confidence)));
+
+  let confidenceLabel, confidenceReason;
+  if (candidates.length === 0) {
+    confidenceLabel = "見送り推奨";
+    confidenceReason = "本日は買い候補ゼロ。 厳選見送り日です。";
+    confidence = 10;
+  } else if (confidence >= 75) {
+    confidenceLabel = "Go";
+    confidenceReason = `候補 ${candidates.length} 件 / 平均 EV ${Math.round(avgEv * 100)}% / 自信 ${Math.round(avgConfidence)}/100 — 勝負日`;
+  } else if (confidence >= 55) {
+    confidenceLabel = "様子見";
+    confidenceReason = `候補 ${candidates.length} 件 / 平均 EV ${Math.round(avgEv * 100)}% — 慎重に選定`;
+  } else {
+    confidenceLabel = "見送り推奨";
+    confidenceReason = `候補 ${candidates.length} 件 / 信頼度低 — 無理に買わない判断推奨`;
+  }
+
+  return {
+    topPicks,
+    todayConfidence: confidence,
+    confidenceLabel,
+    confidenceReason,
+    totalCandidates: candidates.length,
+    avgEv,
+    avgConfidence,
+  };
+}
+
 /* === スタイル別「なぜ候補なし」 の理由生成 (UI 表示用) === */
 export function explainEmptyBucket(style, races, evals) {
   const STYLE_LABELS = {

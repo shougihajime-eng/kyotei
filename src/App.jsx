@@ -18,7 +18,7 @@ import { fetchTodaySchedule, fetchRaceProgram, fetchRaceOdds, fetchRaceResult, f
 import { evaluateRace, buildBuyRecommendation, computeOverallGrade } from "./lib/predict.js";
 import { suggestStyle } from "./components/StyleSelector.jsx";
 import { computeStrategyRanking } from "./lib/strategyRanking.js";
-import { allocateRacesToStyles, pickHeadlineForEachStyle, explainEmptyBucket } from "./lib/styleAllocation.js";
+import { allocateRacesToStyles, pickHeadlineForEachStyle, explainEmptyBucket, computeGoMode } from "./lib/styleAllocation.js";
 import { getLearnedWeights } from "./lib/learning.js";
 import { defaultSettings, summarizeToday, perRaceCap } from "./lib/money.js";
 import { todayDate, todayKey, startEpoch } from "./lib/format.js";
@@ -241,6 +241,12 @@ export default function App() {
   const styleHeadlines = useMemo(
     () => pickHeadlineForEachStyle(races, evals, allStyleRecommendations, styleAllocation),
     [races, evals, allStyleRecommendations, styleAllocation]
+  );
+
+  /* Round 57: 実戦モード (Go) — top 3 期待値レース + 本日の信頼度 */
+  const goMode = useMemo(
+    () => computeGoMode(races, evals, allStyleRecommendations, settings.riskProfile, 3),
+    [races, evals, allStyleRecommendations, settings.riskProfile]
   );
 
   /* Round 51-B: 「買い候補だけ速く見つける」 — スキャン結果サマリ
@@ -858,6 +864,7 @@ export default function App() {
             scanStats={scanStats}
             styleAllocation={styleAllocation}
             styleHeadlines={styleHeadlines}
+            goMode={goMode}
             onPickRace={(t) => setTab(t)}
           />
         )}

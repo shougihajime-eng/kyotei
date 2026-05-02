@@ -50,6 +50,77 @@ function determineUIState(vd) {
   return "ready";
 }
 
+/* === Round 57: Go モードパネル (実戦モード) === */
+function GoModePanel({ goMode }) {
+  const { topPicks = [], todayConfidence = 0, confidenceLabel = "様子見", confidenceReason = "", totalCandidates = 0 } = goMode;
+  const labelColor = confidenceLabel === "Go" ? "#34d399"
+                   : confidenceLabel === "様子見" ? "#fde68a"
+                   : "#fca5a5";
+  const labelBg = confidenceLabel === "Go" ? "rgba(16,185,129,0.18)"
+                : confidenceLabel === "様子見" ? "rgba(251,191,36,0.18)"
+                : "rgba(239,68,68,0.18)";
+
+  return (
+    <div className="mb-3 p-3 rounded" style={{ background: "rgba(0,0,0,0.18)", border: `1px solid ${labelColor}40` }}>
+      {/* 信頼度バー */}
+      <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
+        <div className="flex items-center gap-2">
+          <span className="text-xs opacity-80">本日の信頼度:</span>
+          <span className="num font-bold" style={{ fontSize: 18, color: labelColor }}>{todayConfidence}</span>
+          <span className="opacity-60">/</span>
+          <span className="opacity-60 text-xs">100</span>
+        </div>
+        <span className="pill" style={{ background: labelBg, color: labelColor, border: `1px solid ${labelColor}`, fontSize: 11, fontWeight: 800 }}>
+          {confidenceLabel === "Go" ? "🎯 Go (勝負日)" : confidenceLabel === "様子見" ? "⚠️ 様子見" : "📊 見送り推奨"}
+        </span>
+      </div>
+      <div className="text-xs opacity-85 mb-3" style={{ lineHeight: 1.5 }}>{confidenceReason}</div>
+
+      {/* Top 3 picks */}
+      {topPicks.length > 0 && confidenceLabel !== "見送り推奨" ? (
+        <div>
+          <div className="text-xs font-bold mb-2" style={{ color: "#a7f3d0" }}>🎯 今すぐ買う候補 (上位 {topPicks.length} 件)</div>
+          <div className="grid grid-cols-1 gap-2">
+            {topPicks.map((p, i) => (
+              <div key={p.raceId} className="p-2 rounded flex items-center justify-between flex-wrap gap-2"
+                style={{
+                  background: "rgba(16,185,129,0.10)",
+                  border: "1px solid rgba(16,185,129,0.4)",
+                }}>
+                <div className="flex items-center gap-2">
+                  <span className="num font-bold" style={{ fontSize: 16, color: "#fde68a" }}>#{i + 1}</span>
+                  <div>
+                    <div className="text-xs font-bold">{p.race?.venue} {p.race?.raceNo}R <span className="opacity-70">{p.race?.startTime}</span></div>
+                    <div className="text-xs opacity-80">
+                      {STYLE_LABELS[p.style]?.label} / {p.mainCombo} ({p.recommendation?.main?.kind})
+                    </div>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="num font-bold text-xs" style={{ color: "#a7f3d0" }}>EV {Math.round(p.ev * 100)}%</div>
+                  <div className="text-xs opacity-70">自信 {p.confidence}/100</div>
+                </div>
+              </div>
+            ))}
+          </div>
+          {totalCandidates > topPicks.length && (
+            <div className="text-xs opacity-70 mt-2">
+              💡 他 {totalCandidates - topPicks.length} 件は EV/自信 が低いため除外
+            </div>
+          )}
+        </div>
+      ) : confidenceLabel === "見送り推奨" ? (
+        <div className="text-xs opacity-85" style={{ background: "rgba(0,0,0,0.22)", padding: 8, borderRadius: 8, lineHeight: 1.55 }}>
+          📊 <b>本日は見送り推奨</b><br/>
+          無理に買わない判断もアプリの価値です。 「📅 検証」 で過去の実績を振り返ってください。
+        </div>
+      ) : (
+        <div className="text-xs opacity-70">候補レース蓄積中…</div>
+      )}
+    </div>
+  );
+}
+
 const STYLE_LABELS = {
   steady:     { label: "🛡️ 本命型",   color: "#3b82f6" },
   balanced:   { label: "⚖️ バランス型", color: "#fbbf24" },
@@ -57,8 +128,8 @@ const STYLE_LABELS = {
 };
 
 export default memo(TopDecisionBar);
-/** @param {TopDecisionBarProps} props */
-function TopDecisionBar({ visibleData, currentStyle, switchProfile, onRetry }) {
+/** @param {TopDecisionBarProps & { goMode?: Object }} props */
+function TopDecisionBar({ visibleData, currentStyle, switchProfile, onRetry, goMode }) {
   // 1. 型ガード — 不整合なら安全フォールバック
   const validationError = validateVisibleData(visibleData);
   if (validationError) {
@@ -179,6 +250,11 @@ function TopDecisionBar({ visibleData, currentStyle, switchProfile, onRetry }) {
       }}>
         {headline}
       </div>
+
+      {/* Round 57: 実戦モード (Go) + 本日の信頼度 */}
+      {goMode && (
+        <GoModePanel goMode={goMode} />
+      )}
 
       {/* 3 スタイル比較 (visibleData の countsByStyle / roiByStyle のみ参照) */}
       <div className="grid grid-cols-3 gap-2">

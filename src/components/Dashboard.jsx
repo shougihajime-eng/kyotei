@@ -25,7 +25,7 @@ export default function Dashboard({
   refreshing, refreshMsg, lastRefreshAt, onRefresh, onRetry,
   onRecord, settings, onPickRace,
   switchProfile, strategyRanking, scanStats,
-  styleAllocation, styleHeadlines,
+  styleAllocation, styleHeadlines, goMode,
   visibleData,
 }) {
   const [showDetails, setShowDetails] = useState(false);
@@ -65,12 +65,13 @@ export default function Dashboard({
       {/* 更新バー (常時) */}
       <RefreshBar onRefresh={onRefresh} refreshing={refreshing} refreshMsg={refreshMsg} lastRefreshAt={lastRefreshAt} />
 
-      {/* Round 52-56: Top Decision Bar (純粋コンポーネント, 4 状態対応) */}
+      {/* Round 52-57: Top Decision Bar (Go モード + 4 状態対応) */}
       <TopDecisionBar
         visibleData={visibleData}
         currentStyle={settings.riskProfile}
         switchProfile={switchProfile}
         onRetry={onRetry || onRefresh}
+        goMode={goMode}
       />
 
       {/* Round 51-B: 「買えるレースを探索中」 サマリ */}
