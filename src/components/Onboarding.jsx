@@ -10,8 +10,12 @@ export default function Onboarding({ settings, setSettings, onClose }) {
   const [dailyBudget, setDailyBudget] = useState(settings.dailyBudget || 2500);
   const [perRace, setPerRace] = useState(settings.perRaceLimit || 1000);
   const [risk, setRisk] = useState(settings.riskProfile || "balanced");
+  // Round 74: 利用同意 (20 歳以上 + 予想保証なし + 自己責任)
+  const [agreedAge, setAgreedAge] = useState(false);
+  const [agreedNoGuarantee, setAgreedNoGuarantee] = useState(false);
 
   function save() {
+    if (!agreedAge || !agreedNoGuarantee) return;
     setSettings({
       ...settings,
       bankroll: +bankroll || 0,
@@ -19,6 +23,9 @@ export default function Onboarding({ settings, setSettings, onClose }) {
       perRaceLimit: +perRace || 0,
       riskProfile: risk,
       onboardingDone: true,
+      agreedAt: new Date().toISOString(),
+      agreedAge: true,
+      agreedNoGuarantee: true,
     });
     onClose && onClose();
   }
@@ -63,11 +70,46 @@ export default function Onboarding({ settings, setSettings, onClose }) {
             このアプリは買い目提案 + EV + オッズ表示のみ。<br/>
             購入判断は最終的にユーザーが行います (自動停止機能なし)。
           </div>
+
+          {/* Round 74: 利用同意 (法令対応) */}
+          <div className="p-3 rounded" style={{
+            background: "rgba(239,68,68,0.06)",
+            border: "1px solid rgba(239,68,68,0.4)",
+          }}>
+            <div className="text-xs font-bold mb-2" style={{ color: "#fca5a5" }}>
+              ⚠️ ご利用にあたっての確認
+            </div>
+            <label className="flex items-start gap-2 mb-2 cursor-pointer">
+              <input type="checkbox" checked={agreedAge} onChange={(e) => setAgreedAge(e.target.checked)} style={{ marginTop: 3, minWidth: 18, minHeight: 18 }} />
+              <span className="text-xs" style={{ lineHeight: 1.5 }}>
+                私は <b>20 歳以上</b> です。 競艇の舟券購入は 20 歳以上のみ可能です。
+              </span>
+            </label>
+            <label className="flex items-start gap-2 cursor-pointer">
+              <input type="checkbox" checked={agreedNoGuarantee} onChange={(e) => setAgreedNoGuarantee(e.target.checked)} style={{ marginTop: 3, minWidth: 18, minHeight: 18 }} />
+              <span className="text-xs" style={{ lineHeight: 1.5 }}>
+                本アプリの予想は <b>勝利を保証しません</b>。 購入は自己責任で、 損失を被る可能性があります。
+                依存症が気になる方は{" "}
+                <a href="https://www.mhlw.go.jp/stf/seisakunitsuite/bunya/0000160118.html" target="_blank" rel="noopener noreferrer" style={{ color: "#bae6fd", textDecoration: "underline" }}>
+                  厚生労働省窓口
+                </a>{" "}
+                (TEL 0570-061-330) へ。
+              </span>
+            </label>
+          </div>
         </div>
 
         <div className="flex justify-end gap-2 mt-4">
           <button type="button" className="btn btn-ghost" onClick={onClose}>後で設定</button>
-          <button type="button" className="btn btn-success" onClick={save}>✅ 確定して開始</button>
+          <button type="button"
+            className={"btn " + ((agreedAge && agreedNoGuarantee) ? "btn-success" : "btn-ghost")}
+            onClick={save}
+            disabled={!agreedAge || !agreedNoGuarantee}
+            style={{ opacity: (agreedAge && agreedNoGuarantee) ? 1 : 0.45, cursor: (agreedAge && agreedNoGuarantee) ? "pointer" : "not-allowed" }}
+            aria-disabled={!agreedAge || !agreedNoGuarantee}
+            title={!agreedAge || !agreedNoGuarantee ? "両方の項目への同意が必要です" : ""}>
+            ✅ 同意して開始
+          </button>
         </div>
       </div>
     </div>

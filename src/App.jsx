@@ -1,13 +1,28 @@
-import { useEffect, useMemo, useState, useCallback, useRef, startTransition } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef, startTransition, lazy, Suspense } from "react";
 import Header from "./components/Header.jsx";
 import Dashboard from "./components/Dashboard.jsx";
 import RaceList from "./components/RaceList.jsx";
-import RaceDetail from "./components/RaceDetail.jsx";
-import Verify from "./components/Verify.jsx";
-import Stats from "./components/Stats.jsx";
-import LossAnalysis from "./components/LossAnalysis.jsx";
-import Settings from "./components/Settings.jsx";
 import Onboarding from "./components/Onboarding.jsx";
+import ComplianceFooter from "./components/ComplianceFooter.jsx";
+
+/* Round 74: 重いタブは遅延読込 (初回ロード短縮 — 1MB → 各 200-400KB に分割) */
+const RaceDetail = lazy(() => import("./components/RaceDetail.jsx"));
+const Verify = lazy(() => import("./components/Verify.jsx"));
+const Stats = lazy(() => import("./components/Stats.jsx"));
+const LossAnalysis = lazy(() => import("./components/LossAnalysis.jsx"));
+const Settings = lazy(() => import("./components/Settings.jsx"));
+
+function LazyFallback() {
+  return (
+    <div className="max-w-3xl mx-auto px-4 mt-6 text-center" role="status" aria-live="polite">
+      <div className="card p-4">
+        <div className="text-sm font-bold mb-2">⏳ 読込中…</div>
+        <div className="skeleton" style={{ height: 40, marginBottom: 8 }} />
+        <div className="skeleton" style={{ height: 120 }} />
+      </div>
+    </div>
+  );
+}
 
 import { loadState, saveState, saveAndVerify, verifyVisible, clearState, setStorageStatusListener, gcOldPredictions, getStorageStats, estimateStorageSize, filterByVersion, purgeLegacy, getVisibleData, getVersionInfo, CURRENT_VERSION } from "./lib/storage.js";
 import { cloudEnabled } from "./lib/supabaseClient.js";
@@ -24,6 +39,9 @@ import { computeRollingStats, computeAdjustmentSuggestions, computePatternStreng
 import { computeRecentPurchaseAnalysis, computeDeepReview, computeLabelDistribution, applyLabelOverride } from "./lib/raceLabeler.js";
 import { CURRENT_VERIFICATION_VERSION, computeKpiSummary, evaluateWinnability } from "./lib/verificationLog.js";
 import { isPreCloseTarget } from "./lib/styleAllocation.js";
+import { syncPublicLog } from "./lib/immutableLog.js";
+
+const PublicLogPage = lazy(() => import("./components/PublicLogPage.jsx"));
 import { getJstDateString, getEffectiveRaceDate, validateDateConsistency, detectDateChange } from "./lib/dateGuard.js";
 import { getLearnedWeights } from "./lib/learning.js";
 import { defaultSettings, summarizeToday, perRaceCap } from "./lib/money.js";
@@ -33,6 +51,18 @@ import { generateSampleRaces, buildRacesFromSchedule, mergeProgram, mergeOdds, m
 const REFRESH_COOLDOWN_MS = 60 * 1000;
 
 export default function App() {
+  /* === Round 75: 公開検証ログページ — URL に ?log=public があれば専用ページを表示 === */
+  if (typeof window !== "undefined") {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("log") === "public") {
+      return (
+        <Suspense fallback={<LazyFallback />}>
+          <PublicLogPage />
+        </Suspense>
+      );
+    }
+  }
+
   /* === Persistent state === */
   const initial = loadState() || {};
   const [settings, setSettings] = useState({ ...defaultSettings(), ...(initial.settings || {}) });
@@ -82,6 +112,8 @@ export default function App() {
   const [refreshing, setRefreshing] = useState(false);
   const [refreshMsg, setRefreshMsg] = useState("");
   const [lastRefreshAt, setLastRefreshAt] = useState(null);
+  // Round 74: 仮データ動作中フラグ (実 API 失敗 → サンプル fallback の可視化)
+  const [isSampleMode, setIsSampleMode] = useState(false);
   /* スタイル切替の即時フィードバック (トースト) — Auth handler より前に定義 */
   const [toast, setToast] = useState(null);
   const lastToastMsgRef = useRef({ msg: null, ts: 0 });
@@ -193,6 +225,12 @@ export default function App() {
       console.error(`[persist] 保存検証失敗 — missing=${res.missingKeys.length}件 / error=${res.error}`);
     }
   }, [settings, predictions]);
+
+  /* === Round 75: 公開検証ログ自動 sync (finalized レースを append-only ログに追記) === */
+  useEffect(() => {
+    const r = syncPublicLog(predictions);
+    if (r.added > 0) console.log(`[publicLog] ${r.added} 件追記 (累計 ${r.total})`);
+  }, [predictions]);
 
   /* === Compute evals + recommendations for all races === */
   const today = useMemo(() => summarizeToday(visiblePredictions), [visiblePredictions]);
@@ -593,8 +631,10 @@ export default function App() {
     let baseRaces;
     if (sched?.ok && sched.total_races > 0) {
       baseRaces = buildRacesFromSchedule(sched);
+      setIsSampleMode(false);
     } else {
       baseRaces = generateSampleRaces();
+      setIsSampleMode(true);   // Round 74: 仮データ動作中フラグ
     }
 
     /* ② 勝負候補 (発走±60分) を絞る → program/odds/result を並列取得 */
@@ -972,6 +1012,24 @@ export default function App() {
         </div>
       )}
 
+      {/* Round 74: 仮データ動作中バナー (実 API 失敗 → サンプル fallback) ===
+          公営競技で実データと混同を防ぐため、 全画面赤帯で警告 */}
+      {isSampleMode && (
+        <div style={{
+          background: "rgba(239,68,68,0.18)",
+          borderTop: "2px solid rgba(239,68,68,0.6)",
+          borderBottom: "2px solid rgba(239,68,68,0.6)",
+          color: "#fecaca",
+          padding: "8px 12px",
+          textAlign: "center",
+          fontSize: 12,
+          fontWeight: 700,
+          letterSpacing: "0.02em",
+        }} role="alert" aria-live="assertive">
+          🔴 <b>仮データ動作中</b> — 実 API 取得に失敗中。 表示中のレース・オッズ・選手はサンプル値です。 購入判断には使用しないでください。
+        </div>
+      )}
+
       {/* Round 52: バージョン状態バッジ (常時表示 — 「今見ている数字の信頼性」 を即時把握) */}
       <button
         onClick={() => {
@@ -1146,6 +1204,7 @@ export default function App() {
           />
         )}
         {tab === "detail" && (
+          <Suspense fallback={<LazyFallback />}>
           <RaceDetail
             race={selectedRace}
             evalRes={selectedRace ? evals[selectedRace.id] : null}
@@ -1154,26 +1213,34 @@ export default function App() {
             onBack={() => setTab("list")}
             virtualMode={settings.virtualMode}
           />
+          </Suspense>
         )}
         {tab === "verify" && (
+          <Suspense fallback={<LazyFallback />}>
           <Verify predictions={visibleData.predictions}
             visibleData={visibleData}
             currentProfile={settings.riskProfile}
             virtualMode={settings.virtualMode}
             onManualBet={handleManualBet}
             onDeleteRecord={handleDeleteRecord} />
+          </Suspense>
         )}
         {tab === "stats" && (
+          <Suspense fallback={<LazyFallback />}>
           <Stats predictions={visibleData.predictions}
             visibleData={visibleData}
             lastRefreshAt={lastRefreshAt}
             virtualMode={settings.virtualMode} />
+          </Suspense>
         )}
         {tab === "analysis" && (
+          <Suspense fallback={<LazyFallback />}>
           <LossAnalysis predictions={visibleData.predictions}
             visibleData={visibleData} races={races} />
+          </Suspense>
         )}
         {tab === "settings" && (
+          <Suspense fallback={<LazyFallback />}>
           <Settings settings={settings} setSettings={setSettings}
             switchVirtualMode={switchVirtualMode}
             switchProfile={switchProfile}
@@ -1205,7 +1272,10 @@ export default function App() {
               }
             }}
             onReset={handleReset} />
+          </Suspense>
         )}
+        {/* Round 74: 公営競技責任表示 (main の末尾、 全タブで常時表示) */}
+        <ComplianceFooter />
       </main>
     </div>
   );

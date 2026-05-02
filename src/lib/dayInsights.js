@@ -152,8 +152,8 @@ export function computeDaySummary(goMode, races, evals) {
   }
   if (confidenceLabel === "Go" && highEvCount >= 3) {
     return {
-      label: "🎯 本日: 勝負日",
-      detail: `S 級候補 ${highEvCount} 件 / 信頼度 ${dayConfidence}/100 — 厳選 ${Math.min(3, totalCandidates)} 件で勝負`,
+      label: "🎯 本日: 条件達成日",
+      detail: `S 級候補 ${highEvCount} 件 / 信頼度 ${dayConfidence}/100 — 厳選 ${Math.min(3, totalCandidates)} 件 (勝利保証なし)`,
       tone: "ok",
     };
   }

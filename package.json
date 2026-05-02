@@ -23,7 +23,8 @@
     "test:preclose": "node scripts/preclose-gate-check.mjs",
     "test:styles": "node scripts/style-divergence-check.mjs",
     "test:verify": "node scripts/verification-log-check.mjs",
-    "test:all": "npm run tdz && npm run test:sanity && npm run test:pnl && npm run test:storage && npm run test:cloud && npm run test:jst && npm run test:label && npm run test:save && npm run test:preclose && npm run test:styles && npm run test:verify",
+    "test:immutable": "node scripts/immutable-log-check.mjs",
+    "test:all": "npm run tdz && npm run test:sanity && npm run test:pnl && npm run test:storage && npm run test:cloud && npm run test:jst && npm run test:label && npm run test:save && npm run test:preclose && npm run test:styles && npm run test:verify && npm run test:immutable",
     "check": "npm run test:all && npm run build"
   },
   "dependencies": {

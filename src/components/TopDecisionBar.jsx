@@ -147,7 +147,7 @@ function GoModePanel({ goMode }) {
           <span className="opacity-60 text-xs">100 (閾値 {threshold})</span>
         </div>
         <span className="pill" style={{ background: labelBg, color: labelColor, border: `1px solid ${labelColor}`, fontSize: 11, fontWeight: 800 }}>
-          {confidenceLabel === "Go" ? "🎯 Go (勝負日)" : confidenceLabel === "様子見" ? "⚠️ 様子見" : "📊 見送り推奨"}
+          {confidenceLabel === "Go" ? "🎯 直前候補あり" : confidenceLabel === "様子見" ? "⚠️ 様子見" : "📊 見送り推奨"}
         </span>
       </div>
       <div className="text-xs opacity-85 mb-2" style={{ lineHeight: 1.5 }}>{confidenceReason}</div>
@@ -190,7 +190,7 @@ function GoModePanel({ goMode }) {
       {/* Top 3 picks (抑制時は非表示) */}
       {goPicks.length > 0 && !isSuppressed ? (
         <div>
-          <div className="text-xs font-bold mb-2" style={{ color: "#a7f3d0" }}>🎯 今すぐ買う候補 (上位 {goPicks.length} 件)</div>
+          <div className="text-xs font-bold mb-2" style={{ color: "#a7f3d0" }}>🎯 直前判定で条件を満たした候補 ({goPicks.length} 件 / 勝利保証なし)</div>
           <div className="grid grid-cols-1 gap-2">
             {goPicks.map((p, i) => (
               <div key={p.raceId} className="p-2 rounded flex items-center justify-between flex-wrap gap-2"

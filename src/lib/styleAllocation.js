@@ -440,7 +440,7 @@ export function computeGoMode(races, evals, allStyleRecommendations, currentStyl
       : "信頼度が閾値 60 未満 — 慎重に判断してください";
   } else if (confidence >= 75) {
     confidenceLabel = "Go";
-    confidenceReason = `候補 ${candidates.length} 件 / 平均 EV ${Math.round(avgEv * 100)}% / 自信 ${Math.round(avgConfidence)}/100 — 勝負日`;
+    confidenceReason = `候補 ${candidates.length} 件 / 平均 EV ${Math.round(avgEv * 100)}% / 自信 ${Math.round(avgConfidence)}/100 — 条件達成`;
   } else {
     confidenceLabel = "様子見";
     confidenceReason = `候補 ${candidates.length} 件 / 平均 EV ${Math.round(avgEv * 100)}% — 慎重に選定`;
