@@ -521,6 +521,48 @@ function _cacheKey(race, learnedAdjustments) {
   return _raceSig(race) + "@@" + ladj;
 }
 
+/* === Round 51-F: オッズ無しでも構造データから「候補性」 を評価 ===
+   オッズ取得失敗時に「構造的には買い候補」 のレースを区別するためのスコア。
+   返り値: { score: 0-100, candidateLevel: "high" | "medium" | "low" | "skip", reasons: [...] }
+*/
+export function assessWithoutOdds(race) {
+  if (!race?.boats || race.boats.length !== 6) {
+    return { score: 0, candidateLevel: "skip", reasons: ["出走表未取得"] };
+  }
+  let score = 0;
+  const reasons = [];
+  // 1号艇のスコア要素
+  const b1 = race.boats[0];
+  if (b1) {
+    if (b1.motor2 != null && b1.motor2 >= 38) { score += 15; reasons.push("1号艇モーター上位"); }
+    else if (b1.motor2 != null && b1.motor2 >= 30) { score += 8; }
+    if (b1.exTime != null && b1.exTime <= 6.78) { score += 12; reasons.push("1号艇展示◎"); }
+    else if (b1.exTime != null && b1.exTime <= 6.85) { score += 6; }
+    if (b1.winRate != null && b1.winRate >= 6.0) { score += 10; reasons.push("1号艇 勝率高"); }
+    else if (b1.winRate != null && b1.winRate >= 5.0) { score += 5; }
+    if (b1.ST != null && b1.ST <= 0.15) { score += 10; reasons.push("1号艇ST良"); }
+    else if (b1.ST != null && b1.ST <= 0.17) { score += 5; }
+    // class A1 ボーナス
+    if (b1.class === "A1") { score += 5; reasons.push("1号艇 A1級"); }
+  }
+  // 風波 (穏やかなら +、 荒れすぎなら -)
+  const wind = race.wind ?? 0;
+  const wave = race.wave ?? 0;
+  if (wind <= 3 && wave <= 4) { score += 10; reasons.push("平水面"); }
+  else if (wind >= 7 || wave >= 8) { score -= 15; reasons.push("荒水面"); }
+  // 部品交換 (1号艇)
+  if (b1?.partsExchange?.length > 0) { score -= 10; reasons.push("1号艇 部品交換"); }
+  // 暴荒れ
+  if (wind >= 10 || wave >= 12) { score = 0; reasons.push("大荒れで分析不能"); }
+  // 候補レベル判定
+  let candidateLevel;
+  if (score >= 50) candidateLevel = "high";
+  else if (score >= 30) candidateLevel = "medium";
+  else if (score >= 15) candidateLevel = "low";
+  else candidateLevel = "skip";
+  return { score, candidateLevel, reasons };
+}
+
 /* === Round 51: 軽量判定ゲート ===
    全レースを完璧に予想しない。 まず構造的に「買えるレースかどうか」 を高速判定。
    失敗したら詳細分析・買い目生成・重い保存をスキップ。
@@ -576,11 +618,16 @@ export function evaluateRace(race, newsItems, learnedAdjustments) {
   // === 軽量判定 (高速) — 失敗なら深堀りしない ===
   const gate = lightGate(race);
   if (!gate.pass) {
+    // Round 51-F: no-odds の場合は構造スコアも添える (UI で意味分け)
+    const extra = (gate.reason === "no-odds" || gate.reason === "stale-odds")
+      ? { structuralAssessment: assessWithoutOdds(race) }
+      : {};
     return {
       ok: false,
       reason: gate.reason,
       message: gate.message,
       lightSkipped: true,
+      ...extra,
     };
   }
   if (!race?.id) return _evaluateRaw(race, newsItems, learnedAdjustments);

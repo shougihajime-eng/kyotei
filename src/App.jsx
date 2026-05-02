@@ -183,6 +183,8 @@ export default function App() {
         rec.venueProfile = ev?.venueProfile || null;
         rec.timeSlot = ev?.timeSlot || null;
         rec.accident = ev?.accident || null;
+        // Round 51-F: no-odds でも構造スコアを伝えて UI で意味分け
+        rec.structuralAssessment = ev?.structuralAssessment || null;
         out[style][r.id] = rec;
       }
     }
@@ -319,16 +321,12 @@ export default function App() {
 
   useEffect(() => {
     if (races.length === 0) return;
-    /* === Round 51-C: 3 スタイル完全分離保存 ===
-       各レースを 3 スタイル分 (steady / balanced / aggressive) すべて評価し、
-       「買い」 になったスタイルだけを style 別 key で保存。
+    /* === Round 51-C/F: 3 スタイル完全分離保存 + skip も軽量記録 ===
+       buy: 詳細 (combos / stake / odds / prob / ev / pickReason / confidence ...)
+       skip: 軽量 (decision="skip" + reason + reasons[] + intendedMain)
+       no-odds / data-checking / closed: 軽量 (state 表示のみ)
 
-       key 形式: ${dateKey}_${raceId}_${style}  (例: 20260501_kr01_steady)
-
-       これにより:
-       ・3 スタイルそれぞれの成績が完全に分離して集計可能
-       ・同じレースが 3 回登録されても OK (各スタイルは独立)
-       ・スタイル切替で記録が消える / 上書きされる事故を撲滅
+       key 形式: ${dateKey}_${raceId}_${style}
     */
     setPredictions((prev) => {
       const next = { ...prev };
@@ -342,51 +340,79 @@ export default function App() {
           if (!rec) continue;
           const key = `${dateKey}_${r.id}_${style}`;
           const existing = next[key] || {};
-          // 手動記録 (このキーが手動で作られた場合) は触らない
+          // 手動記録は触らない
           if (existing.manuallyRecorded) continue;
-          // 「買い」 でないレースは保存しない (容量削減)
-          if (rec.decision !== "buy") {
-            if (next[key] && !existing.manuallyRecorded) {
-              delete next[key];
-              changed = true;
-            }
-            continue;
-          }
-          // 「買い」 のみ詳細保存
-          const combos = rec.items.map((it) => ({
-            kind: it.kind, combo: it.combo, stake: it.stake,
-            odds: it.odds, prob: it.prob, ev: it.ev,
-            expectedReturn: it.expectedReturn, evMinus1: it.evMinus1,
-            role: it.role, grade: it.grade, pickReason: it.pickReason,
-          }));
-          const updated = {
-            ...existing,
+
+          // === 共通フィールド (buy / skip 両方に必要) ===
+          const baseFields = {
             key, date: r.date, raceId: r.id, venue: r.venue, jcd: r.jcd, raceNo: r.raceNo,
             startTime: r.startTime,
             closingTime: r.startTime,
             predictionTime: existing.predictionTime || stamp,
-            decision: "buy",
-            combos,
-            reason: rec.reason || existing.reason || null,
-            rationale: rec.rationale || existing.rationale || null,
-            totalStake: rec.total,
-            grade: rec.grade || null,
-            profile: style,                    // ← 必ず style を反映 (混ざらない)
+            profile: style,
             predictionType: style,
             virtual: existing.virtual != null ? existing.virtual : !!settings.virtualMode,
-            warnings: rec.warnings || [],
-            venueProfile: rec.venueProfile || null,
-            timeSlot: rec.timeSlot || null,
-            confidence: rec.confidence,
-            worstCaseRoi: rec.worstCaseRoi,
-            worstCasePayout: rec.worstCasePayout,
-            expectedPayout: rec.expectedPayout,
             snapshotAt: stamp,
           };
+
+          let updated;
+          if (rec.decision === "buy") {
+            // === 買い: 詳細保存 ===
+            const combos = rec.items.map((it) => ({
+              kind: it.kind, combo: it.combo, stake: it.stake,
+              odds: it.odds, prob: it.prob, ev: it.ev,
+              expectedReturn: it.expectedReturn, evMinus1: it.evMinus1,
+              role: it.role, grade: it.grade, pickReason: it.pickReason,
+            }));
+            updated = {
+              ...existing,
+              ...baseFields,
+              decision: "buy",
+              combos,
+              reason: rec.reason || null,
+              rationale: rec.rationale || null,
+              totalStake: rec.total,
+              grade: rec.grade || null,
+              warnings: rec.warnings || [],
+              venueProfile: rec.venueProfile || null,
+              timeSlot: rec.timeSlot || null,
+              confidence: rec.confidence,
+              worstCaseRoi: rec.worstCaseRoi,
+              worstCasePayout: rec.worstCasePayout,
+              expectedPayout: rec.expectedPayout,
+            };
+          } else {
+            // === skip / no-odds / data-checking / closed: 軽量保存 ===
+            // 「もし買っていたら」 の本命候補 (検証用)
+            const evForRace = evals[r.id];
+            const intendedMain = evForRace?.items?.[0]
+              ? {
+                  kind: evForRace.items[0].kind,
+                  combo: evForRace.items[0].combo,
+                  prob: evForRace.items[0].prob,
+                  odds: evForRace.items[0].odds,
+                  ev: evForRace.items[0].ev,
+                }
+              : null;
+            updated = {
+              ...existing,
+              ...baseFields,
+              decision: rec.decision,                       // skip / no-odds / data-checking / closed
+              reason: rec.reason || null,
+              reasons: rec.reasons || [],                   // 詳細理由 (複数)
+              combos: [],
+              totalStake: 0,
+              grade: null,
+              intendedMain,                                  // 検証用: もし買っていたら何だったか
+              warnings: rec.warnings || [],
+            };
+          }
+
           const cmp = (o) => JSON.stringify({
             d: o.decision || "",
             c: (o.combos || []).map(c => `${c.kind}:${c.combo}`).join("|"),
             p: o.profile || "",
+            r: (o.reasons || []).slice(0, 1).join(""),
           });
           if (cmp(existing) !== cmp(updated)) {
             next[key] = updated;
@@ -464,9 +490,10 @@ export default function App() {
     });
     setRaces(merged);
 
-    /* ③ 結果をあずかる予測へマージ — Round 51-C: 3 スタイル別 + 旧キー両方対応
-       新キー: ${dateKey}_${raceId}_${style}
-       旧キー: ${dateKey}_${raceId} (互換: 既存ユーザーのデータが残っていれば触る) */
+    /* ③ 結果反映 — Round 51-F: buy + skip 両方の finalize
+       buy: payout / hit / pnl を計算
+       skip: intendedMain との一致で skipCorrect (= AI が見送って正解か) を判定
+    */
     const dateKey = todayDate().replace(/-/g, "");
     const stamp = new Date().toISOString();
     setPredictions((prev) => {
@@ -477,35 +504,65 @@ export default function App() {
         const winnerTri = `${r.apiResult.first}-${r.apiResult.second}-${r.apiResult.third}`;
         const winnerEx = `${r.apiResult.first}-${r.apiResult.second}`;
         const winnerWin = String(r.apiResult.first);
-        // 同じレースの全スタイル分 (新キー) + 旧キー (互換) を更新
         const candidateKeys = [
-          `${dateKey}_${r.id}`,                                // 旧キー
-          ...STYLES.map((s) => `${dateKey}_${r.id}_${s}`),     // 新キー (style 別)
+          `${dateKey}_${r.id}`,
+          ...STYLES.map((s) => `${dateKey}_${r.id}_${s}`),
         ];
         for (const key of candidateKeys) {
           const existing = out[key];
           if (!existing) continue;
-          if (existing.result?.first) continue; // 既に結果反映済
-          let payout = 0, hit = false;
-          for (const c of (existing.combos || [])) {
-            const yenPer100 = c.kind === "3連単" ? r.apiResult.payouts?.trifecta?.[winnerTri]
-                            : c.kind === "2連単" ? r.apiResult.payouts?.exacta?.[winnerEx]
-                            : c.kind === "単勝"  ? r.apiResult.payouts?.tan?.[winnerWin]
-                            : 0;
-            const matched = c.combo === (c.kind === "3連単" ? winnerTri : c.kind === "2連単" ? winnerEx : winnerWin);
-            if (matched && yenPer100) {
-              payout += (c.stake / 100) * yenPer100;
-              hit = true;
-            }
-          }
-          out[key] = {
-            ...existing,
-            result: {
-              first: r.apiResult.first, second: r.apiResult.second, third: r.apiResult.third,
-              payouts: r.apiResult.payouts, fetchedAt: stamp,
-            },
-            payout, hit, pnl: payout - (existing.totalStake || 0),
+          if (existing.result?.first) continue; // 反映済
+          const resultObj = {
+            first: r.apiResult.first, second: r.apiResult.second, third: r.apiResult.third,
+            payouts: r.apiResult.payouts, fetchedAt: stamp,
           };
+          if (existing.decision === "buy") {
+            // 買い: 通常の hit / pnl 計算
+            let payout = 0, hit = false;
+            for (const c of (existing.combos || [])) {
+              const yenPer100 = c.kind === "3連単" ? r.apiResult.payouts?.trifecta?.[winnerTri]
+                              : c.kind === "2連単" ? r.apiResult.payouts?.exacta?.[winnerEx]
+                              : c.kind === "単勝"  ? r.apiResult.payouts?.tan?.[winnerWin]
+                              : 0;
+              const matched = c.combo === (c.kind === "3連単" ? winnerTri : c.kind === "2連単" ? winnerEx : winnerWin);
+              if (matched && yenPer100) {
+                payout += (c.stake / 100) * yenPer100;
+                hit = true;
+              }
+            }
+            out[key] = {
+              ...existing,
+              result: resultObj,
+              payout, hit, pnl: payout - (existing.totalStake || 0),
+              finalized: true,
+            };
+          } else if (existing.decision === "skip") {
+            // 見送り: intendedMain が当たっていたら skipMissed=true, 外れていたら skipCorrect=true
+            const im = existing.intendedMain;
+            let skipCorrect = true; // 何も intendedMain なしなら見送り正解扱い
+            let skipMissed = false;
+            if (im?.combo && im.kind) {
+              const winnerForKind = im.kind === "3連単" ? winnerTri
+                                  : im.kind === "2連単" ? winnerEx
+                                  : im.kind === "2連複" ? [r.apiResult.first, r.apiResult.second].sort((a,b) => a-b).join("=")
+                                  : im.kind === "3連複" ? [r.apiResult.first, r.apiResult.second, r.apiResult.third].sort((a,b) => a-b).join("=")
+                                  : winnerWin;
+              if (im.combo === winnerForKind) { skipCorrect = false; skipMissed = true; }
+            }
+            out[key] = {
+              ...existing,
+              result: resultObj,
+              skipCorrect, skipMissed,
+              finalized: true,
+            };
+          } else {
+            // no-odds / data-checking / closed: 結果記録だけ残す
+            out[key] = {
+              ...existing,
+              result: resultObj,
+              finalized: true,
+            };
+          }
         }
       }
       return out;
