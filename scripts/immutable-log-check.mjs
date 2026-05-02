@@ -183,6 +183,63 @@ console.log("\n▶ 10. exportPublicLogJson");
   expectTrue("exportedAt は ISO 文字列", typeof obj.exportedAt === "string");
 }
 
+/* === 11. Round 76: 仮データ (isSampleData=true) は append されない === */
+console.log("\n▶ 11. Round 76 — 仮データは公開ログから絶対除外");
+{
+  _store.clear();
+  const sample = makeFinalizedPred("sample1", { hit: true });
+  sample.isSampleData = true;
+  const r = appendPublicLog(sample);
+  expectTrue("append 拒否 (ok=false)", r.ok === false);
+  expectTrue("理由に「仮データ」", /仮データ/.test(r.reason || ""));
+  expect("ログは 0 件のまま", loadPublicLog().length, 0);
+  // 実データは通常通り追記される
+  const real = makeFinalizedPred("real1", { hit: true });
+  const r2 = appendPublicLog(real);
+  expectTrue("実データは通る", r2.ok && !!r2.entry);
+  expect("ログは 1 件", loadPublicLog().length, 1);
+  // syncPublicLog でも仮データはスキップされる
+  const preds = {
+    s1: { ...makeFinalizedPred("s1", { hit: true }), isSampleData: true },
+    s2: { ...makeFinalizedPred("s2", { hit: true }), isSampleData: true },
+    r1: makeFinalizedPred("r1", { hit: false }),
+  };
+  const syncRes = syncPublicLog(preds);
+  expect("sync added=1 (実データのみ)", syncRes.added, 1);
+}
+
+/* === 12. Round 76: summarize に overall + 連敗 + 連勝 === */
+console.log("\n▶ 12. Round 76 — overall 集計 + 最大連敗 / 連勝");
+{
+  _store.clear();
+  // 5 戦: 勝 勝 負 負 負 → 連勝 2、 連敗 3
+  const wins = [true, true, false, false, false];
+  for (let i = 0; i < wins.length; i++) {
+    appendPublicLog(makeFinalizedPred(`w${i}`, { hit: wins[i], ts: `2026-05-01T10:0${i}:00.000Z` }));
+  }
+  const sum = summarizePublicLog();
+  expectTrue("overall.count=5", sum.overall.count === 5);
+  expectTrue("overall.hits=2", sum.overall.hits === 2);
+  expectTrue("overall.maxLossStreak=3", sum.overall.maxLossStreak === 3);
+  expectTrue("overall.maxWinStreak=2", sum.overall.maxWinStreak === 2);
+  expectTrue("overall.hitRate=0.4", sum.overall.hitRate === 0.4);
+  expectTrue("overall.avgOdds 数値", typeof sum.overall.avgOdds === "number");
+}
+
+/* === 13. Round 76: byMonth 集計 === */
+console.log("\n▶ 13. Round 76 — byMonth 集計");
+{
+  _store.clear();
+  appendPublicLog(makeFinalizedPred("m1", { hit: true, date: "2026-05-01", ts: "2026-05-01T10:00:00.000Z" }));
+  appendPublicLog(makeFinalizedPred("m2", { hit: false, date: "2026-05-15", ts: "2026-05-15T10:00:00.000Z" }));
+  appendPublicLog(makeFinalizedPred("m3", { hit: true, date: "2026-06-01", ts: "2026-06-01T10:00:00.000Z" }));
+  const sum = summarizePublicLog();
+  expectTrue("byMonth に 2026-05", !!sum.byMonth["2026-05"]);
+  expectTrue("byMonth に 2026-06", !!sum.byMonth["2026-06"]);
+  expect("2026-05 は 2 件", sum.byMonth["2026-05"].count, 2);
+  expect("2026-06 は 1 件", sum.byMonth["2026-06"].count, 1);
+}
+
 console.log(`\n========== 結果 ==========`);
 console.log(`パス: ${pass}  失敗: ${fail}`);
 process.exit(fail === 0 ? 0 : 1);

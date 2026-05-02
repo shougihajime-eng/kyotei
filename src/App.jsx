@@ -536,6 +536,8 @@ export default function App() {
             verificationVersion: existing.verificationVersion || CURRENT_VERIFICATION_VERSION,
             preCloseTarget: preCloseRaceIds.has(r.id),    // 直前判定対象だったか
             isGoCandidate: isGoTarget,                     // Go 候補だったか
+            // Round 76: 仮データ起源フラグ (公開ログから絶対除外)
+            isSampleData: existing.isSampleData != null ? existing.isSampleData : !!isSampleMode,
           };
 
           let updated;

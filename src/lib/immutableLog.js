@@ -53,6 +53,7 @@ function normalizeEntry(prediction) {
     verificationVersion: prediction.verificationVersion,
     preCloseTarget: !!prediction.preCloseTarget,
     isGoCandidate: !!prediction.isGoCandidate,
+    isSampleData: !!prediction.isSampleData,   // Round 76: 仮データ起源フラグ (公開ログでは除外)
     snapshotAt: prediction.snapshotAt,
     // 結果 (確定後のみ)
     result: prediction.result?.first ? {
@@ -98,9 +99,11 @@ export function verifyIntegrity(log) {
 
 /* === append-only 追記 ===
    ・既に同 key の確定エントリがあれば追記しない
-   ・finalized=true のエントリのみ受け付ける */
+   ・finalized=true のエントリのみ受け付ける
+   ・Round 76: 仮データ起源 (isSampleData=true) は絶対に追記しない (信用毀損防止) */
 export function appendPublicLog(prediction) {
   if (!prediction || !prediction.finalized) return { ok: false, reason: "未確定 (finalized=false)" };
+  if (prediction.isSampleData) return { ok: false, reason: "仮データ起源 — 公開ログには追記しません" };
   const entry = normalizeEntry(prediction);
   if (!entry || !entry.key) return { ok: false, reason: "key 欠落" };
   const log = loadPublicLog();
@@ -149,31 +152,60 @@ export function exportPublicLogJson() {
   }, null, 2);
 }
 
-/* === ログ要約 (バージョン別、 日別) === */
+/* === ログ要約 (全体 + バージョン別 + 日別) === */
 export function summarizePublicLog(log = null) {
   const list = log || loadPublicLog();
   const byVersion = {};
   const byDay = {};
+  // Round 76: 全体集計 + 連敗の最大値 + 最大連勝
+  const overall = { count: 0, hits: 0, stake: 0, ret: 0 };
+  // 時系列で最大連敗 / 最大連勝 を計算
+  const sorted = list
+    .filter((b) => b.entry?.decision === "buy" && b.entry?.result)
+    .sort((a, b) => (a.entry.snapshotAt || "").localeCompare(b.entry.snapshotAt || ""));
+  let curLossStreak = 0, maxLossStreak = 0;
+  let curWinStreak = 0, maxWinStreak = 0;
+  let avgOddsSum = 0, avgOddsCount = 0;
+
   for (const block of list) {
     const e = block.entry;
     if (!e) continue;
     // バージョン別
     const v = e.verificationVersion || "(unknown)";
     if (!byVersion[v]) byVersion[v] = { count: 0, hits: 0, stake: 0, ret: 0 };
+    // 日別
+    const d = e.date || "(unknown)";
+    if (!byDay[d]) byDay[d] = { count: 0, hits: 0, stake: 0, ret: 0 };
     if (e.decision === "buy" && e.result) {
       byVersion[v].count++;
       byVersion[v].stake += e.totalStake || 0;
       byVersion[v].ret += e.payout || 0;
       if (e.hit) byVersion[v].hits++;
-    }
-    // 日別
-    const d = e.date || "(unknown)";
-    if (!byDay[d]) byDay[d] = { count: 0, hits: 0, stake: 0, ret: 0 };
-    if (e.decision === "buy" && e.result) {
       byDay[d].count++;
       byDay[d].stake += e.totalStake || 0;
       byDay[d].ret += e.payout || 0;
       if (e.hit) byDay[d].hits++;
+      // 全体
+      overall.count++;
+      overall.stake += e.totalStake || 0;
+      overall.ret += e.payout || 0;
+      if (e.hit) overall.hits++;
+      if (e.main?.odds != null) {
+        avgOddsSum += e.main.odds;
+        avgOddsCount++;
+      }
+    }
+  }
+  // 連敗 / 連勝 (時系列順で計算)
+  for (const block of sorted) {
+    if (block.entry.hit) {
+      curWinStreak++;
+      if (curWinStreak > maxWinStreak) maxWinStreak = curWinStreak;
+      curLossStreak = 0;
+    } else {
+      curLossStreak++;
+      if (curLossStreak > maxLossStreak) maxLossStreak = curLossStreak;
+      curWinStreak = 0;
     }
   }
   // ROI 計算
@@ -189,5 +221,32 @@ export function summarizePublicLog(log = null) {
     b.hitRate = b.count > 0 ? +(b.hits / b.count).toFixed(3) : null;
     b.pnl = b.ret - b.stake;
   }
-  return { byVersion, byDay, total: list.length };
+  overall.roi = overall.stake > 0 ? +(overall.ret / overall.stake).toFixed(3) : null;
+  overall.hitRate = overall.count > 0 ? +(overall.hits / overall.count).toFixed(3) : null;
+  overall.pnl = overall.ret - overall.stake;
+  overall.avgOdds = avgOddsCount > 0 ? +(avgOddsSum / avgOddsCount).toFixed(2) : null;
+  overall.maxLossStreak = maxLossStreak;
+  overall.maxWinStreak = maxWinStreak;
+
+  // 月別 (検証期間の可視化)
+  const byMonth = {};
+  for (const block of list) {
+    const e = block.entry;
+    if (!e || e.decision !== "buy" || !e.result) continue;
+    const m = (e.date || "").slice(0, 7); // YYYY-MM
+    if (!m) continue;
+    if (!byMonth[m]) byMonth[m] = { count: 0, hits: 0, stake: 0, ret: 0 };
+    byMonth[m].count++;
+    byMonth[m].stake += e.totalStake || 0;
+    byMonth[m].ret += e.payout || 0;
+    if (e.hit) byMonth[m].hits++;
+  }
+  for (const m in byMonth) {
+    const b = byMonth[m];
+    b.roi = b.stake > 0 ? +(b.ret / b.stake).toFixed(3) : null;
+    b.hitRate = b.count > 0 ? +(b.hits / b.count).toFixed(3) : null;
+    b.pnl = b.ret - b.stake;
+  }
+
+  return { overall, byVersion, byDay, byMonth, total: list.length };
 }
