@@ -13,7 +13,7 @@ const PROFILE_LABELS = {
  */
 export default memo(QuickJudgeCardImpl);
 
-function QuickJudgeCardImpl({ headlineRace, recommendation, today, profile }) {
+function QuickJudgeCardImpl({ headlineRace, recommendation, today, profile, headlineKind, headlineReason }) {
   const profileInfo = PROFILE_LABELS[profile] || PROFILE_LABELS.balanced;
   const air = today?.air || { stake: 0, pnl: 0 };
   const real = today?.real || { stake: 0, pnl: 0 };
@@ -34,12 +34,18 @@ function QuickJudgeCardImpl({ headlineRace, recommendation, today, profile }) {
     mode = "skip"; color = "#f87171"; headline = "🔴 見送り";
   }
 
+  // Round 51-D: 「何も表示されない」 を絶対作らない
   if (!headlineRace) {
     return (
       <section className="card p-6 text-center" style={{ minHeight: 180, borderColor: "#475569", borderWidth: 2 }}>
         <div style={{ fontSize: 48 }}>🤖</div>
-        <div className="font-bold text-2xl mt-2">本日の対象なし</div>
-        <div className="opacity-70 text-xs mt-1">「更新」ボタンで取得してください</div>
+        <div className="font-bold text-xl mt-2" style={{ color: profileInfo.color }}>
+          {profileInfo.label} に合うレースなし
+        </div>
+        <div className="opacity-90 text-sm mt-2">{headlineReason || "「🔄 更新」 ボタンで取得してください"}</div>
+        <div className="text-xs opacity-70 mt-2">
+          他のスタイルを試すか、「📅 検証」 で過去の結果を確認してください
+        </div>
       </section>
     );
   }
@@ -64,9 +70,26 @@ function QuickJudgeCardImpl({ headlineRace, recommendation, today, profile }) {
           <span className="ml-2 text-xs">{headlineRace.startTime}</span>
         </div>
       </div>
-      <div className="text-xs opacity-80 mb-3" style={{ color: profileInfo.color }}>
+      <div className="text-xs opacity-80 mb-1" style={{ color: profileInfo.color }}>
         現在のスタイル: <b>{profileInfo.label}</b>
       </div>
+      {/* Round 51-D: 「なぜこのレースを表示しているか」 を必ず明示 */}
+      {headlineReason && (
+        <div className="text-xs mb-3 px-2 py-1 rounded inline-block"
+          style={{
+            background: headlineKind === "buy" ? "rgba(16,185,129,0.18)"
+                     : headlineKind === "near-skip" ? "rgba(251,191,36,0.18)"
+                     : headlineKind === "fallback" ? "rgba(56,189,248,0.18)"
+                     : "rgba(107,114,128,0.18)",
+            color: headlineKind === "buy" ? "#a7f3d0"
+                 : headlineKind === "near-skip" ? "#fde68a"
+                 : headlineKind === "fallback" ? "#bae6fd"
+                 : "#9fb0c9",
+            lineHeight: 1.5,
+          }}>
+          {headlineReason}
+        </div>
+      )}
 
       {/* 中央: 本命買い目 / 見送り理由 */}
       {main && dec === "buy" ? (

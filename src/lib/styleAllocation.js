@@ -154,43 +154,72 @@ export function allocateRacesToStyles(races, evals) {
 }
 
 /* === 各スタイルの「ヘッドラインレース」 を必ず 1 つ選ぶ ===
-   ・割当済みで decision="buy" のレースが最優先
-   ・なければ「最も fit の高い」 レース (skip でも表示)
-   ・それも無ければ「全候補の中で最も近い」 レース
-   返り値: { steady: { raceId, kind: "buy" | "near-skip" | null }, balanced, aggressive }
+   優先度:
+   1. 割当 bucket 内で decision="buy" のレース (最高 buyability)
+   2. 割当 bucket 内で 最も fit の高いレース (skip でも表示)
+   3. 全レースから 最も fit の高いレース (fallback)
+   4. 何もなければ races[0] (絶対に null を返さない)
+
+   返り値: { steady: {raceId, kind, fit, reasonShort}, ... }
+   kind:
+     "buy"        — このスタイルで買い判定
+     "near-skip"  — このスタイル割当だが skip 判定
+     "fallback"   — 割当外、 全レースから最も近いものを表示
+     "none"       — 全レース存在しない (races=空)
 */
 export function pickHeadlineForEachStyle(races, evals, allStyleRecommendations, allocation) {
   const out = { steady: null, balanced: null, aggressive: null };
   const STYLES = ["steady", "balanced", "aggressive"];
+  const STYLE_LABELS = { steady: "本命型", balanced: "バランス型", aggressive: "穴狙い型" };
 
   for (const style of STYLES) {
     const bucket = allocation?.buckets?.[style] || [];
-    // 1) bucket 内で decision = "buy" のレースを優先
     let pick = null;
+    // 1) bucket 内 buy 候補
     for (const it of bucket) {
       const rec = allStyleRecommendations?.[style]?.[it.raceId];
       if (rec?.decision === "buy") {
-        pick = { raceId: it.raceId, kind: "buy", fit: it.fitScore };
+        pick = {
+          raceId: it.raceId, kind: "buy", fit: it.fitScore,
+          reasonShort: `🎯 ${STYLE_LABELS[style]} 割当 (適性 ${it.fitScore}/100)`,
+        };
         break;
       }
     }
-    // 2) bucket 内で fit が最も高いレース (skip でも表示)
+    // 2) bucket 内 best fit (skip でも表示)
     if (!pick && bucket.length > 0) {
       const sorted = [...bucket].sort((a, b) => b.fitScore - a.fitScore);
-      pick = { raceId: sorted[0].raceId, kind: "near-skip", fit: sorted[0].fitScore };
+      pick = {
+        raceId: sorted[0].raceId, kind: "near-skip", fit: sorted[0].fitScore,
+        reasonShort: `📋 ${STYLE_LABELS[style]} 割当 (適性 ${sorted[0].fitScore}/100) — 厳選見送り`,
+      };
     }
-    // 3) bucket 空 → 全レース中で fit が最も高いものを fallback
-    if (!pick) {
+    // 3) 全レース中で最も fit の高いもの (fallback)
+    if (!pick && races?.length > 0) {
       let bestId = null, bestFit = -1;
-      for (const r of races || []) {
+      for (const r of races) {
         const ev = evals?.[r.id];
         if (!ev) continue;
         const fit = styleFit(r, ev, style);
         if (fit > bestFit) { bestFit = fit; bestId = r.id; }
       }
-      if (bestId) {
-        pick = { raceId: bestId, kind: "fallback", fit: bestFit };
+      // ev が null だらけでも races[0] を fallback
+      const fallbackId = bestId || races[0]?.id;
+      if (fallbackId) {
+        pick = {
+          raceId: fallbackId, kind: "fallback", fit: bestFit > 0 ? bestFit : 0,
+          reasonShort: bestFit > 0
+            ? `🔍 ${STYLE_LABELS[style]} に最も近いレース (適性 ${bestFit}/100)`
+            : `🤖 ${STYLE_LABELS[style]} に合うレースが今日はありません — 最も近いレースを表示`,
+        };
       }
+    }
+    // 4) 何もなければ none (races が空のとき)
+    if (!pick) {
+      pick = {
+        raceId: null, kind: "none", fit: 0,
+        reasonShort: "🤖 本日対象レースなし — 「🔄 更新」 を押してください",
+      };
     }
     out[style] = pick;
   }

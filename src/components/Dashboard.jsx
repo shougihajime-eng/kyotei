@@ -83,7 +83,14 @@ export default function Dashboard({
       )}
 
       {/* 🚀 クイックジャッジ — 一目判定 (最重要) */}
-      <QuickJudgeCard headlineRace={headline} recommendation={rec} today={today} profile={settings.riskProfile} />
+      <QuickJudgeCard
+        headlineRace={headline}
+        recommendation={rec}
+        today={today}
+        profile={settings.riskProfile}
+        headlineKind={headlineKind}
+        headlineReason={styleHeadlines?.[settings.riskProfile]?.reasonShort || null}
+      />
 
       {/* 今日の収支 (1行ミニバー) */}
       <TodayMiniBar today={today} />
