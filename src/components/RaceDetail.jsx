@@ -14,7 +14,7 @@ export default function RaceDetail({ race, evalRes, recommendation, onRecord, on
     <div className="max-w-3xl mx-auto px-4 mt-4 space-y-4">
       <button className="btn btn-ghost text-xs" onClick={onBack}>← 戻る</button>
 
-      <BuyDecisionCard race={race} recommendation={recommendation} onRecord={onRecord} virtualMode={virtualMode} />
+      <BuyDecisionCard race={race} recommendation={recommendation} onRecord={onRecord} virtualMode={virtualMode} evalRes={evalRes} />
 
       {/* 「なぜこの点数」 説明 */}
       {recommendation?.rationale && (

@@ -1,6 +1,7 @@
-import { useState, memo } from "react";
+import { useState, memo, useMemo } from "react";
 import { yen, pct } from "../lib/format.js";
 import { explainExpectedReturn, explainProbOdds, toneColor } from "../lib/explain.js";
+import { buildReasoningSummary } from "../lib/reasoningSummary.js";
 
 /**
  * 結論カード — 連勝系 4 券種 (2連単/2連複/3連単/3連複) のみ。
@@ -13,9 +14,15 @@ import { explainExpectedReturn, explainProbOdds, toneColor } from "../lib/explai
 /* React.memo で props 同一なら再描画スキップ → 「ガーっ」防止 */
 export default memo(BuyDecisionCard);
 
-function BuyDecisionCard({ race, recommendation, onRecord, virtualMode }) {
+function BuyDecisionCard({ race, recommendation, onRecord, virtualMode, evalRes }) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
+
+  // Round 73 Phase 2: 自然言語の理由まとめ (なぜこの買い目 / なぜ他を切ったか / 最大リスク)
+  const reasoning = useMemo(
+    () => buildReasoningSummary(recommendation, evalRes),
+    [recommendation, evalRes]
+  );
 
   if (!race) {
     return <Empty title="本日対象なし" sub="「最新にする」を押して取得してください" />;
@@ -85,6 +92,43 @@ function BuyDecisionCard({ race, recommendation, onRecord, virtualMode }) {
       <div className="text-center mt-2" style={{ fontSize: 14, color: "#fde68a" }}>
         💡 {recommendation.reason}
       </div>
+
+      {/* Round 73 Phase 2: 自然言語の根拠まとめ — 「なぜ買う」 「なぜ切る」 「最大リスク」 */}
+      {reasoning?.whyBuy?.length > 0 && (
+        <div className="mt-3 p-2 rounded text-xs" style={{
+          background: "rgba(56,189,248,0.06)",
+          border: "1px solid rgba(56,189,248,0.3)",
+          lineHeight: 1.55,
+        }}>
+          <div className="font-bold mb-1" style={{ color: "#bae6fd" }}>📝 判断の根拠</div>
+          {/* なぜ買う (3 行) */}
+          <div className="mb-2">
+            <div className="text-xs font-semibold mb-0.5" style={{ color: "#a7f3d0" }}>✅ なぜこの買い目か</div>
+            <ul style={{ paddingLeft: 16, listStyle: "decimal", color: "#cbd5e1" }}>
+              {reasoning.whyBuy.map((line, i) => (
+                <li key={i}>{line}</li>
+              ))}
+            </ul>
+          </div>
+          {/* なぜ切る (2 行) */}
+          {reasoning.whyNot?.length > 0 && (
+            <div className="mb-2">
+              <div className="text-xs font-semibold mb-0.5" style={{ color: "#fcd34d" }}>❎ なぜ他を切ったか</div>
+              <ul style={{ paddingLeft: 16, listStyle: "disc", color: "#cbd5e1" }}>
+                {reasoning.whyNot.map((line, i) => (
+                  <li key={i}>{line}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {/* 最大リスク (1 行) */}
+          {reasoning.maxRisk && (
+            <div className="text-xs p-1 rounded" style={{ background: "rgba(239,68,68,0.10)", border: "1px solid rgba(239,68,68,0.3)", color: "#fca5a5" }}>
+              ⚠️ <b>最大リスク:</b> {reasoning.maxRisk}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Round 36-37: 9 条件チェック合格表示 + 自信スコア */}
       {Array.isArray(recommendation.checks) && recommendation.checks.length > 0 && (

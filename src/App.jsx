@@ -22,6 +22,8 @@ import { allocateRacesToStyles, pickHeadlineForEachStyle, explainEmptyBucket, co
 import { computeGoModeStats, computeSkipImpact, computeDaySummary, computeStreakStats } from "./lib/dayInsights.js";
 import { computeRollingStats, computeAdjustmentSuggestions, computePatternStrength, computeAccuracyHealth } from "./lib/operationalLog.js";
 import { computeRecentPurchaseAnalysis, computeDeepReview, computeLabelDistribution, applyLabelOverride } from "./lib/raceLabeler.js";
+import { CURRENT_VERIFICATION_VERSION, computeKpiSummary, evaluateWinnability } from "./lib/verificationLog.js";
+import { isPreCloseTarget } from "./lib/styleAllocation.js";
 import { getJstDateString, getEffectiveRaceDate, validateDateConsistency, detectDateChange } from "./lib/dateGuard.js";
 import { getLearnedWeights } from "./lib/learning.js";
 import { defaultSettings, summarizeToday, perRaceCap } from "./lib/money.js";
@@ -450,6 +452,13 @@ export default function App() {
         goRacesByStyle[pick.style].add(pick.raceId);
       }
     }
+    // Round 73: 直前判定ウィンドウ内のレース (見送りも含めて検証目的で保存)
+    const nowForPreClose = new Date();
+    const preCloseRaceIds = new Set();
+    for (const r of races) {
+      const pc = isPreCloseTarget(r, nowForPreClose);
+      if (pc.isTarget) preCloseRaceIds.add(r.id);
+    }
 
     setPredictions((prev) => {
       const next = { ...prev };
@@ -465,10 +474,14 @@ export default function App() {
           const existing = next[key] || {};
           // 手動記録は触らない (manuallyRecorded=true)
           if (existing.manuallyRecorded) continue;
-          // Round 68: 直前判定 Go 候補 か、 既に保存済 (= 過去 Go 候補だった) のみ更新
+          // Round 68+73: 保存対象 (検証用):
+          //   (a) 直前判定 Go 候補 (買い候補) → 詳細保存
+          //   (b) 直前判定ウィンドウ内の見送りレース → 軽量保存 (なぜ見送ったか付き)
+          //   (c) 既に保存済み (過去 Go 候補だった) → 結果反映用に残す
           const isGoTarget = goRacesByStyle[style].has(r.id);
+          const isPreCloseSkip = preCloseRaceIds.has(r.id) && rec.decision === "skip";
           const wasSaved = !!existing.snapshotAt;
-          if (!isGoTarget && !wasSaved) continue; // それ以外は保存・集計に混ぜない
+          if (!isGoTarget && !isPreCloseSkip && !wasSaved) continue;
 
           // === 共通フィールド (buy / skip 両方に必要) ===
           const baseFields = {
@@ -481,6 +494,10 @@ export default function App() {
             virtual: existing.virtual != null ? existing.virtual : !!settings.virtualMode,
             snapshotAt: stamp,
             version: CURRENT_VERSION, // Round 52: v2 タグ付け (legacy と分離)
+            // Round 73 Phase 1: 検証バージョン + 直前判定対象フラグ
+            verificationVersion: existing.verificationVersion || CURRENT_VERIFICATION_VERSION,
+            preCloseTarget: preCloseRaceIds.has(r.id),    // 直前判定対象だったか
+            isGoCandidate: isGoTarget,                     // Go 候補だったか
           };
 
           let updated;
@@ -1109,6 +1126,7 @@ export default function App() {
           <Dashboard
             races={races} predictions={visiblePredictions} recommendations={recommendations}
             visibleData={visibleData}
+            evals={evals}
             today={today} weekly={weekly}
             refreshing={refreshing} refreshMsg={refreshMsg} lastRefreshAt={lastRefreshAt}
             onRefresh={refreshAll} onRetry={refreshAll} onRecord={handleRecord} settings={settings}

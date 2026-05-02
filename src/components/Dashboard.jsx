@@ -6,6 +6,7 @@ import NewsPanel from "./NewsPanel.jsx";
 import EVExplainer from "./EVExplainer.jsx";
 import TodaySummary from "./TodaySummary.jsx";
 import TopDecisionBar from "./TopDecisionBar.jsx";
+import KpiPanel from "./KpiPanel.jsx";
 import { yen } from "../lib/format.js";
 
 /**
@@ -26,7 +27,7 @@ export default function Dashboard({
   onRecord, settings, onPickRace,
   switchProfile, strategyRanking, scanStats,
   styleAllocation, styleHeadlines, goMode,
-  visibleData,
+  visibleData, evals,
 }) {
   const [showDetails, setShowDetails] = useState(false);
 
@@ -72,6 +73,9 @@ export default function Dashboard({
         switchProfile={switchProfile}
         onRetry={onRetry || onRefresh}
       />
+
+      {/* Round 73 Phase 1②: 検証 KPI パネル (ROI / 的中率 / 平均オッズ / 最大連敗 / 連敗確率) */}
+      <KpiPanel predictions={visibleData?.predictions} />
 
       {/* Round 51-B: 「買えるレースを探索中」 サマリ */}
       {scanStats && scanStats.total > 0 && (
@@ -126,6 +130,7 @@ export default function Dashboard({
           {/* 買い目詳細 */}
           {headline && rec && rec.decision === "buy" && (
             <BuyDecisionCard race={headline} recommendation={rec}
+              evalRes={evals?.[headline.id]}
               onRecord={onRecord} virtualMode={settings.virtualMode} />
           )}
 
