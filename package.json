@@ -19,7 +19,10 @@
     "test:cloud": "node scripts/cloud-sync-safety-check.mjs",
     "test:jst": "node scripts/jst-date-check.mjs",
     "test:label": "node scripts/label-quality-check.mjs",
-    "test:all": "npm run tdz && npm run test:sanity && npm run test:pnl && npm run test:storage && npm run test:cloud && npm run test:jst && npm run test:label",
+    "test:save": "node scripts/save-roundtrip-check.mjs",
+    "test:preclose": "node scripts/preclose-gate-check.mjs",
+    "test:styles": "node scripts/style-divergence-check.mjs",
+    "test:all": "npm run tdz && npm run test:sanity && npm run test:pnl && npm run test:storage && npm run test:cloud && npm run test:jst && npm run test:label && npm run test:save && npm run test:preclose && npm run test:styles",
     "check": "npm run test:all && npm run build"
   },
   "dependencies": {

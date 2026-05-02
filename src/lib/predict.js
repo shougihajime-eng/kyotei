@@ -890,11 +890,14 @@ function isBoat6CandidateValid(race, scores, probs, inTrust) {
  *   aggressive (穴党)  : 厳選 1〜5 点 / 3連単 + 2連単
  */
 
-/* スタイル別 EV 下限 (Round 36 で大幅引き上げ — 厳選見送り強化) */
+/* スタイル別 EV 下限 (Round 69-70: ロジック完全分離) ===
+   ・steady (的中率重視) : EV 1.05 — 「損しない」 程度に緩和、 代わりに勝率・モーター・展示・ST 厳格ゲート
+   ・balanced (中庸)     : EV 1.20 — EV と的中率のバランス
+   ・aggressive (EV 重視) : EV 1.50 — 高配当狙いで EV を最優先 */
 export const EV_MIN_BY_PROFILE = {
-  steady:     1.30,  // 本命党: 期待回収率 130% 以上のみ
-  balanced:   1.25,  // 中堅党: 期待回収率 125% 以上のみ
-  aggressive: 1.20,  // 穴党:   期待回収率 120% 以上のみ
+  steady:     1.05,  // 本命党: EV 撤廃寄り — 当たりやすさ最優先
+  balanced:   1.20,  // 中堅党: 期待回収率 120% 以上
+  aggressive: 1.50,  // 穴党:   期待回収率 150% 以上 (高配当のみ)
 };
 
 /* スタイル別 「点数上限」 */
@@ -1076,58 +1079,125 @@ export function buildBuyRecommendation(ev, riskProfile, perRaceCap) {
     skipReasons.push(`本命信頼度不足 (1号艇 ${(inProb * 100).toFixed(0)}% — イン崩壊警戒)`);
   }
 
-  /* === Round 29: スタイル別 性格付け === */
-  // 各スタイルが「3 人の予想家の異なる思想」 を持つよう、固有ルールを差し込む
+  /* === Round 69-70: スタイル別ロジック完全分離 ===
+     スタイル毎に「スコア式・閾値・除外条件・買い目生成ルール」 が独立。
+     各モードは異なる思想を持つ 3 人の予想家として動作する。 */
   if (riskProfile === "steady") {
-    // 本命型: 1号艇信頼度を最重視。イン逃げ濃厚 or 1号艇やや有利 のみ買う。
+    /* === 本命型 (的中率最優先) — EV を撤廃寄り、 当たりやすさのみ重視 ===
+       必須ゲート (1 つでも未達 → 全レース見送り):
+         (a) 1号艇 winRate ≥ 5.50
+         (b) 1号艇 motor2 ≥ 35
+         (c) 1号艇 exTime が全 6 艇中の上位 3 位以内
+         (d) 1号艇 avgST ≤ 0.17 (=平均以上)
+         (e) 風 ≤ 3 m AND 波 ≤ 4 cm (強風・荒水面は対象外)
+         (f) 1号艇信頼度 = 「イン逃げ濃厚」 or 「1号艇やや有利」
+       これらを満たさないレースは 「Go 候補にしない」 ことを徹底 (件数制限ではない)。 */
+    const boats = ev.race?.boats || [];
+    const b1 = boats[0] || null;
+    const winRate1 = b1?.winRate;
+    const motor1 = b1?.motor2;
+    const exTime1 = b1?.exTime;
+    const avgST1 = b1?.avgST != null ? b1.avgST : b1?.exST;
+    const wind = ev.race?.wind ?? 0;
+    const wave = ev.race?.wave ?? 0;
     const trustLevel = ev.inTrust?.level;
+
+    // (a) 1号艇 勝率
+    if (winRate1 == null) {
+      skipReasons.push("本命型ゲート: 1号艇勝率データ不足 — 的中率重視のため判定保留");
+    } else if (winRate1 < 5.50) {
+      skipReasons.push(`本命型ゲート: 1号艇勝率 ${winRate1.toFixed(2)} < 5.50 — 的中率不足`);
+    }
+    // (b) モーター
+    if (motor1 == null) {
+      skipReasons.push("本命型ゲート: 1号艇モーター値データ不足");
+    } else if (motor1 < 35) {
+      skipReasons.push(`本命型ゲート: 1号艇モーター ${motor1.toFixed(1)}% < 35% — 上位ではない`);
+    }
+    // (c) 展示タイム
+    if (exTime1 == null) {
+      skipReasons.push("本命型ゲート: 1号艇展示タイムデータ不足");
+    } else {
+      const allEx = boats.map((b) => b?.exTime).filter((t) => t != null).sort((a, b) => a - b);
+      const top3Cut = allEx[2];
+      if (top3Cut != null && exTime1 > top3Cut) {
+        skipReasons.push(`本命型ゲート: 1号艇展示 ${exTime1.toFixed(2)}秒 (上位3位外) — 当たりやすさ不足`);
+      }
+    }
+    // (d) スタート力
+    if (avgST1 == null) {
+      skipReasons.push("本命型ゲート: 1号艇スタート力データ不足");
+    } else if (avgST1 > 0.17) {
+      skipReasons.push(`本命型ゲート: 1号艇平均ST ${avgST1.toFixed(2)} > 0.17 — スタート遅い`);
+    }
+    // (e) 強風・荒水面
+    if (wind >= 5) skipReasons.push(`本命型ゲート: 風 ${wind}m が強い (>=5) — 本命型対象外`);
+    if (wave >= 6) skipReasons.push(`本命型ゲート: 波 ${wave}cm が荒い (>=6) — 本命型対象外`);
+    // (f) 1号艇信頼度
     const trustOk = (trustLevel === "イン逃げ濃厚" || trustLevel === "1号艇やや有利");
     if (!trustOk) {
-      skipReasons.push(`本命型ルール: 1号艇信頼度不足 (${trustLevel || "判定不能"}) — 本命型は「イン逃げ濃厚」 「1号艇やや有利」 のみ対象`);
+      skipReasons.push(`本命型ゲート: 1号艇信頼度不足 (${trustLevel || "判定不能"}) — 「イン逃げ濃厚」 「1号艇やや有利」 のみ`);
     }
-    // 荒れ/混戦の兆候があれば見送り
-    if ((ev.race?.wind ?? 0) >= 5 || (ev.race?.wave ?? 0) >= 6
-        || ev.development?.scenario === "荒れ" || ev.development?.scenario === "混戦") {
-      skipReasons.push(`本命型ルール: 荒れ/混戦の兆候 — 本命型は安定したイン逃げのみ対象`);
+    // 荒れ/混戦シナリオも除外
+    if (ev.development?.scenario === "荒れ" || ev.development?.scenario === "混戦") {
+      skipReasons.push(`本命型ゲート: 展開シナリオ「${ev.development.scenario}」 — 本命型対象外`);
     }
-    // 候補は 1ヘッドのみ
+    // 候補は 1ヘッド限定 (本命型は 1号艇1着固定の的中率重視)
     candidates = candidates.filter((t) => t.combo.startsWith("1"));
     if (candidates.length === 0 && skipReasons.length === 0) {
-      skipReasons.push("本命型ルール: 1号艇ヘッドの候補がない — 本命型は 1号艇1着固定が対象");
+      skipReasons.push("本命型ゲート: 1号艇ヘッドの候補がない");
     }
   } else if (riskProfile === "balanced") {
-    // バランス型: 1号艇強すぎて安すぎる場合 (1.8倍未満) は妙味なしで見送り
-    if (inProb > 0.65 && candidates.length > 0 && candidates[0].odds < 1.8) {
-      skipReasons.push(`バランス型ルール: 1号艇圧倒的 ${(inProb*100).toFixed(0)}% かつ本命オッズ ${candidates[0].odds.toFixed(1)}倍 — 安すぎて妙味なし`);
+    /* === バランス型 (的中率と EV の中間) ===
+       ・本命オッズが薄すぎる (< 1.8) は妙味なし
+       ・中穴 (オッズ ≤ 60倍) を上限
+       ・1号艇 winRate ≥ 5.0 (緩めの的中率ガード)
+       ・風 ≤ 5 AND 波 ≤ 6 (steady より緩く、 aggressive より厳しい) */
+    const boats = ev.race?.boats || [];
+    const b1 = boats[0] || null;
+    const winRate1 = b1?.winRate;
+    const wind = ev.race?.wind ?? 0;
+    const wave = ev.race?.wave ?? 0;
+    if (winRate1 != null && winRate1 < 5.0) {
+      skipReasons.push(`バランス型ゲート: 1号艇勝率 ${winRate1.toFixed(2)} < 5.00 — 的中率の最低ライン未達`);
     }
-    // 中穴 (オッズ ≤ 50倍) を上限とする
+    if (wind > 5) skipReasons.push(`バランス型ゲート: 風 ${wind}m が強い (>5)`);
+    if (wave > 6) skipReasons.push(`バランス型ゲート: 波 ${wave}cm が荒い (>6)`);
+    if (inProb > 0.65 && candidates.length > 0 && candidates[0].odds < 1.8) {
+      skipReasons.push(`バランス型ゲート: 1号艇圧倒的 ${(inProb*100).toFixed(0)}% かつ本命オッズ ${candidates[0].odds.toFixed(1)}倍 — 安すぎて妙味なし`);
+    }
     candidates = candidates.filter((t) => t.odds <= 60);
   } else if (riskProfile === "aggressive") {
-    // 穴狙い型: 4-6号艇ヘッド の候補は「根拠 2+」 が必須
+    /* === 穴狙い型 (EV/高配当 最優先) — 的中率は気にしない ===
+       必須ゲート:
+         (a) EV ≥ 1.50 が候補に含まれる (高配当のみ)
+         (b) 候補本線オッズ ≥ 8 倍 (低配当除外)
+         (c) 4-6号艇ヘッド は「根拠 2+」 を引き続き要求
+       的中率関連のゲートは一切なし — 当たらなくても OK、 当たれば大きい設計。 */
     candidates = candidates.filter((t) => {
       const head = parseInt(t.combo[0]);
-      if (head <= 3) return true; // 内側ヘッドは通常通り
+      if (head <= 3) return true;
       const boatIdx = head - 1;
       const b = ev.race?.boats?.[boatIdx];
       if (!b) return false;
       let evidence = 0;
-      if (b.exTime != null && b.exTime <= 6.80) evidence++;            // 展示◎
-      if (b.motor2 != null && b.motor2 >= 40) evidence++;              // モーター高
-      if (b.winRate != null && b.winRate >= 5.5) evidence++;           // 選手勝率
-      if (Array.isArray(b.entryHistory) && b.entryHistory.some((l) => l <= 3)) evidence++; // 内側進入歴
-      if ((ev.race?.wind ?? 0) >= 5 || (ev.race?.wave ?? 0) >= 6) evidence++;             // 荒水面
+      if (b.exTime != null && b.exTime <= 6.80) evidence++;
+      if (b.motor2 != null && b.motor2 >= 40) evidence++;
+      if (b.winRate != null && b.winRate >= 5.5) evidence++;
+      if (Array.isArray(b.entryHistory) && b.entryHistory.some((l) => l <= 3)) evidence++;
+      if ((ev.race?.wind ?? 0) >= 5 || (ev.race?.wave ?? 0) >= 6) evidence++;
       if (ev.development?.scenario === "荒れ" || ev.development?.scenario === "まくり") evidence++;
-      if (b.tilt != null && b.tilt >= 1.5) evidence++;                 // 高チルト (外艇ターン強)
-      return evidence >= 2;                                             // 2つ以上の根拠
+      if (b.tilt != null && b.tilt >= 1.5) evidence++;
+      return evidence >= 2;
     });
-    // 穴候補が無く、1号艇も濃厚でなければ見送り (穴狙いの本分から外れる)
-    const holeCount = candidates.filter((t) => parseInt(t.combo[0]) >= 4).length;
-    const innerOnly = candidates.length > 0 && holeCount === 0;
-    if (innerOnly && inProb < 0.45) {
-      skipReasons.push("穴狙い型ルール: 根拠ある穴候補がなく、1号艇本命も弱い — 穴狙いの本分から外れる");
+    // (b) 高配当のみ (オッズ < 8 倍は除外)
+    candidates = candidates.filter((t) => t.odds >= 8);
+    // (a) 候補本線 EV ≥ 1.50
+    if (candidates.length > 0 && candidates[0].ev < 1.50) {
+      skipReasons.push(`穴狙い型ゲート: 本線 EV ${Math.round(candidates[0].ev*100)}% < 150% — 高配当ねらいに値しない`);
     }
     if (candidates.length === 0 && skipReasons.length === 0) {
-      skipReasons.push("穴狙い型ルール: 根拠 (展示/モーター/進入歴/荒水面 など 2+) を満たす穴候補なし");
+      skipReasons.push("穴狙い型ゲート: EV ≥ 150% かつオッズ ≥ 8倍 の候補なし — 高配当狙いの対象外");
     }
   }
 

@@ -63,6 +63,94 @@ export function saveState(state) {
   }
 }
 
+/* === Round 66: 保存検証 ===
+   saveState() 直後に loadState() で読み戻し、 期待 key が存在することを確認。
+   { ok, savedKeys, missingKeys, sizeBytes, error } を返す。
+   ・ok=true → 保存成功 + 全 expectedKeys が読み戻せた
+   ・ok=false → 書き込み失敗 or 読み戻しで欠落 (storageStatus に通知される)
+   ・expectedKeys=[] の場合は書き込み成功のみで ok=true (settings 単独保存等)
+*/
+export function saveAndVerify(state, expectedKeys = []) {
+  const writeOk = saveState(state);
+  if (!writeOk) {
+    return {
+      ok: false,
+      savedKeys: [],
+      missingKeys: Array.from(expectedKeys || []),
+      sizeBytes: 0,
+      error: _lastSaveStatus?.error || "保存に失敗",
+    };
+  }
+  // 読み戻し
+  let readBack;
+  try {
+    readBack = loadState();
+  } catch (e) {
+    return {
+      ok: false,
+      savedKeys: [],
+      missingKeys: Array.from(expectedKeys || []),
+      sizeBytes: 0,
+      error: "読み戻し失敗 — " + (e?.message || String(e)),
+    };
+  }
+  if (!readBack) {
+    return {
+      ok: false,
+      savedKeys: [],
+      missingKeys: Array.from(expectedKeys || []),
+      sizeBytes: 0,
+      error: "読み戻し結果が null",
+    };
+  }
+  const preds = readBack?.predictions || {};
+  const savedKeys = [];
+  const missingKeys = [];
+  for (const k of expectedKeys || []) {
+    if (Object.prototype.hasOwnProperty.call(preds, k)) savedKeys.push(k);
+    else missingKeys.push(k);
+  }
+  if (missingKeys.length > 0) {
+    const err = `保存検証失敗 — ${missingKeys.length} 件の key が読み戻せませんでした`;
+    _lastSaveStatus = { ...(_lastSaveStatus || {}), ok: false, error: err };
+    emit(_lastSaveStatus);
+    return {
+      ok: false,
+      savedKeys,
+      missingKeys,
+      sizeBytes: _lastSaveStatus?.sizeBytes || 0,
+      error: err,
+    };
+  }
+  return {
+    ok: true,
+    savedKeys,
+    missingKeys: [],
+    sizeBytes: _lastSaveStatus?.sizeBytes || 0,
+    error: null,
+  };
+}
+
+/* === Round 66: visibleData にデータが含まれているか検証 ===
+   保存した key が version/legacy/JST フィルタで除外されていないかを確認。
+   filteredOut=true なら 「保存はされたが UI で見えない」 状態 → 警告。 */
+export function verifyVisible(predictions, expectedKey, options = {}) {
+  if (!expectedKey) return { ok: false, present: false, filteredOut: false, reason: "key 未指定" };
+  const raw = predictions || {};
+  const present = Object.prototype.hasOwnProperty.call(raw, expectedKey);
+  if (!present) return { ok: false, present: false, filteredOut: false, reason: "predictions に key が無い" };
+  const visible = getVisibleData(raw, options);
+  const visiblePresent = Object.prototype.hasOwnProperty.call(visible.predictions || {}, expectedKey);
+  if (!visiblePresent) {
+    const p = raw[expectedKey];
+    const reason = isLegacy(p)
+      ? `legacy データのため非表示 (showLegacy=${!!options.showLegacy})`
+      : `version=${p?.version || "(none)"} のためフィルタで除外`;
+    return { ok: false, present: true, filteredOut: true, reason };
+  }
+  return { ok: true, present: true, filteredOut: false, reason: null };
+}
+
 export function clearState() {
   try {
     if (typeof localStorage === "undefined") return false;

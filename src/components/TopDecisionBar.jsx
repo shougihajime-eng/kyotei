@@ -115,6 +115,11 @@ function GoModePanel({ goMode }) {
     excludedCount = 0,
     excludedReasons = [],
     threshold = 60,
+    // Round 67: 直前判定型情報
+    preCloseMode = false,
+    preCloseRaceCount = 0,
+    preCloseWindow = null,
+    preCloseThresholds = null,
   } = goMode || {};
   const isSuppressed = !!suppressedReason || confidenceLabel === "見送り推奨";
   const labelColor = confidenceLabel === "Go" ? "#34d399"
@@ -146,6 +151,25 @@ function GoModePanel({ goMode }) {
         </span>
       </div>
       <div className="text-xs opacity-85 mb-2" style={{ lineHeight: 1.5 }}>{confidenceReason}</div>
+
+      {/* Round 67: 直前判定型バッジ */}
+      {preCloseMode && (
+        <div className="text-xs mb-2 p-2 rounded" style={{
+          background: "rgba(56,189,248,0.10)",
+          border: "1px solid rgba(56,189,248,0.4)",
+          color: "#bae6fd",
+          lineHeight: 1.55,
+        }}>
+          ⏰ <b>直前判定型</b> — 締切 {preCloseWindow?.min ?? 5}〜{preCloseWindow?.max ?? 15} 分前のレースのみ評価
+          {preCloseRaceCount > 0
+            ? <span className="opacity-80 ml-1">/ 対象 {preCloseRaceCount} レース</span>
+            : <span className="opacity-80 ml-1">/ 対象レースなし (時間外)</span>
+          }
+          {preCloseThresholds && (
+            <span className="opacity-70 ml-1">/ 厳格閾値 EV≥{Math.round(preCloseThresholds.ev * 100)}% + 自信≥{preCloseThresholds.confidence}</span>
+          )}
+        </div>
+      )}
 
       {/* 除外バッジ (オッズ未取得 / データ欠損 等) */}
       {excludedCount > 0 && (

@@ -9,7 +9,7 @@ import LossAnalysis from "./components/LossAnalysis.jsx";
 import Settings from "./components/Settings.jsx";
 import Onboarding from "./components/Onboarding.jsx";
 
-import { loadState, saveState, clearState, setStorageStatusListener, gcOldPredictions, getStorageStats, estimateStorageSize, filterByVersion, purgeLegacy, getVisibleData, getVersionInfo, CURRENT_VERSION } from "./lib/storage.js";
+import { loadState, saveState, saveAndVerify, verifyVisible, clearState, setStorageStatusListener, gcOldPredictions, getStorageStats, estimateStorageSize, filterByVersion, purgeLegacy, getVisibleData, getVersionInfo, CURRENT_VERSION } from "./lib/storage.js";
 import { cloudEnabled } from "./lib/supabaseClient.js";
 import { getCurrentUser, onAuthChange, signOut as authSignOut } from "./lib/auth.js";
 import { fullSync, lightSync } from "./lib/cloudSync.js";
@@ -181,9 +181,15 @@ export default function App() {
     return () => { cancelled = true; };
   }, [settings.onboardingDone]);
 
-  /* === Persist on change === */
+  /* === Persist on change ===
+     Round 66: saveAndVerify で書き込み後に必ず読み戻し検証。
+     全 predictions key が読み戻せることを毎回チェック (1 件でも欠落なら storageStatus に notify)。 */
   useEffect(() => {
-    saveState({ settings, predictions });
+    const expectedKeys = Object.keys(predictions || {});
+    const res = saveAndVerify({ settings, predictions }, expectedKeys);
+    if (!res.ok) {
+      console.error(`[persist] 保存検証失敗 — missing=${res.missingKeys.length}件 / error=${res.error}`);
+    }
   }, [settings, predictions]);
 
   /* === Compute evals + recommendations for all races === */
@@ -270,9 +276,11 @@ export default function App() {
   /* Round 60: 直近成績悪化 (degrading/critical) なら Go モード閾値を引き上げ */
   const isDegraded = accuracyHealth?.level === "degrading" || accuracyHealth?.level === "critical";
 
-  /* Round 57-58-60-65: 実戦モード (Go) — 運用ルール「1-2 レース以内」 に topN を 2 に絞る */
+  /* Round 67-71: 実戦モード (Go) — 件数制限ではなく「厳しい条件を満たしたレースのみ」 を抽出
+     ・topN は 12 (上限ガード) — 結果としては条件未達で 0 件〜数件で落ち着く
+     ・直前判定型 (preCloseOnly=true) で 締切 5〜15 分前のみ対象 */
   const goMode = useMemo(
-    () => computeGoMode(races, evals, allStyleRecommendations, settings.riskProfile, 2, { degraded: isDegraded }),
+    () => computeGoMode(races, evals, allStyleRecommendations, settings.riskProfile, 12, { degraded: isDegraded, preCloseOnly: true }),
     [races, evals, allStyleRecommendations, settings.riskProfile, isDegraded]
   );
 
@@ -426,13 +434,23 @@ export default function App() {
 
   useEffect(() => {
     if (races.length === 0) return;
-    /* === Round 51-C/F: 3 スタイル完全分離保存 + skip も軽量記録 ===
-       buy: 詳細 (combos / stake / odds / prob / ev / pickReason / confidence ...)
-       skip: 軽量 (decision="skip" + reason + reasons[] + intendedMain)
-       no-odds / data-checking / closed: 軽量 (state 表示のみ)
+    /* === Round 68: 保存対象を「直前判定 Go 候補」 + 「手動記録」 に限定 ===
+       朝から全レースを保存・集計に混ぜると 3 スタイル成績が曖昧になるため、
+       以下のみ auto-snapshot する:
+         (a) goMode.goPicks に含まれるレース (= 直前判定で本気判定した買い候補)
+         (b) 既に手動記録されているレース (manuallyRecorded=true) - これは触らない
+       それ以外は保存・集計に含めない (UI 表示は visibleData で完結)。
 
        key 形式: ${dateKey}_${raceId}_${style}
     */
+    // Round 68: 保存対象 raceId+style の集合を作る
+    const goRacesByStyle = { steady: new Set(), balanced: new Set(), aggressive: new Set() };
+    for (const pick of goMode?.goPicks || []) {
+      if (pick?.raceId && pick?.style && goRacesByStyle[pick.style]) {
+        goRacesByStyle[pick.style].add(pick.raceId);
+      }
+    }
+
     setPredictions((prev) => {
       const next = { ...prev };
       let changed = false;
@@ -445,8 +463,12 @@ export default function App() {
           if (!rec) continue;
           const key = `${dateKey}_${r.id}_${style}`;
           const existing = next[key] || {};
-          // 手動記録は触らない
+          // 手動記録は触らない (manuallyRecorded=true)
           if (existing.manuallyRecorded) continue;
+          // Round 68: 直前判定 Go 候補 か、 既に保存済 (= 過去 Go 候補だった) のみ更新
+          const isGoTarget = goRacesByStyle[style].has(r.id);
+          const wasSaved = !!existing.snapshotAt;
+          if (!isGoTarget && !wasSaved) continue; // それ以外は保存・集計に混ぜない
 
           // === 共通フィールド (buy / skip 両方に必要) ===
           const baseFields = {
@@ -529,7 +551,7 @@ export default function App() {
       return changed ? next : prev;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [racesSignature]);
+  }, [racesSignature, goMode]);
 
   /* === 「最新にする」ボタン: 一括取得 ===
      try-finally で setRefreshing(false) を保証。
@@ -782,7 +804,9 @@ export default function App() {
     return () => clearInterval(id);
   }, [settings.onboardingDone]);
 
-  /* === 手動記録 (リアル/エア舟券フォーム) === */
+  /* === 手動記録 (リアル/エア舟券フォーム) ===
+     Round 66: 保存直後に loadState() で読み戻し検証 + visibleData 反映チェック。
+     失敗時は console.error + ユーザーへトースト通知 (見えない保存を撲滅)。 */
   const handleManualBet = useCallback((record) => {
     // Round 52: v2 タグを必ず付与 (現在のスタイルも記録)
     const enhanced = {
@@ -790,14 +814,31 @@ export default function App() {
       profile: record.profile || settings.riskProfile,
       version: CURRENT_VERSION,
     };
-    setPredictions((prev) => ({ ...prev, [record.key]: enhanced }));
-    // Round 48: 「本当に保存されてる?」 の不安を消すための明示的フィードバック
-    if (authUser) {
-      showToast("💾 ローカル保存完了 (5 秒以内にクラウド同期します)", "ok");
-    } else {
-      showToast("💾 このブラウザに保存しました", "ok");
-    }
-  }, [settings.riskProfile, authUser, showToast]);
+    setPredictions((prev) => {
+      const next = { ...prev, [record.key]: enhanced };
+      // Round 66: 状態更新が反映された後に読み戻し検証
+      queueMicrotask(() => {
+        const res = saveAndVerify({ settings, predictions: next }, [record.key]);
+        const vis = verifyVisible(next, record.key, {
+          showLegacy: !!settings.showLegacy,
+          currentStyle: settings.riskProfile,
+        });
+        console.log(`[handleManualBet] key=${record.key} saveOk=${res.ok} visible=${vis.ok} size=${res.sizeBytes}B`);
+        if (!res.ok) {
+          console.error(`[handleManualBet] 保存失敗: ${res.error}`);
+          showToast(`⚠️ 保存検証に失敗 — ${res.error}`, "neg");
+        } else if (!vis.ok) {
+          console.warn(`[handleManualBet] 保存はされたが visibleData 非表示: ${vis.reason}`);
+          showToast(`⚠️ 保存しましたが画面非表示: ${vis.reason}`, "neg");
+        } else if (authUser) {
+          showToast("💾 保存完了 (検証済) — クラウド同期を予約", "ok");
+        } else {
+          showToast("💾 保存完了 (検証済) — このブラウザに保存", "ok");
+        }
+      });
+      return next;
+    });
+  }, [settings, authUser, showToast]);
 
   const handleDeleteRecord = useCallback((key) => {
     setPredictions((prev) => {
@@ -810,7 +851,8 @@ export default function App() {
 
   /* === ユーザーアクション: 結論カードから「記録する」 ===
         virtualOverride を渡せば仮想/実 の選択を強制 (例: 「リアル購入として記録」 ボタンから true)
-        Round 51-C: key は style-aware に (3 スタイル分離) */
+        Round 51-C: key は style-aware に (3 スタイル分離)
+        Round 66: 保存直後に loadState() で読み戻し検証 + visibleData 反映チェック */
   const handleRecord = useCallback((race, rec, opts = {}) => {
     const dateKey = (race.date || "").replace(/-/g, "");
     const style = rec?.profile || settings.riskProfile || "balanced";
@@ -818,17 +860,39 @@ export default function App() {
     const virtual = opts.real === true ? false
                   : opts.real === false ? true
                   : !!settings.virtualMode;
-    setPredictions((prev) => ({
-      ...prev,
-      [key]: {
-        ...prev[key],
-        recorded: true,
-        recordedAt: new Date().toISOString(),
-        virtual,
-        version: CURRENT_VERSION, // Round 52: v2 タグ
-      },
-    }));
-  }, [settings.virtualMode]);
+    setPredictions((prev) => {
+      const next = {
+        ...prev,
+        [key]: {
+          ...prev[key],
+          recorded: true,
+          recordedAt: new Date().toISOString(),
+          manuallyRecorded: true,    // Round 68: 手動記録フラグ (auto-snapshot で上書き禁止)
+          virtual,
+          version: CURRENT_VERSION,
+        },
+      };
+      // Round 66: 状態更新後に読み戻し検証
+      queueMicrotask(() => {
+        const res = saveAndVerify({ settings, predictions: next }, [key]);
+        const vis = verifyVisible(next, key, {
+          showLegacy: !!settings.showLegacy,
+          currentStyle: settings.riskProfile,
+        });
+        console.log(`[handleRecord] key=${key} saveOk=${res.ok} visible=${vis.ok} size=${res.sizeBytes}B`);
+        if (!res.ok) {
+          console.error(`[handleRecord] 保存失敗: ${res.error}`);
+          showToast(`⚠️ 保存検証に失敗 — ${res.error}`, "neg");
+        } else if (!vis.ok) {
+          console.warn(`[handleRecord] 保存はされたが visibleData 非表示: ${vis.reason}`);
+          showToast(`⚠️ 保存しましたが画面非表示: ${vis.reason}`, "neg");
+        } else {
+          showToast("✅ 記録 (検証済) — グラフ・収支に反映されます", "ok");
+        }
+      });
+      return next;
+    });
+  }, [settings, showToast]);
 
   /* === Reset === */
   const handleReset = useCallback(() => {

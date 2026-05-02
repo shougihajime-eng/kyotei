@@ -226,11 +226,55 @@ export function pickHeadlineForEachStyle(races, evals, allStyleRecommendations, 
   return out;
 }
 
+/* === Round 67: 直前判定型 — 締切 10〜15 分前のレースだけを「最高精度で本気判定」 ===
+   ・isPreCloseTarget(race): 締切まで 10〜15 分以内のレースか判定
+   ・対象外レースは Go 候補から除外 (朝から全レース重い予想は廃止)
+   ・対象レースには通常より厳しい EV/confidence 閾値を適用 (PRE_CLOSE_*)
+   ・対象レースは展示・モーター・スタート力・コース・風波の全要素を持つ必要 (preCloseDataReady)
+   ・「中途半端な予想は出さない」 - データ不足や曖昧なケースは見送り
+   返り値:
+     { isTarget, minutesToClose, dataReady, missing }
+*/
+export const PRE_CLOSE_WINDOW_MIN = 5;     // 締切前 5 分まで対象 (発走直前)
+export const PRE_CLOSE_WINDOW_MAX = 15;    // 締切前 15 分から対象開始
+export const PRE_CLOSE_MIN_EV = 1.30;      // 直前判定: EV 130% 以上 (通常の 1.20 より厳しい)
+export const PRE_CLOSE_MIN_CONFIDENCE = 75; // 直前判定: confidence 75 以上 (通常の 65 より厳しい)
+export const PRE_CLOSE_DEGRADED_EV = 1.35; // 直近成績悪化時はさらに 135% に
+
+export function isPreCloseTarget(race, now = new Date()) {
+  if (!race || !race.startTime || !race.date) {
+    return { isTarget: false, minutesToClose: null, dataReady: false, missing: ["startTime/date"] };
+  }
+  // startEpoch 算出
+  const m = String(race.startTime).match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return { isTarget: false, minutesToClose: null, dataReady: false, missing: ["startTime形式"] };
+  const [Y, M, D] = race.date.split("-").map((s) => parseInt(s, 10));
+  if (!Y || !M || !D) return { isTarget: false, minutesToClose: null, dataReady: false, missing: ["date形式"] };
+  const startMs = new Date(Y, M - 1, D, parseInt(m[1], 10), parseInt(m[2], 10), 0).getTime();
+  const nowMs = now.getTime();
+  const minutesToClose = (startMs - nowMs) / 60000;
+  // PRE_CLOSE_WINDOW_MIN 〜 PRE_CLOSE_WINDOW_MAX の範囲のみ対象
+  const isTarget = minutesToClose >= PRE_CLOSE_WINDOW_MIN && minutesToClose <= PRE_CLOSE_WINDOW_MAX;
+  // データ完全性チェック (本気判定の前提)
+  const missing = [];
+  if (!Array.isArray(race.boats) || race.boats.length < 6) missing.push("出走表");
+  const hasOdds = race.odds && (race.odds.trifecta || race.odds.exacta);
+  if (!hasOdds) missing.push("オッズ");
+  const hasExhibition = (race.boats || []).some((b) => b?.exTime != null);
+  if (!hasExhibition) missing.push("展示");
+  const hasMotor = (race.boats || []).some((b) => b?.motor2 != null);
+  if (!hasMotor) missing.push("モーター");
+  const hasStart = (race.boats || []).some((b) => b?.avgST != null || b?.exST != null);
+  if (!hasStart) missing.push("スタート");
+  // 風波は無くても OK (海面によっては取れない) - missing には入れない
+  const dataReady = missing.length === 0;
+  return { isTarget, minutesToClose: Math.round(minutesToClose), dataReady, missing };
+}
+
 /* === Round 57-58: Go モード — その日最も期待値の高いレースを top N に絞る ===
-   引数:
-     races / evals / allStyleRecommendations: 通常データ
-     currentStyle: 現在選択中のスタイル
-     topN: 絞り込み件数 (デフォルト 3)
+   Round 67 改訂: 「直前判定型」 — isPreCloseTarget を満たすレースだけが Go 候補対象
+   ・対象外レース → 「直前判定では見送り (締切まで X 分)」 として除外
+   ・対象レース → 通常より厳しい PRE_CLOSE_* 閾値で評価
    返り値:
      goPicks: [{ raceId, race, ev, style, recommendation, simpleReason }] (買い候補のみ、最大 topN)
      dayConfidence: 0-100 (本日の信頼度スコア)
@@ -238,6 +282,7 @@ export function pickHeadlineForEachStyle(races, evals, allStyleRecommendations, 
      confidenceReason: 1 行説明
      suppressedReason: 抑制理由 (閾値未満時)
      excludedCount / excludedReasons: 除外件数とその理由
+     preCloseRaceCount: 直前判定対象レース数 (10-15 min 前)
 */
 export const GO_CONFIDENCE_THRESHOLD = 60;
 /* Round 60: Go モード「かなり厳しめ」 基準 — 確信度高のみ採用 */
@@ -246,11 +291,16 @@ export const GO_MIN_CONFIDENCE = 65;       // confidence 65 未満は除外
 export const GO_DEGRADED_EV = 1.25;        // 直近成績悪化時は 125% に引き上げ
 
 export function computeGoMode(races, evals, allStyleRecommendations, currentStyle = "balanced", topN = 3, opts = {}) {
-  // Round 60: 直近成績悪化時は EV 閾値を保守的に
-  const evMin = opts?.degraded ? GO_DEGRADED_EV : GO_MIN_EV;
-  const confMin = GO_MIN_CONFIDENCE;
+  // Round 67: 直前判定型 — 通常閾値ではなく 「直前判定」 用の厳しい閾値を使う
+  const usePreClose = opts?.preCloseOnly !== false; // デフォルト true
+  const evMin = usePreClose
+    ? (opts?.degraded ? PRE_CLOSE_DEGRADED_EV : PRE_CLOSE_MIN_EV)
+    : (opts?.degraded ? GO_DEGRADED_EV : GO_MIN_EV);
+  const confMin = usePreClose ? PRE_CLOSE_MIN_CONFIDENCE : GO_MIN_CONFIDENCE;
   const candidates = [];
   const excludedReasons = []; // 除外されたレースとその理由
+  const now = opts?.now ? new Date(opts.now) : new Date();
+  let preCloseRaceCount = 0; // 直前判定対象レース数 (10-15min)
 
   for (const r of races || []) {
     const ev = evals?.[r.id];
@@ -267,6 +317,29 @@ export function computeGoMode(races, evals, allStyleRecommendations, currentStyl
               : ev.message || "データ不足",
       });
       continue;
+    }
+    // Round 67: 直前判定ゲート — 締切 5〜15 分前 + 全データ揃い のみが Go 候補対象
+    if (usePreClose) {
+      const pc = isPreCloseTarget(r, now);
+      if (!pc.isTarget) {
+        excludedReasons.push({
+          raceId: r.id, venue: r.venue, raceNo: r.raceNo,
+          reason: pc.minutesToClose != null
+            ? (pc.minutesToClose > PRE_CLOSE_WINDOW_MAX
+                ? `直前判定では見送り (締切まで ${pc.minutesToClose} 分 — まだ早い)`
+                : `直前判定では見送り (締切まで ${pc.minutesToClose} 分 — 既に締切間際)`)
+            : "直前判定では見送り (発走時刻不明)",
+        });
+        continue;
+      }
+      preCloseRaceCount++;
+      if (!pc.dataReady) {
+        excludedReasons.push({
+          raceId: r.id, venue: r.venue, raceNo: r.raceNo,
+          reason: `直前判定データ不足: ${pc.missing.join(" / ")} 未取得 — 本気判定不能のため見送り`,
+        });
+        continue;
+      }
     }
     let best = null;
     for (const style of ["steady", "balanced", "aggressive"]) {
@@ -333,11 +406,17 @@ export function computeGoMode(races, evals, allStyleRecommendations, currentStyl
   // Round 60: 候補 0-1 件は「打たない判断」 を優先 (無理に出さない)
   if (candidates.length === 0) {
     confidenceLabel = "見送り推奨";
-    confidenceReason = "本日は買い候補ゼロ。 厳選見送り日です。";
+    // Round 67: 直前判定モードで対象レース 0 件のときは別メッセージ
+    if (usePreClose && preCloseRaceCount === 0) {
+      confidenceReason = `直前判定対象レースなし (締切 ${PRE_CLOSE_WINDOW_MIN}〜${PRE_CLOSE_WINDOW_MAX} 分前のレースが現在ありません)`;
+      suppressedReason = `直前判定型: 対象レース 0 件 — 締切 ${PRE_CLOSE_WINDOW_MIN}〜${PRE_CLOSE_WINDOW_MAX} 分前のレースを待ってから判定します`;
+    } else {
+      confidenceReason = "本日は買い候補ゼロ。 厳選見送り日です。";
+      suppressedReason = excludedReasons.length > 0
+        ? `候補ゼロ — 除外 ${excludedReasons.length} 件 (直前判定基準未達: EV<${Math.round(evMin*100)}% or 自信<${confMin})`
+        : "候補ゼロ — 期待値プラスのレースが見つかりませんでした";
+    }
     confidence = 10;
-    suppressedReason = excludedReasons.length > 0
-      ? `候補ゼロ — 除外 ${excludedReasons.length} 件 (Go 基準未達: EV<${Math.round(evMin*100)}% or 自信<${confMin})`
-      : "候補ゼロ — 期待値プラスのレースが見つかりませんでした";
   } else if (candidates.length === 1) {
     // 1 件のみは「少ないが強い」 ケース。 信頼度 80+ なら採用、 それ未満なら見送り推奨
     if (confidence < 80) {
@@ -382,6 +461,11 @@ export function computeGoMode(races, evals, allStyleRecommendations, currentStyl
     avgConfidence,
     exclusionRate,
     threshold: GO_CONFIDENCE_THRESHOLD,
+    // Round 67: 直前判定型情報
+    preCloseMode: usePreClose,
+    preCloseRaceCount,
+    preCloseWindow: { min: PRE_CLOSE_WINDOW_MIN, max: PRE_CLOSE_WINDOW_MAX },
+    preCloseThresholds: usePreClose ? { ev: evMin, confidence: confMin } : null,
   };
 }
 
