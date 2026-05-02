@@ -274,16 +274,64 @@ function TopDecisionBar({ visibleData, currentStyle, switchProfile, onRetry }) {
   const air = pnlSummary?.air;
   const real = pnlSummary?.real;
 
+  // Round 59: 日付不一致時はエラーバッジ
+  const dateConsistency = visibleData.dateConsistency;
+  const effectiveRaceDate = visibleData.effectiveRaceDate;
+  const daySummary = visibleData.daySummary;
+  const goModeStats = visibleData.goModeStats;
+  const skipImpact = visibleData.skipImpact;
+  const streakStats = visibleData.streakStats;
+
   return (
     <section className="card card-glow p-3" style={{ minHeight: 140 }} aria-live="polite">
       <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
-        <div className="font-bold text-sm">⚡ 今日の結論</div>
+        <div className="font-bold text-sm">
+          ⚡ 今日の結論
+          {effectiveRaceDate && (
+            <span className="ml-2 opacity-70 text-xs">📅 {effectiveRaceDate}</span>
+          )}
+        </div>
         {lastUpdated && (
           <div className="text-xs opacity-60">
-            📅 最終更新 {new Date(lastUpdated).toLocaleTimeString("ja-JP")}
+            最終更新 {new Date(lastUpdated).toLocaleTimeString("ja-JP")}
           </div>
         )}
       </div>
+
+      {/* Round 59: 日付不一致警告 */}
+      {dateConsistency && !dateConsistency.match && (
+        <div className="mb-2 p-2 rounded text-xs" style={{ background: "rgba(239,68,68,0.10)", border: "1px solid rgba(239,68,68,0.4)", color: "#fca5a5" }}>
+          ⚠️ <b>日付不一致</b>: {dateConsistency.message}<br/>
+          「🔄 更新」 でデータを再取得してください
+        </div>
+      )}
+
+      {/* Round 59: 本日サマリ (短文) + 連勝バッジ */}
+      {daySummary && (
+        <div className="mb-2 flex items-center justify-between flex-wrap gap-2">
+          <div className="text-sm font-bold" style={{
+            color: daySummary.tone === "ok" ? "#a7f3d0"
+                 : daySummary.tone === "warn" ? "#fde68a"
+                 : daySummary.tone === "neg" ? "#fca5a5"
+                 : daySummary.tone === "info" ? "#bae6fd"
+                 : "#9fb0c9"
+          }}>
+            {daySummary.label}
+          </div>
+          {streakStats && streakStats.currentStreakCount > 0 && (
+            <span className="pill" style={{
+              background: streakStats.tone === "ok" ? "rgba(16,185,129,0.18)" : "rgba(239,68,68,0.18)",
+              color: streakStats.tone === "ok" ? "#a7f3d0" : "#fca5a5",
+              fontSize: 11,
+            }}>
+              {streakStats.label}
+            </span>
+          )}
+        </div>
+      )}
+      {daySummary && (
+        <div className="text-xs opacity-80 mb-3" style={{ lineHeight: 1.5 }}>{daySummary.detail}</div>
+      )}
 
       <div className="text-sm font-bold mb-3" style={{
         color: bestStyle ? STYLE_LABELS[bestStyle].color : "#fde68a",
@@ -295,6 +343,42 @@ function TopDecisionBar({ visibleData, currentStyle, switchProfile, onRetry }) {
       {/* Round 57: 実戦モード (Go) + 本日の信頼度 */}
       {goMode && (
         <GoModePanel goMode={goMode} />
+      )}
+
+      {/* Round 59: Go モード実績 + 見送り効果 */}
+      {(goModeStats?.sampleSize > 0 || skipImpact?.sampleSize > 0) && (
+        <div className="grid grid-cols-2 gap-2 mb-3">
+          {goModeStats?.sampleSize > 0 && (
+            <div className="p-2 rounded text-xs" style={{
+              background: goModeStats.isPositive ? "rgba(16,185,129,0.10)" : "rgba(239,68,68,0.10)",
+              border: `1px solid ${goModeStats.isPositive ? "rgba(16,185,129,0.4)" : "rgba(239,68,68,0.4)"}`,
+              color: goModeStats.isPositive ? "#a7f3d0" : "#fca5a5",
+              lineHeight: 1.5,
+            }}>
+              <div className="opacity-80" style={{ fontSize: 10 }}>📊 Go モード実績 (直近 {goModeStats.sampleSize} 件)</div>
+              <div className="font-bold" style={{ fontSize: 13, marginTop: 2 }}>{goModeStats.label}</div>
+              <div className="opacity-80 mt-1" style={{ fontSize: 11 }}>
+                収支 {goModeStats.pnl >= 0 ? "+" : ""}{goModeStats.pnl.toLocaleString()}円
+              </div>
+            </div>
+          )}
+          {skipImpact?.sampleSize > 0 && (
+            <div className="p-2 rounded text-xs" style={{
+              background: skipImpact.isPositive ? "rgba(16,185,129,0.10)" : "rgba(251,191,36,0.10)",
+              border: `1px solid ${skipImpact.isPositive ? "rgba(16,185,129,0.4)" : "rgba(251,191,36,0.4)"}`,
+              color: skipImpact.isPositive ? "#a7f3d0" : "#fde68a",
+              lineHeight: 1.5,
+            }}>
+              <div className="opacity-80" style={{ fontSize: 10 }}>🛡️ 見送り効果 ({skipImpact.sampleSize} 件)</div>
+              <div className="font-bold" style={{ fontSize: 13, marginTop: 2 }}>{skipImpact.label}</div>
+              {skipImpact.quality != null && (
+                <div className="opacity-80 mt-1" style={{ fontSize: 11 }}>
+                  見送り精度 {Math.round(skipImpact.quality * 100)}%
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       )}
 
       {/* 3 スタイル比較 (visibleData の countsByStyle / roiByStyle のみ参照) */}

@@ -19,7 +19,7 @@ const PROFILE_INFO = {
 };
 
 export default memo(HeaderImpl);
-function HeaderImpl({ tab, setTab, today, settings, setSettings, switchProfile, switchVirtualMode, refreshing, onRefresh, lastRefreshAt, nextRefreshAt, savedCount, authUser, onOpenLogin, onLogout, syncStatus, suggestedStyle }) {
+function HeaderImpl({ tab, setTab, today, settings, setSettings, switchProfile, switchVirtualMode, refreshing, onRefresh, lastRefreshAt, nextRefreshAt, savedCount, authUser, onOpenLogin, onLogout, syncStatus, effectiveRaceDate, suggestedStyle }) {
   const air = today?.air || { stake: 0, pnl: 0 };
   const real = today?.real || { stake: 0, pnl: 0 };
   const realLabel = real.stake === 0 ? "未入力" : (real.pnl >= 0 ? "+" + yen(real.pnl) : "−" + yen(Math.abs(real.pnl)));
@@ -49,7 +49,7 @@ function HeaderImpl({ tab, setTab, today, settings, setSettings, switchProfile, 
   return (
     <header className="brand-header sticky top-0 z-30" style={{ minHeight: 130 }}>
       <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between flex-wrap gap-3">
-        {/* ロゴ */}
+        {/* ロゴ + 対象日 (Round 59) */}
         <div style={{ minWidth: 130 }} className="flex items-center gap-2">
           <div style={{
             width: 36, height: 36, borderRadius: 10,
@@ -60,7 +60,11 @@ function HeaderImpl({ tab, setTab, today, settings, setSettings, switchProfile, 
           }}>🚤</div>
           <div>
             <div className="brand-logo" style={{ fontSize: 17, lineHeight: 1.05 }}>競艇 AI</div>
-            <div className="text-xs" style={{ color: "var(--text-mute)", letterSpacing: "0.04em" }}>EXPECTED VALUE ASSISTANT</div>
+            {effectiveRaceDate ? (
+              <div className="text-xs" style={{ color: "var(--brand)", letterSpacing: "0.02em", fontWeight: 700 }}>📅 {effectiveRaceDate}</div>
+            ) : (
+              <div className="text-xs" style={{ color: "var(--text-mute)", letterSpacing: "0.04em" }}>EXPECTED VALUE ASSISTANT</div>
+            )}
           </div>
         </div>
 

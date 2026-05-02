@@ -19,6 +19,8 @@ import { evaluateRace, buildBuyRecommendation, computeOverallGrade } from "./lib
 import { suggestStyle } from "./components/StyleSelector.jsx";
 import { computeStrategyRanking } from "./lib/strategyRanking.js";
 import { allocateRacesToStyles, pickHeadlineForEachStyle, explainEmptyBucket, computeGoMode } from "./lib/styleAllocation.js";
+import { computeGoModeStats, computeSkipImpact, computeDaySummary, computeStreakStats } from "./lib/dayInsights.js";
+import { getJstDateString, getEffectiveRaceDate, validateDateConsistency, detectDateChange } from "./lib/dateGuard.js";
 import { getLearnedWeights } from "./lib/learning.js";
 import { defaultSettings, summarizeToday, perRaceCap } from "./lib/money.js";
 import { todayDate, todayKey, startEpoch } from "./lib/format.js";
@@ -244,16 +246,40 @@ export default function App() {
     [races, evals, allStyleRecommendations, styleAllocation]
   );
 
-  /* Round 57-58: 実戦モード (Go) — visibleData に統合 (top 3 + 本日の信頼度 + 抑制理由) */
+  /* Round 57-58: 実戦モード (Go) */
   const goMode = useMemo(
     () => computeGoMode(races, evals, allStyleRecommendations, settings.riskProfile, 3),
     [races, evals, allStyleRecommendations, settings.riskProfile]
   );
 
-  /* visibleData に goMode を merge (TopDecisionBar に統一ソースで渡す) */
+  /* Round 59: 日次インサイト (Go 実績 / 見送り効果 / 本日サマリ / 連勝) */
+  const goModeStats = useMemo(() => computeGoModeStats(visiblePredictions, 10), [visiblePredictions]);
+  const skipImpact = useMemo(() => computeSkipImpact(visiblePredictions), [visiblePredictions]);
+  const daySummary = useMemo(() => computeDaySummary(goMode, races, evals), [goMode, races, evals]);
+  const streakStats = useMemo(() => computeStreakStats(visiblePredictions), [visiblePredictions]);
+
+  /* Round 59: 日付管理 (JST 厳格) */
+  const currentJst = useMemo(() => getJstDateString(), []);
+  const effectiveRaceDate = useMemo(() => getEffectiveRaceDate(), []);
+  const dateConsistency = useMemo(
+    () => validateDateConsistency(visiblePredictions, effectiveRaceDate),
+    [visiblePredictions, effectiveRaceDate]
+  );
+
+  /* visibleData に Round 59 のすべてを merge (TopDecisionBar 単一ソース) */
   const visibleData = useMemo(
-    () => ({ ...visibleDataBase, goMode }),
-    [visibleDataBase, goMode]
+    () => ({
+      ...visibleDataBase,
+      goMode,
+      goModeStats,
+      skipImpact,
+      daySummary,
+      streakStats,
+      currentJst,
+      effectiveRaceDate,
+      dateConsistency,
+    }),
+    [visibleDataBase, goMode, goModeStats, skipImpact, daySummary, streakStats, currentJst, effectiveRaceDate, dateConsistency]
   );
 
   /* Round 51-B: 「買い候補だけ速く見つける」 — スキャン結果サマリ
@@ -670,6 +696,26 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings.onboardingDone]);
 
+  /* === Round 59: 日付切替検知 (起動時 + 1 分ごと) ===
+     JST 22:00 越えで翌日扱い → 自動的に refreshAll してデータをリセット */
+  useEffect(() => {
+    if (!settings.onboardingDone) return;
+    function checkDateChange() {
+      const result = detectDateChange();
+      if (result.changed && !result.isFirstLoad) {
+        showToast(`📅 新しい日のデータに更新しました (${result.currentDate})`, "ok");
+        setLastRefreshAt(null);
+        refreshAllRef.current && refreshAllRef.current();
+      }
+    }
+    // 起動時に 1 回
+    checkDateChange();
+    // 1 分ごと
+    const id = setInterval(checkDateChange, 60 * 1000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings.onboardingDone]);
+
   /* === Round 30: 開催時間中バックグラウンド更新 (12 分間隔) ===
      ・8:00 〜 22:00 JST のみ動作 (開催時間外は休む)
      ・refreshing 中はスキップ (二重実行防止) — useRef で stale closure 撃退
@@ -792,6 +838,7 @@ export default function App() {
         savedCount={Object.keys(predictions || {}).length}
         authUser={authUser} onOpenLogin={() => setShowLogin(true)} onLogout={handleLogout}
         syncStatus={syncStatus}
+        effectiveRaceDate={effectiveRaceDate}
         suggestedStyle={suggestStyle(evals, predictions)} />
 
       {/* ログインモーダル */}
