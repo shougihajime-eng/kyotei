@@ -5,6 +5,7 @@ import RefreshBar from "./RefreshBar.jsx";
 import NewsPanel from "./NewsPanel.jsx";
 import EVExplainer from "./EVExplainer.jsx";
 import TodaySummary from "./TodaySummary.jsx";
+import TopDecisionBar from "./TopDecisionBar.jsx";
 import { yen } from "../lib/format.js";
 
 /**
@@ -25,6 +26,7 @@ export default function Dashboard({
   onRecord, settings, onPickRace,
   switchProfile, strategyRanking, scanStats,
   styleAllocation, styleHeadlines,
+  visibleData,
 }) {
   const [showDetails, setShowDetails] = useState(false);
 
@@ -62,6 +64,13 @@ export default function Dashboard({
     <div className="space-y-4 max-w-3xl mx-auto px-4 mt-4 pb-20">
       {/* 更新バー (常時) */}
       <RefreshBar onRefresh={onRefresh} refreshing={refreshing} refreshMsg={refreshMsg} lastRefreshAt={lastRefreshAt} />
+
+      {/* Round 52-53: Top Decision Bar (visibleData 単一駆動) */}
+      <TopDecisionBar
+        visibleData={visibleData}
+        styleAllocation={styleAllocation}
+        switchProfile={switchProfile}
+      />
 
       {/* Round 51-B: 「買えるレースを探索中」 サマリ */}
       {scanStats && scanStats.total > 0 && (

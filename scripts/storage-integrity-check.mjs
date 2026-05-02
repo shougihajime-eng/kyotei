@@ -102,30 +102,37 @@ expect("直近 AI は残る", "recent_ai" in gcResult, true);
 expect("直近 手動は残る", "recent_manual" in gcResult, true);
 expect("削除件数", removed, 1);
 
-/* === 5. getStorageStats: 期間カウント === */
-console.log("\n▶ 5. 期間カウント (今日/7日/30日)");
+/* === 5. getStorageStats: 期間カウント (Round 52: v2 タグ必須) === */
+console.log("\n▶ 5. 期間カウント (今日/7日/30日 — v2 のみ)");
 const periodPredictions = {
-  d0: { date: today, virtual: true, decision: "buy", totalStake: 100 },
-  d3: { date: ago(3), virtual: true, decision: "buy", totalStake: 100 },
-  d6: { date: ago(6), virtual: true, decision: "buy", totalStake: 100 },
-  d10: { date: ago(10), virtual: true, decision: "buy", totalStake: 100 },
-  d20: { date: ago(20), virtual: true, decision: "buy", totalStake: 100 },
-  d40: { date: ago(40), virtual: true, decision: "buy", totalStake: 100 },
+  d0: { date: today, virtual: true, decision: "buy", totalStake: 100, version: "v2" },
+  d3: { date: ago(3), virtual: true, decision: "buy", totalStake: 100, version: "v2" },
+  d6: { date: ago(6), virtual: true, decision: "buy", totalStake: 100, version: "v2" },
+  d10: { date: ago(10), virtual: true, decision: "buy", totalStake: 100, version: "v2" },
+  d20: { date: ago(20), virtual: true, decision: "buy", totalStake: 100, version: "v2" },
+  d40: { date: ago(40), virtual: true, decision: "buy", totalStake: 100, version: "v2" },
 };
 const periodStats = getStorageStats(periodPredictions);
 expect("総数", periodStats.total, 6);
+expect("v2 件数", periodStats.v2, 6);
+expect("legacy 件数", periodStats.legacy, 0);
 expect("今日", periodStats.today, 1);
 expect("直近7日 (今日+3日前+6日前)", periodStats.last7days, 3);
 expect("直近30日 (今日+3+6+10+20)", periodStats.last30days, 5);
 
-/* === 6. 古い形式 (virtual 未設定) も壊れない === */
-console.log("\n▶ 6. 古い形式 (virtual 未設定) でもエラー回避");
-const legacyPredictions = {
-  legacy: { date: today, decision: "buy", totalStake: 1000 }, // virtual なし
+/* === 6. legacy データは v2 集計から除外 (Round 52) === */
+console.log("\n▶ 6. legacy / v2 分離 (Round 52)");
+const mixed = {
+  legacyA: { date: today, decision: "buy", totalStake: 100, virtual: true }, // version なし → legacy
+  v2A:     { date: today, decision: "buy", totalStake: 100, virtual: true, version: "v2" },
 };
-const legacyStats = getStorageStats(legacyPredictions);
-expect("legacy → エア扱いで集計", legacyStats.air, 1);
-expect("legacy → リアルではない", legacyStats.real, 0);
+const mixedStats = getStorageStats(mixed);
+expect("総数 (legacy + v2)", mixedStats.total, 2);
+expect("v2 のみ", mixedStats.v2, 1);
+expect("legacy 件数", mixedStats.legacy, 1);
+expect("today (v2のみ)", mixedStats.today, 1);
+expect("air (v2のみ)", mixedStats.air, 1);
+expect("legacy → リアルではない", mixedStats.real, 0);
 
 /* === 7. 7日 / 30日 リテンション保証 === */
 console.log("\n▶ 7. 7日 / 30日 リテンション保証 (GC で消えない)");

@@ -78,36 +78,193 @@ export function clearState() {
   }
 }
 
-/* === Round 43-51: 保存件数・期間統計 (3 スタイル別件数追加) === */
+/* === Round 52: バージョン管理 ===
+   Round 52 以降の新ロジックで保存する全レコードに version: "v2" を付与。
+   version 無し = legacy (Round 51 以前の不完全データ)。
+   Stats / Verify はデフォルトで v2 のみ表示し、legacy を別途分離保存。
+*/
+export const CURRENT_VERSION = "v2";
+export function isLegacy(p) { return !p?.version || p.version === "v1"; }
+export function isV2(p) { return p?.version === "v2"; }
+
+/* バージョンでフィルタ (showLegacy=false なら v2 のみ) */
+export function filterByVersion(predictions, showLegacy = false) {
+  if (showLegacy) return predictions;
+  const out = {};
+  for (const [k, p] of Object.entries(predictions || {})) {
+    if (isV2(p)) out[k] = p;
+  }
+  return out;
+}
+
+/* === Round 52-53: 単一の可視データ取得関数 (UI フラグ統合版) ===
+   全 consumer が必ずこの関数経由でデータを参照すること。 storage を直接参照しない。
+   返り値:
+     predictions: フィルタ済みの予測データ ({ key: pred })
+     hasData / isEmpty: 件数フラグ
+     isLegacyMixed: showLegacy=true で legacy が混在しているか
+     lastUpdated: ISO 文字列 (最終 snapshotAt)
+     isReady / isLoading: 状態フラグ
+     error: エラー (なければ null)
+     countsByStyle: { steady, balanced, aggressive } (買い件数)
+     pnlSummary: { air, real } (PnL + ROI)
+     bestStyle: 最良 ROI のスタイル
+     driftDetected: 選択スタイルと最良スタイルが違う場合 true
+     showLegacy / versionInfo: バージョン管理
+*/
+export function getVisibleData(predictions, options = {}) {
+  const { showLegacy = false, currentStyle = null } = typeof options === "object" ? options : { showLegacy: !!options };
+  try {
+    const filtered = filterByVersion(predictions, showLegacy);
+    const all = Object.values(filtered);
+    const allRaw = Object.values(predictions || {});
+    const hasLegacy = allRaw.some(isLegacy);
+    // 最終 snapshotAt
+    let lastUpdated = null;
+    for (const p of all) {
+      if (p?.snapshotAt && (!lastUpdated || p.snapshotAt > lastUpdated)) {
+        lastUpdated = p.snapshotAt;
+      }
+    }
+    // スタイル別 件数 + ROI
+    const STYLES = ["steady", "balanced", "aggressive"];
+    const countsByStyle = {};
+    const roiByStyle = {};
+    for (const s of STYLES) {
+      const arr = all.filter(p => (p.profile || "balanced") === s);
+      const buys = arr.filter(p => p.decision === "buy" && (p.totalStake || 0) > 0);
+      const settled = buys.filter(p => p.result?.first);
+      let stake = 0, ret = 0;
+      settled.forEach(p => { stake += p.totalStake; ret += p.payout || 0; });
+      countsByStyle[s] = buys.length;
+      roiByStyle[s] = stake > 0 ? ret / stake : null;
+    }
+    // 最良スタイル (3 件以上の実績がある中で ROI 最高)
+    let bestStyle = null, bestRoi = -Infinity;
+    for (const s of STYLES) {
+      if (roiByStyle[s] != null && countsByStyle[s] >= 3 && roiByStyle[s] > bestRoi) {
+        bestRoi = roiByStyle[s]; bestStyle = s;
+      }
+    }
+    // ズレ検知
+    const driftDetected = !!(currentStyle && bestStyle && currentStyle !== bestStyle);
+    // PnL サマリ (エア / リアル)
+    const buys = all.filter(p => p.decision === "buy" && (p.totalStake || 0) > 0 && p.result?.first);
+    const air = buys.filter(p => p.virtual !== false);
+    const real = buys.filter(p => p.virtual === false);
+    function pnlOf(arr) {
+      let s = 0, r = 0;
+      arr.forEach(p => { s += p.totalStake; r += p.payout || 0; });
+      return { stake: s, ret: r, pnl: r - s, roi: s > 0 ? r / s : null };
+    }
+    return {
+      predictions: filtered,
+      hasData: all.length > 0,
+      isEmpty: all.length === 0,
+      isLegacyMixed: showLegacy && hasLegacy,
+      lastUpdated,
+      isReady: true,
+      isLoading: false,
+      error: null,
+      countsByStyle,
+      roiByStyle,
+      pnlSummary: { air: pnlOf(air), real: pnlOf(real) },
+      bestStyle,
+      bestRoi: bestStyle ? roiByStyle[bestStyle] : null,
+      driftDetected,
+      currentStyle,
+      showLegacy,
+      versionInfo: {
+        v2Count: allRaw.filter(isV2).length,
+        legacyCount: allRaw.filter(isLegacy).length,
+        hasLegacy,
+        currentVersion: CURRENT_VERSION,
+      },
+    };
+  } catch (e) {
+    return {
+      predictions: {},
+      hasData: false,
+      isEmpty: true,
+      isLegacyMixed: false,
+      lastUpdated: null,
+      isReady: false,
+      isLoading: false,
+      error: String(e?.message || e),
+      countsByStyle: { steady: 0, balanced: 0, aggressive: 0 },
+      roiByStyle: { steady: null, balanced: null, aggressive: null },
+      pnlSummary: { air: null, real: null },
+      bestStyle: null,
+      bestRoi: null,
+      driftDetected: false,
+      currentStyle: null,
+      showLegacy: !!showLegacy,
+      versionInfo: { v2Count: 0, legacyCount: 0, hasLegacy: false, currentVersion: CURRENT_VERSION },
+    };
+  }
+}
+
+/* バージョン情報サマリ (UI バッジ用) */
+export function getVersionInfo(predictions) {
+  const all = Object.values(predictions || {});
+  const v2 = all.filter(isV2).length;
+  const legacy = all.filter(isLegacy).length;
+  return {
+    currentVersion: CURRENT_VERSION,
+    v2Count: v2,
+    legacyCount: legacy,
+    isFreshStart: v2 === 0 && legacy === 0,
+    hasLegacy: legacy > 0,
+  };
+}
+
+/* === Round 43-52: 保存件数・期間統計 (legacy / v2 分離 + 3 スタイル別) === */
 export function getStorageStats(predictions) {
   const all = Object.values(predictions || {});
+  const v2 = all.filter(isV2);
+  const legacy = all.filter(isLegacy);
   const today = new Date().toISOString().slice(0, 10);
   const ago = (days) => new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
-  const inPeriod = (cutoff) => all.filter((p) => (p.date || "0000-00-00") >= cutoff);
+  const inPeriod = (arr, cutoff) => arr.filter((p) => (p.date || "0000-00-00") >= cutoff);
   const air = (arr) => arr.filter((p) => p.virtual !== false);
   const real = (arr) => arr.filter((p) => p.virtual === false);
-  const manual = all.filter((p) => p.manuallyRecorded);
-  const byProfile = (style) => all.filter((p) => (p.profile || "balanced") === style);
+  const manual = (arr) => arr.filter((p) => p.manuallyRecorded);
+  const byProfile = (arr, style) => arr.filter((p) => (p.profile || "balanced") === style);
   const dates = all.map((p) => p.date).filter(Boolean).sort();
-  const oldestDate = dates[0] || null;
-  const newestDate = dates[dates.length - 1] || null;
+  // 件数は v2 をデフォルト集計対象に
   return {
     total: all.length,
-    last7days: inPeriod(ago(6)).length,
-    last30days: inPeriod(ago(29)).length,
-    today: all.filter((p) => p.date === today).length,
-    air: air(all).length,
-    real: real(all).length,
-    manual: manual.length,
-    // Round 51: 3 スタイル別件数
-    steady: byProfile("steady").length,
-    balanced: byProfile("balanced").length,
-    aggressive: byProfile("aggressive").length,
-    oldestDate,
-    newestDate,
-    settled: all.filter((p) => p.result?.first).length,
-    pending: all.filter((p) => p.decision === "buy" && (p.totalStake || 0) > 0 && !p.result?.first).length,
+    v2: v2.length,
+    legacy: legacy.length,
+    last7days: inPeriod(v2, ago(6)).length,
+    last30days: inPeriod(v2, ago(29)).length,
+    today: v2.filter((p) => p.date === today).length,
+    air: air(v2).length,
+    real: real(v2).length,
+    manual: manual(v2).length,
+    steady: byProfile(v2, "steady").length,
+    balanced: byProfile(v2, "balanced").length,
+    aggressive: byProfile(v2, "aggressive").length,
+    oldestDate: dates[0] || null,
+    newestDate: dates[dates.length - 1] || null,
+    settled: v2.filter((p) => p.result?.first).length,
+    pending: v2.filter((p) => p.decision === "buy" && (p.totalStake || 0) > 0 && !p.result?.first).length,
+    // legacy 個別カウント (UI 用)
+    legacyAir: air(legacy).length,
+    legacyReal: real(legacy).length,
+    legacyManual: manual(legacy).length,
   };
+}
+
+/* === legacy データを完全削除 (任意操作) === */
+export function purgeLegacy(predictions) {
+  const next = {};
+  let removed = 0;
+  for (const [k, p] of Object.entries(predictions || {})) {
+    if (isV2(p)) next[k] = p;
+    else removed++;
+  }
+  return { next, removed };
 }
 
 /* === Round 43-44: 古い AI スナップショットを GC ===

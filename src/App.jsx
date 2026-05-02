@@ -9,7 +9,7 @@ import LossAnalysis from "./components/LossAnalysis.jsx";
 import Settings from "./components/Settings.jsx";
 import Onboarding from "./components/Onboarding.jsx";
 
-import { loadState, saveState, clearState, setStorageStatusListener, gcOldPredictions, getStorageStats, estimateStorageSize } from "./lib/storage.js";
+import { loadState, saveState, clearState, setStorageStatusListener, gcOldPredictions, getStorageStats, estimateStorageSize, filterByVersion, purgeLegacy, getVisibleData, getVersionInfo, CURRENT_VERSION } from "./lib/storage.js";
 import { cloudEnabled } from "./lib/supabaseClient.js";
 import { getCurrentUser, onAuthChange, signOut as authSignOut } from "./lib/auth.js";
 import { fullSync, lightSync } from "./lib/cloudSync.js";
@@ -38,6 +38,15 @@ export default function App() {
     return next;
   }, []); // 起動時 1 回のみ
   const [predictions, setPredictions] = useState(initialPredictions);
+
+  /* Round 52-53: 単一エントリ visibleData (predictions + UI flags) — 全 consumer がこれだけを使う */
+  const showLegacy = !!settings.showLegacy;
+  const visibleData = useMemo(
+    () => getVisibleData(predictions, { showLegacy, currentStyle: settings.riskProfile }),
+    [predictions, showLegacy, settings.riskProfile]
+  );
+  const visiblePredictions = visibleData.predictions; // 後方互換 (内部用)
+  const versionInfo = visibleData.versionInfo;
 
   /* === Round 43: 保存ステータス (UI バナー用) === */
   const [storageStatus, setStorageStatus] = useState({ ok: true, lastSavedAt: null, error: null });
@@ -68,11 +77,29 @@ export default function App() {
   const [lastRefreshAt, setLastRefreshAt] = useState(null);
   /* スタイル切替の即時フィードバック (トースト) — Auth handler より前に定義 */
   const [toast, setToast] = useState(null);
+  const lastToastMsgRef = useRef({ msg: null, ts: 0 });
   const showToast = useCallback((msg, kind = "info") => {
-    const id = Date.now();
+    // デデュープ: 同じメッセージが 800ms 以内なら抑止
+    const now = Date.now();
+    if (lastToastMsgRef.current.msg === msg && now - lastToastMsgRef.current.ts < 800) return;
+    lastToastMsgRef.current = { msg, ts: now };
+    const id = now;
     setToast({ msg, kind, id });
     setTimeout(() => setToast((t) => (t && t.id === id ? null : t)), 2500);
   }, []);
+
+  /* Round 52-53: グローバル notify API (window.__kyoteiToast) — Settings から呼べる */
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      window.__kyoteiToast = showToast;
+      window.__kyoteiNotify = (type, message) => showToast(message, type === "success" ? "ok" : type === "error" ? "neg" : "info");
+    }
+    return () => {
+      if (typeof window !== "undefined") {
+        try { delete window.__kyoteiToast; delete window.__kyoteiNotify; } catch {}
+      }
+    };
+  }, [showToast]);
 
   /* === Round 49 TDZ 修正: Auth handler は showToast の後に作る === */
   const handleLogin = useCallback((user) => {
@@ -155,11 +182,12 @@ export default function App() {
   }, [settings, predictions]);
 
   /* === Compute evals + recommendations for all races === */
-  const today = useMemo(() => summarizeToday(predictions), [predictions]);
+  const today = useMemo(() => summarizeToday(visiblePredictions), [visiblePredictions]);
   const cap = useMemo(() => perRaceCap(settings, today), [settings, today]);
 
   /* 過去成績から学習した重み補正 (-0.05〜+0.05) を計算 */
-  const learnedWeights = useMemo(() => getLearnedWeights(predictions), [predictions]);
+  // Round 52: 学習も v2 のみ参照 (legacy データに引きずられない)
+  const learnedWeights = useMemo(() => getLearnedWeights(visiblePredictions), [visiblePredictions]);
 
   const evals = useMemo(() => {
     const map = {};
@@ -353,6 +381,7 @@ export default function App() {
             predictionType: style,
             virtual: existing.virtual != null ? existing.virtual : !!settings.virtualMode,
             snapshotAt: stamp,
+            version: CURRENT_VERSION, // Round 52: v2 タグ付け (legacy と分離)
           };
 
           let updated;
@@ -658,8 +687,12 @@ export default function App() {
 
   /* === 手動記録 (リアル/エア舟券フォーム) === */
   const handleManualBet = useCallback((record) => {
-    // 現在のスタイルも記録に含めて、後で集計
-    const enhanced = { ...record, profile: record.profile || settings.riskProfile };
+    // Round 52: v2 タグを必ず付与 (現在のスタイルも記録)
+    const enhanced = {
+      ...record,
+      profile: record.profile || settings.riskProfile,
+      version: CURRENT_VERSION,
+    };
     setPredictions((prev) => ({ ...prev, [record.key]: enhanced }));
     // Round 48: 「本当に保存されてる?」 の不安を消すための明示的フィードバック
     if (authUser) {
@@ -695,6 +728,7 @@ export default function App() {
         recorded: true,
         recordedAt: new Date().toISOString(),
         virtual,
+        version: CURRENT_VERSION, // Round 52: v2 タグ
       },
     }));
   }, [settings.virtualMode]);
@@ -712,16 +746,17 @@ export default function App() {
   }, []);
 
   /* === Weekly summary for badge === */
+  // Round 52: weekly も visiblePredictions (v2 のみ) で集計
   const weekly = useMemo(() => {
     const today = new Date();
     const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-    const arr = Object.values(predictions || {}).filter((p) => p.date >= weekAgo);
+    const arr = Object.values(visiblePredictions || {}).filter((p) => p.date >= weekAgo);
     const buys = arr.filter((p) => p.decision === "buy" && p.totalStake > 0);
     const settled = buys.filter((p) => p.result?.first);
     let stake = 0, ret = 0, hits = 0;
     settled.forEach((p) => { stake += p.totalStake; ret += p.payout || 0; if (p.hit) hits++; });
     return { count: buys.length, settled: settled.length, hits, stake, ret, pnl: ret - stake, roi: stake > 0 ? ret / stake : 0 };
-  }, [predictions]);
+  }, [visiblePredictions]);
 
   /* === Onboarding === */
   if (!settings.onboardingDone) {
@@ -758,6 +793,44 @@ export default function App() {
         </div>
       )}
 
+      {/* Round 52: バージョン状態バッジ (常時表示 — 「今見ている数字の信頼性」 を即時把握) */}
+      <button
+        onClick={() => {
+          setTab("settings");
+          setSelectedRaceId(null);
+          // settings タブ表示後、v2/legacy パネルにスクロール
+          setTimeout(() => {
+            const el = document.getElementById("version-panel");
+            if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+          }, 50);
+        }}
+        className="mx-4 mt-2 text-xs flex items-center justify-center gap-2 flex-wrap w-auto"
+        style={{
+          background: showLegacy ? "rgba(251,191,36,0.10)" : "rgba(56,189,248,0.10)",
+          border: `1px solid ${showLegacy ? "rgba(251,191,36,0.4)" : "rgba(56,189,248,0.4)"}`,
+          borderRadius: 12, padding: "8px 12px",
+          color: showLegacy ? "#fde68a" : "#bae6fd",
+          lineHeight: 1.5, cursor: "pointer", textAlign: "left", display: "flex",
+          minHeight: 36,
+        }}>
+        {showLegacy ? (
+          <>
+            <span>⚠️ <b>legacy 含めて表示中</b></span>
+            <span className="opacity-80">v2 {versionInfo.v2Count} + legacy {versionInfo.legacyCount} 件</span>
+            <span className="opacity-70 ml-auto">→ 設定で切替</span>
+          </>
+        ) : (
+          <>
+            <span>🆕 <b>v2 のみ表示中</b></span>
+            <span className="opacity-80">v2 {versionInfo.v2Count} 件</span>
+            {versionInfo.legacyCount > 0 && (
+              <span className="opacity-80">/ legacy {versionInfo.legacyCount} 件 (非表示)</span>
+            )}
+            <span className="opacity-70 ml-auto">→ 設定</span>
+          </>
+        )}
+      </button>
+
       {/* トースト: スタイル切替 / 操作フィードバック (iOS notch 対応) */}
       {toast && (
         <div style={{
@@ -775,7 +848,8 @@ export default function App() {
       <main className="pb-20">
         {tab === "home" && (
           <Dashboard
-            races={races} predictions={predictions} recommendations={recommendations}
+            races={races} predictions={visiblePredictions} recommendations={recommendations}
+            visibleData={visibleData}
             today={today} weekly={weekly}
             refreshing={refreshing} refreshMsg={refreshMsg} lastRefreshAt={lastRefreshAt}
             onRefresh={refreshAll} onRecord={handleRecord} settings={settings}
@@ -804,24 +878,32 @@ export default function App() {
           />
         )}
         {tab === "verify" && (
-          <Verify predictions={predictions}
+          <Verify predictions={visiblePredictions}
             currentProfile={settings.riskProfile}
             virtualMode={settings.virtualMode}
             onManualBet={handleManualBet}
             onDeleteRecord={handleDeleteRecord} />
         )}
         {tab === "stats" && (
-          <Stats predictions={predictions} lastRefreshAt={lastRefreshAt}
+          <Stats predictions={visiblePredictions} lastRefreshAt={lastRefreshAt}
             virtualMode={settings.virtualMode} />
         )}
         {tab === "analysis" && (
-          <LossAnalysis predictions={predictions} races={races} />
+          <LossAnalysis predictions={visiblePredictions} races={races} />
         )}
         {tab === "settings" && (
           <Settings settings={settings} setSettings={setSettings}
             switchVirtualMode={switchVirtualMode}
             switchProfile={switchProfile}
-            predictions={predictions}
+            predictions={predictions}        /* Settings は legacy / v2 両方の生件数を見せる */
+            visiblePredictions={visiblePredictions}
+            versionInfo={versionInfo}
+            onPurgeLegacy={() => {
+              if (!confirm(`legacy データ ${versionInfo.legacyCount} 件を完全削除します。 v2 データには影響しません。\nよろしいですか?`)) return;
+              const { next, removed } = purgeLegacy(predictions);
+              setPredictions(next);
+              showToast(`🗑 legacy ${removed} 件を削除しました`, "ok");
+            }}
             authUser={authUser} onOpenLogin={() => setShowLogin(true)} onLogout={handleLogout}
             syncStatus={syncStatus}
             onManualSync={async () => {
