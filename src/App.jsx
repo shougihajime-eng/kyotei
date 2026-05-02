@@ -1007,7 +1007,104 @@ export default function App() {
         </div>
       )}
 
-      <main className="pb-20">
+      {/* Round 72: 現在モード常時表示バー (画面下部固定) ===
+          ・「今 エア か リアル か」 「スタイル」 「次の対象レース まで何分」 を一目で
+          ・スクロールしても見えるように bottom: 0 で固定
+          ・タップでモード/スタイル切替 (Header と同じアクション) */}
+      {settings.onboardingDone && (() => {
+        const isVirtual = !!settings.virtualMode;
+        const styleLabel = { steady: "🛡️ 安定", balanced: "⚖️ バランス", aggressive: "🎯 攻め" }[settings.riskProfile] || settings.riskProfile;
+        // 次の直前判定対象レース (締切まで 5-15 分以内) の最近接を抽出
+        const now = Date.now();
+        let nextTarget = null, minDiff = Infinity;
+        for (const r of races || []) {
+          if (!r.startTime || !r.date) continue;
+          const m = String(r.startTime).match(/^(\d{1,2}):(\d{2})$/);
+          if (!m) continue;
+          const [Y, M, D] = r.date.split("-").map((s) => parseInt(s, 10));
+          const startMs = new Date(Y, M - 1, D, +m[1], +m[2]).getTime();
+          const diffMin = (startMs - now) / 60000;
+          if (diffMin >= 5 && diffMin <= 15) {
+            // 既に対象内
+            if (diffMin < minDiff) { minDiff = diffMin; nextTarget = { race: r, minutesToTarget: 0, kind: "in-window" }; }
+          } else if (diffMin > 15 && diffMin - 15 < minDiff) {
+            minDiff = diffMin - 15;
+            nextTarget = { race: r, minutesToTarget: Math.ceil(diffMin - 15), kind: "wait" };
+          }
+        }
+        return (
+          <div style={{
+            position: "fixed", left: 0, right: 0, bottom: 0,
+            zIndex: 90,
+            background: "linear-gradient(180deg, rgba(15,24,48,0.78) 0%, rgba(10,17,36,0.96) 100%)",
+            borderTop: "1px solid rgba(56,189,248,0.25)",
+            padding: "6px 10px calc(6px + env(safe-area-inset-bottom, 0px))",
+            backdropFilter: "blur(8px)",
+            display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
+            fontSize: 11,
+          }}>
+            {/* 左: モード + スタイル (タップで切替可) */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={() => switchVirtualMode()}
+                style={{
+                  minHeight: 32, padding: "4px 10px", borderRadius: 999,
+                  background: isVirtual ? "rgba(34,211,238,0.18)" : "rgba(251,191,36,0.18)",
+                  border: `1.5px solid ${isVirtual ? "#22d3ee" : "#fbbf24"}`,
+                  color: isVirtual ? "#67e8f9" : "#fcd34d",
+                  fontWeight: 800, fontSize: 11, cursor: "pointer",
+                  transition: "transform 0.06s ease",
+                }}
+                onTouchStart={(e) => { e.currentTarget.style.transform = "scale(0.94)"; }}
+                onTouchEnd={(e) => { e.currentTarget.style.transform = "scale(1)"; }}
+                aria-label={isVirtual ? "現在: エアモード (タップでリアルに)" : "現在: リアルモード (タップでエアに)"}
+              >
+                {isVirtual ? "🧪 エア中" : "💰 リアル中"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const order = ["steady", "balanced", "aggressive"];
+                  const i = order.indexOf(settings.riskProfile);
+                  const next = order[(i + 1) % order.length];
+                  switchProfile(next);
+                }}
+                style={{
+                  minHeight: 32, padding: "4px 10px", borderRadius: 999,
+                  background: "rgba(56,189,248,0.12)",
+                  border: "1.5px solid rgba(56,189,248,0.45)",
+                  color: "#bae6fd",
+                  fontWeight: 700, fontSize: 11, cursor: "pointer",
+                }}
+                aria-label={`現在スタイル: ${styleLabel} (タップで切替)`}
+              >
+                {styleLabel}
+              </button>
+            </div>
+            {/* 右: 次の対象レース */}
+            <div style={{ color: "#cbd5e1", textAlign: "right", lineHeight: 1.3, fontSize: 10 }}>
+              {nextTarget ? (
+                nextTarget.kind === "in-window" ? (
+                  <span style={{ color: "#34d399", fontWeight: 800 }}>
+                    🟢 直前判定対象あり<br/>
+                    <span style={{ opacity: 0.85, fontSize: 9 }}>{nextTarget.race.venue} {nextTarget.race.raceNo}R ({nextTarget.race.startTime})</span>
+                  </span>
+                ) : (
+                  <span>
+                    ⏰ 次の対象まで <b style={{ color: "#fde68a" }}>{nextTarget.minutesToTarget}分</b><br/>
+                    <span style={{ opacity: 0.7, fontSize: 9 }}>{nextTarget.race.venue} {nextTarget.race.raceNo}R ({nextTarget.race.startTime})</span>
+                  </span>
+                )
+              ) : (
+                <span style={{ opacity: 0.6 }}>本日対象レースなし</span>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
+      <main style={{ paddingBottom: "calc(80px + env(safe-area-inset-bottom, 0px))" }}>
         {tab === "home" && (
           <Dashboard
             races={races} predictions={visiblePredictions} recommendations={recommendations}
