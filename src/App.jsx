@@ -270,9 +270,9 @@ export default function App() {
   /* Round 60: 直近成績悪化 (degrading/critical) なら Go モード閾値を引き上げ */
   const isDegraded = accuracyHealth?.level === "degrading" || accuracyHealth?.level === "critical";
 
-  /* Round 57-58-60: 実戦モード (Go) — degraded フラグで保守的に */
+  /* Round 57-58-60-65: 実戦モード (Go) — 運用ルール「1-2 レース以内」 に topN を 2 に絞る */
   const goMode = useMemo(
-    () => computeGoMode(races, evals, allStyleRecommendations, settings.riskProfile, 3, { degraded: isDegraded }),
+    () => computeGoMode(races, evals, allStyleRecommendations, settings.riskProfile, 2, { degraded: isDegraded }),
     [races, evals, allStyleRecommendations, settings.riskProfile, isDegraded]
   );
 
