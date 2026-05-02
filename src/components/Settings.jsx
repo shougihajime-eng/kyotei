@@ -201,6 +201,15 @@ export default function Settings({ settings, setSettings, switchVirtualMode, swi
           <Stat label="✅ 確定済" value={stats.settled} />
           <Stat label="⏳ 未確定" value={stats.pending} />
         </div>
+        {/* Round 51-E: 3 スタイル別件数 */}
+        <div className="mt-3 pt-3" style={{ borderTop: "1px dashed rgba(255,255,255,0.1)" }}>
+          <div className="text-xs opacity-70 mb-2 font-bold">📋 スタイル別 (3 タイプ完全分離)</div>
+          <div className="grid grid-cols-3 gap-2 text-xs">
+            <Stat label="🛡️ 本命型" value={stats.steady} color="#93c5fd" />
+            <Stat label="⚖️ バランス型" value={stats.balanced} color="#fcd34d" />
+            <Stat label="🎯 穴狙い型" value={stats.aggressive} color="#fca5a5" />
+          </div>
+        </div>
         <div className="text-xs opacity-70 mt-3" style={{ lineHeight: 1.55 }}>
           📅 最古: <b>{stats.oldestDate || "—"}</b> / 最新: <b>{stats.newestDate || "—"}</b>
           {sz && <> / ストレージ使用: <b>{sz.kb} KB</b></>}
