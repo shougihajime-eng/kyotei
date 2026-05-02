@@ -39,14 +39,15 @@ export default function App() {
   }, []); // 起動時 1 回のみ
   const [predictions, setPredictions] = useState(initialPredictions);
 
-  /* Round 52-53: 単一エントリ visibleData (predictions + UI flags) — 全 consumer がこれだけを使う */
+  /* Round 52-58: 単一エントリ visibleData (predictions + UI flags + goMode) — 全 consumer がこれだけを使う
+     goMode は races / evals / allStyleRecommendations が必要なので、 visibleData ベースに合成する */
   const showLegacy = !!settings.showLegacy;
-  const visibleData = useMemo(
+  const visibleDataBase = useMemo(
     () => getVisibleData(predictions, { showLegacy, currentStyle: settings.riskProfile }),
     [predictions, showLegacy, settings.riskProfile]
   );
-  const visiblePredictions = visibleData.predictions; // 後方互換 (内部用)
-  const versionInfo = visibleData.versionInfo;
+  const visiblePredictions = visibleDataBase.predictions;
+  const versionInfo = visibleDataBase.versionInfo;
 
   /* === Round 43: 保存ステータス (UI バナー用) === */
   const [storageStatus, setStorageStatus] = useState({ ok: true, lastSavedAt: null, error: null });
@@ -243,10 +244,16 @@ export default function App() {
     [races, evals, allStyleRecommendations, styleAllocation]
   );
 
-  /* Round 57: 実戦モード (Go) — top 3 期待値レース + 本日の信頼度 */
+  /* Round 57-58: 実戦モード (Go) — visibleData に統合 (top 3 + 本日の信頼度 + 抑制理由) */
   const goMode = useMemo(
     () => computeGoMode(races, evals, allStyleRecommendations, settings.riskProfile, 3),
     [races, evals, allStyleRecommendations, settings.riskProfile]
+  );
+
+  /* visibleData に goMode を merge (TopDecisionBar に統一ソースで渡す) */
+  const visibleData = useMemo(
+    () => ({ ...visibleDataBase, goMode }),
+    [visibleDataBase, goMode]
   );
 
   /* Round 51-B: 「買い候補だけ速く見つける」 — スキャン結果サマリ

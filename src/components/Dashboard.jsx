@@ -65,13 +65,12 @@ export default function Dashboard({
       {/* 更新バー (常時) */}
       <RefreshBar onRefresh={onRefresh} refreshing={refreshing} refreshMsg={refreshMsg} lastRefreshAt={lastRefreshAt} />
 
-      {/* Round 52-57: Top Decision Bar (Go モード + 4 状態対応) */}
+      {/* Round 52-58: Top Decision Bar (visibleData 単一ソース — goMode も visibleData 経由) */}
       <TopDecisionBar
         visibleData={visibleData}
         currentStyle={settings.riskProfile}
         switchProfile={switchProfile}
         onRetry={onRetry || onRefresh}
-        goMode={goMode}
       />
 
       {/* Round 51-B: 「買えるレースを探索中」 サマリ */}

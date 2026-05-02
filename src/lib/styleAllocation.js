@@ -226,23 +226,41 @@ export function pickHeadlineForEachStyle(races, evals, allStyleRecommendations, 
   return out;
 }
 
-/* === Round 57: Go モード — その日最も期待値の高いレースを top N (デフォルト 3) に絞る ===
+/* === Round 57-58: Go モード — その日最も期待値の高いレースを top N に絞る ===
    引数:
      races / evals / allStyleRecommendations: 通常データ
      currentStyle: 現在選択中のスタイル
      topN: 絞り込み件数 (デフォルト 3)
    返り値:
-     topPicks: [{ raceId, race, ev, style, recommendation }] (買い候補のみ、最大 topN)
-     todayConfidence: 0-100 (本日の信頼度スコア)
+     goPicks: [{ raceId, race, ev, style, recommendation, simpleReason }] (買い候補のみ、最大 topN)
+     dayConfidence: 0-100 (本日の信頼度スコア)
      confidenceLabel: "Go" | "様子見" | "見送り推奨"
      confidenceReason: 1 行説明
+     suppressedReason: 抑制理由 (閾値未満時)
+     excludedCount / excludedReasons: 除外件数とその理由
 */
+export const GO_CONFIDENCE_THRESHOLD = 60;
+
 export function computeGoMode(races, evals, allStyleRecommendations, currentStyle = "balanced", topN = 3) {
-  // 各レースの「最良 EV」 を全スタイルから集約
   const candidates = [];
+  const excludedReasons = []; // 除外されたレースとその理由
+
   for (const r of races || []) {
     const ev = evals?.[r.id];
-    if (!ev?.ok) continue;
+    if (!ev) continue;
+    if (!ev.ok) {
+      // ev が ok でない理由を記録
+      excludedReasons.push({
+        raceId: r.id, venue: r.venue, raceNo: r.raceNo,
+        reason: ev.reason === "no-odds" ? "オッズ未取得"
+              : ev.reason === "stale-odds" ? "オッズ参考値"
+              : ev.reason === "no-boats" ? "出走表未取得"
+              : ev.reason === "closed" ? "締切済"
+              : ev.reason === "extreme-rough" ? "暴荒れ"
+              : ev.message || "データ不足",
+      });
+      continue;
+    }
     let best = null;
     for (const style of ["steady", "balanced", "aggressive"]) {
       const rec = allStyleRecommendations?.[style]?.[r.id];
@@ -255,62 +273,101 @@ export function computeGoMode(races, evals, allStyleRecommendations, currentStyl
           mainCombo: rec.main?.combo,
           mainOdds: rec.main?.odds,
           mainProb: rec.main?.prob,
+          simpleReason: `${STYLE_LABELS_GO[style] || style} EV ${Math.round(evScore * 100)}% / 自信 ${rec.confidence || 0}`,
         };
       }
     }
     if (best) candidates.push(best);
+    else {
+      // 全スタイルが skip
+      excludedReasons.push({
+        raceId: r.id, venue: r.venue, raceNo: r.raceNo,
+        reason: "全スタイル skip (期待値不足)",
+      });
+    }
   }
-  // EV 高い順に並べて top N
-  candidates.sort((a, b) => b.ev - a.ev);
-  const topPicks = candidates.slice(0, topN);
+  // EV × 自信スコアでランキング (重み付けランキング)
+  candidates.sort((a, b) => {
+    const sa = a.ev * (1 + (a.confidence || 0) / 200);
+    const sb = b.ev * (1 + (b.confidence || 0) / 200);
+    return sb - sa;
+  });
+  const goPicks = candidates.slice(0, topN);
 
   // === 本日の信頼度スコア (0-100) ===
-  let confidence = 30; // ベース
-  // 買い候補数: 1 件で +15、 2 件で +25、 3+ 件で +35
+  let confidence = 30;
   if (candidates.length >= 3) confidence += 35;
   else if (candidates.length === 2) confidence += 25;
   else if (candidates.length === 1) confidence += 15;
-  // EV 平均: 1.30+ で +20、 1.20+ で +10
-  const avgEv = topPicks.length > 0
-    ? topPicks.reduce((s, p) => s + p.ev, 0) / topPicks.length
+  const avgEv = goPicks.length > 0
+    ? goPicks.reduce((s, p) => s + p.ev, 0) / goPicks.length
     : 0;
   if (avgEv >= 1.30) confidence += 20;
   else if (avgEv >= 1.20) confidence += 10;
-  // 自信スコア平均
-  const avgConfidence = topPicks.length > 0
-    ? topPicks.reduce((s, p) => s + (p.confidence || 0), 0) / topPicks.length
+  const avgConfidence = goPicks.length > 0
+    ? goPicks.reduce((s, p) => s + (p.confidence || 0), 0) / goPicks.length
     : 0;
   if (avgConfidence >= 75) confidence += 15;
   else if (avgConfidence >= 65) confidence += 8;
 
+  // データ完全性: 除外率が高いと減点
+  const totalRaces = (races || []).length;
+  const exclusionRate = totalRaces > 0 ? excludedReasons.length / totalRaces : 0;
+  if (exclusionRate >= 0.7) confidence -= 15;
+  else if (exclusionRate >= 0.5) confidence -= 8;
+
   confidence = Math.max(0, Math.min(100, Math.round(confidence)));
 
-  let confidenceLabel, confidenceReason;
+  let confidenceLabel, confidenceReason, suppressedReason = null;
   if (candidates.length === 0) {
     confidenceLabel = "見送り推奨";
     confidenceReason = "本日は買い候補ゼロ。 厳選見送り日です。";
     confidence = 10;
+    suppressedReason = excludedReasons.length > 0
+      ? `候補ゼロ — 除外 ${excludedReasons.length} 件 (オッズ未取得 / データ不足など)`
+      : "候補ゼロ — 期待値プラスのレースが見つかりませんでした";
+  } else if (confidence < GO_CONFIDENCE_THRESHOLD) {
+    confidenceLabel = "見送り推奨";
+    confidenceReason = `候補 ${candidates.length} 件あるが信頼度 ${confidence}/100 — 慎重に`;
+    // 抑制理由を詳細に
+    const reasons = [];
+    if (avgEv < 1.20) reasons.push(`平均 EV ${Math.round(avgEv * 100)}% (低い)`);
+    if (avgConfidence < 65) reasons.push(`自信スコア平均 ${Math.round(avgConfidence)}/100 (低い)`);
+    if (exclusionRate >= 0.5) reasons.push(`データ欠損率 ${Math.round(exclusionRate * 100)}% (高い)`);
+    suppressedReason = reasons.length > 0
+      ? `信頼度抑制: ${reasons.join(" / ")}`
+      : "信頼度が閾値 60 未満 — 慎重に判断してください";
   } else if (confidence >= 75) {
     confidenceLabel = "Go";
     confidenceReason = `候補 ${candidates.length} 件 / 平均 EV ${Math.round(avgEv * 100)}% / 自信 ${Math.round(avgConfidence)}/100 — 勝負日`;
-  } else if (confidence >= 55) {
+  } else {
     confidenceLabel = "様子見";
     confidenceReason = `候補 ${candidates.length} 件 / 平均 EV ${Math.round(avgEv * 100)}% — 慎重に選定`;
-  } else {
-    confidenceLabel = "見送り推奨";
-    confidenceReason = `候補 ${candidates.length} 件 / 信頼度低 — 無理に買わない判断推奨`;
   }
 
   return {
-    topPicks,
-    todayConfidence: confidence,
+    goPicks,
+    topPicks: goPicks, // 後方互換
+    dayConfidence: confidence,
+    todayConfidence: confidence, // 後方互換
     confidenceLabel,
     confidenceReason,
+    suppressedReason,
     totalCandidates: candidates.length,
+    excludedCount: excludedReasons.length,
+    excludedReasons: excludedReasons.slice(0, 10), // 最大 10 件まで
     avgEv,
     avgConfidence,
+    exclusionRate,
+    threshold: GO_CONFIDENCE_THRESHOLD,
   };
 }
+
+const STYLE_LABELS_GO = {
+  steady: "🛡️ 本命",
+  balanced: "⚖️ バランス",
+  aggressive: "🎯 穴",
+};
 
 /* === スタイル別「なぜ候補なし」 の理由生成 (UI 表示用) === */
 export function explainEmptyBucket(style, races, evals) {

@@ -50,9 +50,22 @@ function determineUIState(vd) {
   return "ready";
 }
 
-/* === Round 57: Go モードパネル (実戦モード) === */
+/* === Round 57-58: Go モードパネル (実戦モード) ===
+   visibleData.goMode を読み、 上位 3 件・本日の信頼度・抑制理由・除外件数を表示。
+   閾値未満なら購買 UI を抑制し 「今日は見送り推奨」 を強制する。 */
 function GoModePanel({ goMode }) {
-  const { topPicks = [], todayConfidence = 0, confidenceLabel = "様子見", confidenceReason = "", totalCandidates = 0 } = goMode;
+  const {
+    goPicks = [],
+    dayConfidence = 0,
+    confidenceLabel = "様子見",
+    confidenceReason = "",
+    suppressedReason = null,
+    totalCandidates = 0,
+    excludedCount = 0,
+    excludedReasons = [],
+    threshold = 60,
+  } = goMode || {};
+  const isSuppressed = !!suppressedReason || confidenceLabel === "見送り推奨";
   const labelColor = confidenceLabel === "Go" ? "#34d399"
                    : confidenceLabel === "様子見" ? "#fde68a"
                    : "#fca5a5";
@@ -60,28 +73,51 @@ function GoModePanel({ goMode }) {
                 : confidenceLabel === "様子見" ? "rgba(251,191,36,0.18)"
                 : "rgba(239,68,68,0.18)";
 
+  // 除外理由のツールチップ用テキスト (上位 5 件)
+  const excludedTooltip = excludedReasons.length > 0
+    ? excludedReasons.slice(0, 5).map(e => `${e.venue || ""} ${e.raceNo || ""}R: ${e.reason}`).join("\n")
+    : "除外なし";
+
   return (
     <div className="mb-3 p-3 rounded" style={{ background: "rgba(0,0,0,0.18)", border: `1px solid ${labelColor}40` }}>
-      {/* 信頼度バー */}
+      {/* 信頼度バー (Go/様子見/見送り推奨 + 除外バッジ) */}
       <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
         <div className="flex items-center gap-2">
           <span className="text-xs opacity-80">本日の信頼度:</span>
-          <span className="num font-bold" style={{ fontSize: 18, color: labelColor }}>{todayConfidence}</span>
+          <span className="num font-bold" style={{ fontSize: 22, color: labelColor }} aria-label={`信頼度 ${dayConfidence} / 100`}>
+            {dayConfidence}
+          </span>
           <span className="opacity-60">/</span>
-          <span className="opacity-60 text-xs">100</span>
+          <span className="opacity-60 text-xs">100 (閾値 {threshold})</span>
         </div>
         <span className="pill" style={{ background: labelBg, color: labelColor, border: `1px solid ${labelColor}`, fontSize: 11, fontWeight: 800 }}>
           {confidenceLabel === "Go" ? "🎯 Go (勝負日)" : confidenceLabel === "様子見" ? "⚠️ 様子見" : "📊 見送り推奨"}
         </span>
       </div>
-      <div className="text-xs opacity-85 mb-3" style={{ lineHeight: 1.5 }}>{confidenceReason}</div>
+      <div className="text-xs opacity-85 mb-2" style={{ lineHeight: 1.5 }}>{confidenceReason}</div>
 
-      {/* Top 3 picks */}
-      {topPicks.length > 0 && confidenceLabel !== "見送り推奨" ? (
+      {/* 除外バッジ (オッズ未取得 / データ欠損 等) */}
+      {excludedCount > 0 && (
+        <div className="text-xs mb-3" style={{ color: "#fde68a" }} title={excludedTooltip}>
+          ⚠️ <b>{excludedCount} 件除外</b>
+          <span className="opacity-80 ml-1">(オッズ未取得 / データ欠損 などの理由 — ホバーで詳細)</span>
+        </div>
+      )}
+
+      {/* 抑制理由 (閾値未満) */}
+      {suppressedReason && (
+        <div className="text-xs mb-3 p-2 rounded" style={{ background: "rgba(239,68,68,0.10)", border: "1px solid rgba(239,68,68,0.3)", color: "#fca5a5", lineHeight: 1.55 }}>
+          🛑 <b>購買 UI を抑制中</b><br/>
+          {suppressedReason}
+        </div>
+      )}
+
+      {/* Top 3 picks (抑制時は非表示) */}
+      {goPicks.length > 0 && !isSuppressed ? (
         <div>
-          <div className="text-xs font-bold mb-2" style={{ color: "#a7f3d0" }}>🎯 今すぐ買う候補 (上位 {topPicks.length} 件)</div>
+          <div className="text-xs font-bold mb-2" style={{ color: "#a7f3d0" }}>🎯 今すぐ買う候補 (上位 {goPicks.length} 件)</div>
           <div className="grid grid-cols-1 gap-2">
-            {topPicks.map((p, i) => (
+            {goPicks.map((p, i) => (
               <div key={p.raceId} className="p-2 rounded flex items-center justify-between flex-wrap gap-2"
                 style={{
                   background: "rgba(16,185,129,0.10)",
@@ -94,6 +130,9 @@ function GoModePanel({ goMode }) {
                     <div className="text-xs opacity-80">
                       {STYLE_LABELS[p.style]?.label} / {p.mainCombo} ({p.recommendation?.main?.kind})
                     </div>
+                    {p.simpleReason && (
+                      <div className="text-xs opacity-70 mt-1" style={{ fontSize: 10 }}>{p.simpleReason}</div>
+                    )}
                   </div>
                 </div>
                 <div className="text-right">
@@ -103,13 +142,13 @@ function GoModePanel({ goMode }) {
               </div>
             ))}
           </div>
-          {totalCandidates > topPicks.length && (
+          {totalCandidates > goPicks.length && (
             <div className="text-xs opacity-70 mt-2">
-              💡 他 {totalCandidates - topPicks.length} 件は EV/自信 が低いため除外
+              💡 他 {totalCandidates - goPicks.length} 件は EV/自信 が低いため除外 (top {goPicks.length} のみ表示)
             </div>
           )}
         </div>
-      ) : confidenceLabel === "見送り推奨" ? (
+      ) : isSuppressed ? (
         <div className="text-xs opacity-85" style={{ background: "rgba(0,0,0,0.22)", padding: 8, borderRadius: 8, lineHeight: 1.55 }}>
           📊 <b>本日は見送り推奨</b><br/>
           無理に買わない判断もアプリの価値です。 「📅 検証」 で過去の実績を振り返ってください。
@@ -128,8 +167,10 @@ const STYLE_LABELS = {
 };
 
 export default memo(TopDecisionBar);
-/** @param {TopDecisionBarProps & { goMode?: Object }} props */
-function TopDecisionBar({ visibleData, currentStyle, switchProfile, onRetry, goMode }) {
+/** @param {TopDecisionBarProps} props */
+function TopDecisionBar({ visibleData, currentStyle, switchProfile, onRetry }) {
+  // Round 58: goMode は visibleData から取得 (単一ソース)
+  const goMode = visibleData?.goMode;
   // 1. 型ガード — 不整合なら安全フォールバック
   const validationError = validateVisibleData(visibleData);
   if (validationError) {
