@@ -29,7 +29,7 @@ export default function Dashboard({
   switchProfile, strategyRanking, scanStats,
   styleAllocation, styleHeadlines, goMode,
   visibleData, evals,
-  isSampleMode, storageStatus,
+  isSampleMode, storageStatus, publicLogTick,
 }) {
   const [showDetails, setShowDetails] = useState(false);
 
@@ -81,6 +81,7 @@ export default function Dashboard({
         predictions={visibleData?.predictions}
         isSampleMode={isSampleMode}
         storageStatus={storageStatus}
+        publicLogTick={publicLogTick}
       />
 
       {/* Round 73 Phase 1②: 検証 KPI パネル (ROI / 的中率 / 平均オッズ / 最大連敗 / 連敗確率) */}

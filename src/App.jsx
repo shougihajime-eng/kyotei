@@ -227,10 +227,16 @@ export default function App() {
     }
   }, [settings, predictions]);
 
-  /* === Round 75: 公開検証ログ自動 sync (finalized レースを append-only ログに追記) === */
+  /* === Round 75: 公開検証ログ自動 sync (finalized レースを append-only ログに追記) ===
+     Round 81: sync 後に publicLogTick を進めて、 TodayVerificationPanel 等
+     localStorage 直読みコンポーネントを 再描画させる (race condition 解消) */
+  const [publicLogTick, setPublicLogTick] = useState(0);
   useEffect(() => {
     const r = syncPublicLog(predictions);
-    if (r.added > 0) console.log(`[publicLog] ${r.added} 件追記 (累計 ${r.total})`);
+    if (r.added > 0) {
+      console.log(`[publicLog] ${r.added} 件追記 (累計 ${r.total})`);
+      setPublicLogTick((t) => t + 1);  // パネル強制再描画
+    }
   }, [predictions]);
 
   /* === Compute evals + recommendations for all races === */
@@ -1257,6 +1263,7 @@ export default function App() {
             goMode={goMode}
             isSampleMode={isSampleMode}
             storageStatus={storageStatus}
+            publicLogTick={publicLogTick}
             onPickRace={(t) => setTab(t)}
           />
         )}

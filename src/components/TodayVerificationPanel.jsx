@@ -22,7 +22,7 @@ import { yen } from "../lib/format.js";
  */
 export default memo(TodayVerificationPanel);
 
-function TodayVerificationPanel({ predictions, isSampleMode, storageStatus }) {
+function TodayVerificationPanel({ predictions, isSampleMode, storageStatus, publicLogTick }) {
   const today = getJstDateString();
   const [report, setReport] = useState(null);
   const [showSkips, setShowSkips] = useState(false);
@@ -41,12 +41,13 @@ function TodayVerificationPanel({ predictions, isSampleMode, storageStatus }) {
   }, [predictions, today]);
 
   // 公開ログの key set + 整合性
+  // Round 81: publicLogTick を deps に追加 — App.jsx の syncPublicLog 完了後に強制再読込
   const publicLog = useMemo(() => {
     const log = loadPublicLog();
     const keys = new Set(log.map((b) => b?.entry?.key).filter(Boolean));
     const integ = verifyIntegrity(log);
     return { keys, total: log.length, integrity: integ };
-  }, [predictions]);
+  }, [predictions, publicLogTick]);
 
   const handleFullCheck = useCallback(() => {
     const issues = [];
