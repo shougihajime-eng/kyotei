@@ -1264,6 +1264,8 @@ export default function App() {
             isSampleMode={isSampleMode}
             storageStatus={storageStatus}
             publicLogTick={publicLogTick}
+            authUser={authUser}
+            syncStatus={syncStatus}
             onPickRace={(t) => setTab(t)}
           />
         )}

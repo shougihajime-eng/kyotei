@@ -8,6 +8,7 @@ import TodaySummary from "./TodaySummary.jsx";
 import TopDecisionBar from "./TopDecisionBar.jsx";
 import KpiPanel from "./KpiPanel.jsx";
 import TodayVerificationPanel from "./TodayVerificationPanel.jsx";
+import CloudSyncCheckPanel from "./CloudSyncCheckPanel.jsx";
 import { yen } from "../lib/format.js";
 
 /**
@@ -30,6 +31,7 @@ export default function Dashboard({
   styleAllocation, styleHeadlines, goMode,
   visibleData, evals,
   isSampleMode, storageStatus, publicLogTick,
+  authUser, syncStatus,
 }) {
   const [showDetails, setShowDetails] = useState(false);
 
@@ -86,6 +88,14 @@ export default function Dashboard({
 
       {/* Round 73 Phase 1②: 検証 KPI パネル (ROI / 的中率 / 平均オッズ / 最大連敗 / 連敗確率) */}
       <KpiPanel predictions={visibleData?.predictions} />
+
+      {/* Round 87: クラウド同期チェック (折りたたみ式) — DevTools 不要で復元状態確認 */}
+      <CloudSyncCheckPanel
+        authUser={authUser}
+        predictions={visibleData?.predictions}
+        syncStatus={syncStatus}
+        isSampleMode={isSampleMode}
+      />
 
       {/* Round 51-B: 「買えるレースを探索中」 サマリ */}
       {scanStats && scanStats.total > 0 && (
