@@ -474,23 +474,31 @@ export default function App() {
 
   useEffect(() => {
     if (races.length === 0) return;
-    /* === Round 68: 保存対象を「直前判定 Go 候補」 + 「手動記録」 に限定 ===
-       朝から全レースを保存・集計に混ぜると 3 スタイル成績が曖昧になるため、
-       以下のみ auto-snapshot する:
-         (a) goMode.goPicks に含まれるレース (= 直前判定で本気判定した買い候補)
-         (b) 既に手動記録されているレース (manuallyRecorded=true) - これは触らない
-       それ以外は保存・集計に含めない (UI 表示は visibleData で完結)。
+    /* === Round 77: 全 AI 予想を自動保存 (検証アプリの根幹) ===
+       以前 Round 68 で 「Go 候補のみ保存」 に絞ったが、 これでは
+       朝〜午後の AI 予想 / 締切 15 分以前の見送り / 結果反映 が一切記録されず
+       「検証アプリ」 として成立しなかった。
+       本 Round で全 AI 判定 (buy / skip / no-odds / data-checking / closed) を自動保存。
+
+       純度確保はフィルタ側で行う:
+         ・KPI Panel: filterForVerification(preCloseOnly=true) で Go 候補のみ集計
+         ・PublicLog: appendPublicLog で finalized=true && !isSampleData のみ追記
+         ・isGoCandidate / preCloseTarget フラグはレコードに残し、 後でフィルタ可能
+
+       保存タグ:
+         ・preCloseTarget: 直前判定対象だったか (KPI 純度フィルタ用)
+         ・isGoCandidate: Go 候補だったか (KPI 純度フィルタ用)
+         ・isSampleData: 仮データ起源か (公開ログから絶対除外)
+         ・verificationVersion: ロジックバージョン (バージョン別 KPI 用)
 
        key 形式: ${dateKey}_${raceId}_${style}
     */
-    // Round 68: 保存対象 raceId+style の集合を作る
     const goRacesByStyle = { steady: new Set(), balanced: new Set(), aggressive: new Set() };
     for (const pick of goMode?.goPicks || []) {
       if (pick?.raceId && pick?.style && goRacesByStyle[pick.style]) {
         goRacesByStyle[pick.style].add(pick.raceId);
       }
     }
-    // Round 73: 直前判定ウィンドウ内のレース (見送りも含めて検証目的で保存)
     const nowForPreClose = new Date();
     const preCloseRaceIds = new Set();
     for (const r of races) {
@@ -512,14 +520,9 @@ export default function App() {
           const existing = next[key] || {};
           // 手動記録は触らない (manuallyRecorded=true)
           if (existing.manuallyRecorded) continue;
-          // Round 68+73: 保存対象 (検証用):
-          //   (a) 直前判定 Go 候補 (買い候補) → 詳細保存
-          //   (b) 直前判定ウィンドウ内の見送りレース → 軽量保存 (なぜ見送ったか付き)
-          //   (c) 既に保存済み (過去 Go 候補だった) → 結果反映用に残す
+          // Round 77: 全 AI 判定を保存 (rec が存在 = 保存対象)
+          // フラグ付与で後段フィルタ可能
           const isGoTarget = goRacesByStyle[style].has(r.id);
-          const isPreCloseSkip = preCloseRaceIds.has(r.id) && rec.decision === "skip";
-          const wasSaved = !!existing.snapshotAt;
-          if (!isGoTarget && !isPreCloseSkip && !wasSaved) continue;
 
           // === 共通フィールド (buy / skip 両方に必要) ===
           const baseFields = {
