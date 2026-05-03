@@ -383,31 +383,59 @@ function SingleViewImpl({ items, label }) {
         </ResponsiveContainer>
       </Card>
 
-      {/* スタイル別 (本命党/中堅党/穴党) */}
-      {byStyle.length > 0 && (
-        <Card title="スタイル別の回収率">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-2">
-            {byStyle.map((s) => {
-              const color = s.roi >= 1 ? "#34d399" : "#f87171";
-              return (
-                <div key={s.profile} className="p-3 rounded-lg" style={{ background: "rgba(0,0,0,0.25)", minHeight: 110 }}>
-                  <div className="text-sm font-bold">{s.label}</div>
-                  <div className="text-xs opacity-70 mt-1">{s.count}件 / 的中 {s.hits}件</div>
-                  <div className="num font-bold mt-1" style={{ color, fontSize: 22 }}>
-                    {s.stake > 0 ? Math.round(s.roi * 100) + "%" : "—"}
+      {/* Round 84: スタイル別 (どれが一番勝っているか — winner ハイライト) */}
+      {byStyle.length > 0 && (() => {
+        // 勝者: 3 件以上 + ROI 最高
+        let winnerKey = null, winnerRoi = -Infinity;
+        for (const s of byStyle) {
+          if (s.count >= 3 && s.stake > 0 && s.roi > winnerRoi) {
+            winnerRoi = s.roi; winnerKey = s.profile;
+          }
+        }
+        return (
+          <Card title="🏆 スタイル別の回収率 (どれが一番勝っているか)">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-2">
+              {byStyle.map((s) => {
+                const color = s.roi >= 1 ? "#34d399" : "#f87171";
+                const isWinner = s.profile === winnerKey;
+                return (
+                  <div key={s.profile} className="p-3 rounded-lg" style={{
+                    position: "relative",
+                    background: isWinner ? "rgba(16,185,129,0.10)" : "rgba(0,0,0,0.25)",
+                    border: isWinner ? "1px solid rgba(16,185,129,0.6)" : "1px solid transparent",
+                    minHeight: 110,
+                  }}>
+                    {isWinner && (
+                      <div style={{
+                        position: "absolute", top: -10, right: 8,
+                        padding: "3px 10px", borderRadius: 999,
+                        background: "rgba(16,185,129,0.95)", color: "#fff",
+                        fontSize: 10, fontWeight: 800, letterSpacing: 0.5,
+                      }}>
+                        🏆 BEST
+                      </div>
+                    )}
+                    <div className="text-sm font-bold">{s.label}</div>
+                    <div className="text-xs opacity-70 mt-1">{s.count}件 / 的中 {s.hits}件</div>
+                    <div className="num font-bold mt-1" style={{ color, fontSize: 22 }}>
+                      {s.stake > 0 ? Math.round(s.roi * 100) + "%" : "—"}
+                    </div>
+                    <div className={"num text-xs mt-1 " + (s.pnl >= 0 ? "text-pos" : "text-neg")}>
+                      {s.pnl >= 0 ? "+" : ""}{yen(s.pnl)}
+                    </div>
                   </div>
-                  <div className={"num text-xs mt-1 " + (s.pnl >= 0 ? "text-pos" : "text-neg")}>
-                    {s.pnl >= 0 ? "+" : ""}{yen(s.pnl)}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          <div className="text-xs opacity-70 mt-2">
-            💡 一番成績が良いスタイルを参考にしてください (ただしサンプル数が少ない場合は判断保留)
-          </div>
-        </Card>
-      )}
+                );
+              })}
+            </div>
+            <div className="text-xs opacity-70 mt-2">
+              {winnerKey
+                ? <>✨ <b>{byStyle.find(s => s.profile === winnerKey)?.label}</b> が現時点で最も成績良好 (ROI {Math.round(winnerRoi * 100)}% / 3 戦以上のスタイルから判定)</>
+                : <>💡 まだ判定不能 (3 戦以上必要) — 蓄積を待ってください</>
+              }
+            </div>
+          </Card>
+        );
+      })()}
 
       {/* 券種別成績 */}
       <Card title="券種別成績">

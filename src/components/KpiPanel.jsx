@@ -100,36 +100,63 @@ function KpiPanel({ predictions, options = {} }) {
         </div>
       )}
 
-      {/* スタイル別 */}
-      <div className="grid grid-cols-3 gap-2 mb-2">
-        {["steady", "balanced", "aggressive"].map((s) => {
+      {/* Round 84: スタイル別 (検証アプリの中心 — 勝者ハイライト付き) */}
+      {(() => {
+        // 勝者判定 (3 戦以上 + ROI 最高)
+        let winnerKey = null, winnerRoi = -Infinity;
+        for (const s of ["steady", "balanced", "aggressive"]) {
           const sk = kpi.byStyle[s];
-          const info = STYLE_LABEL[s];
-          return (
-            <div key={s} className="p-2 rounded" style={{
-              background: "rgba(0,0,0,0.18)",
-              border: `1px solid ${info.color}40`,
-            }}>
-              <div className="text-xs font-bold mb-1" style={{ color: info.color }}>{info.label}</div>
-              <div className="text-xs" style={{ lineHeight: 1.4 }}>
-                {sk.count > 0 ? (
-                  <>
-                    <div>{sk.count} 戦・{sk.hits} 勝</div>
-                    <div className="num" style={{ color: sk.roi != null && sk.roi >= 1.0 ? "#34d399" : "#fca5a5", fontWeight: 700 }}>
-                      ROI {sk.roi != null ? `${Math.round(sk.roi * 100)}%` : "—"}
+          if (sk?.count >= 3 && sk?.roi != null && sk.roi > winnerRoi) {
+            winnerRoi = sk.roi; winnerKey = s;
+          }
+        }
+        return (
+          <>
+            <div className="text-xs mb-1 opacity-70 font-bold">🏆 スタイル別成績 (どれが一番勝っているか)</div>
+            <div className="grid grid-cols-3 gap-2 mb-2">
+              {["steady", "balanced", "aggressive"].map((s) => {
+                const sk = kpi.byStyle[s];
+                const info = STYLE_LABEL[s];
+                const isWinner = s === winnerKey;
+                return (
+                  <div key={s} className="p-2 rounded" style={{
+                    position: "relative",
+                    background: isWinner ? "rgba(16,185,129,0.10)" : "rgba(0,0,0,0.18)",
+                    border: `1px solid ${isWinner ? "rgba(16,185,129,0.6)" : info.color + "40"}`,
+                  }}>
+                    {isWinner && (
+                      <div style={{
+                        position: "absolute", top: -6, right: 4,
+                        padding: "1px 6px", borderRadius: 999,
+                        background: "rgba(16,185,129,0.95)", color: "#fff",
+                        fontSize: 9, fontWeight: 800,
+                      }}>
+                        🏆 BEST
+                      </div>
+                    )}
+                    <div className="text-xs font-bold mb-1" style={{ color: info.color }}>{info.label}</div>
+                    <div className="text-xs" style={{ lineHeight: 1.4 }}>
+                      {sk.count > 0 ? (
+                        <>
+                          <div>{sk.count} 戦・{sk.hits} 勝</div>
+                          <div className="num" style={{ color: sk.roi != null && sk.roi >= 1.0 ? "#34d399" : "#fca5a5", fontWeight: 700 }}>
+                            ROI {sk.roi != null ? `${Math.round(sk.roi * 100)}%` : "—"}
+                          </div>
+                          <div className="opacity-70">
+                            連敗 {sk.maxLossStreak}・的中 {sk.hitRate != null ? Math.round(sk.hitRate * 100) : "—"}%
+                          </div>
+                        </>
+                      ) : (
+                        <div className="opacity-50">未蓄積</div>
+                      )}
                     </div>
-                    <div className="opacity-70">
-                      連敗 {sk.maxLossStreak}・的中 {sk.hitRate != null ? Math.round(sk.hitRate * 100) : "—"}%
-                    </div>
-                  </>
-                ) : (
-                  <div className="opacity-50">未蓄積</div>
-                )}
-              </div>
+                  </div>
+                );
+              })}
             </div>
-          );
-        })}
-      </div>
+          </>
+        );
+      })()}
 
       {/* 連敗確率 (Phase 5⑩) */}
       {o && o.lossStreakProb_5 != null && (

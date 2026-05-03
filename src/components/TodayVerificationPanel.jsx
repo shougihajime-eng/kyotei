@@ -208,13 +208,16 @@ function RaceVerificationCard({ p, status }) {
   const lost = !!p.result?.first && !hit;
   const profileLabel = { steady: "🛡️ 安定", balanced: "⚖️ バランス", aggressive: "🎯 攻め" }[p.profile] || p.profile;
 
-  // 結果状態のラベル
-  let stateLabel = "予想済み";
+  // Round 82: ユーザー要望の 5 段階を字面通りに表示
+  //   ① 保存済み → ② 結果取得済み → ③ 収支計算済み → ④ 公開ログ反映済み → ⑤ 固定済み
+  let stateLabel = "① 保存済み";
   let stateColor = "#bae6fd";
-  if (status.inPublicLog && status.inGraph) { stateLabel = "公開ログ反映済み"; stateColor = "#34d399"; }
-  else if (status.pnlComputed) { stateLabel = "結果反映済み"; stateColor = "#a7f3d0"; }
-  else if (status.hasResult) { stateLabel = "結果取得済み"; stateColor = "#fde68a"; }
-  else if (status.saved) { stateLabel = "結果待ち"; stateColor = "#bae6fd"; }
+  if (status.inPublicLog && status.pnlComputed) { stateLabel = "⑤ 固定済み"; stateColor = "#34d399"; }
+  else if (status.pnlComputed) { stateLabel = "③ 収支計算済み"; stateColor = "#a7f3d0"; }
+  else if (status.hasResult) { stateLabel = "② 結果取得済み"; stateColor = "#fde68a"; }
+  else if (status.saved) { stateLabel = "① 保存済み"; stateColor = "#bae6fd"; }
+  // 補助マーカー: 公開ログに入った瞬間 (= ⑤ 固定済み 直前)
+  const isAtStage4 = status.inPublicLog && status.pnlComputed; // 実際は ⑤ と同時 — UI は ⑤ で表現
 
   return (
     <div style={{
@@ -267,22 +270,13 @@ function RaceVerificationCard({ p, status }) {
         )}
       </div>
 
-      {/* 5 つのステータスチェック */}
+      {/* 5 つのステータスチェック (ユーザー要望の 5 段階) */}
       <div className="flex items-center gap-2 flex-wrap" style={{ fontSize: 11 }}>
-        <Check ok={status.saved} label="保存済" />
-        <Check ok={status.hasResult} pending={!status.hasResult} label="結果取得" />
-        <Check ok={status.pnlComputed} pending={status.hasResult && !status.pnlComputed} label="収支計算" />
-        <Check ok={status.inGraph} pending={!status.inGraph} label="グラフ反映" />
-        <Check ok={status.inPublicLog} pending={!status.inPublicLog && !status.isSampleData} excluded={status.isSampleData} label="公開ログ" />
-        {status.frozen && (
-          <span style={{
-            fontSize: 10, padding: "2px 6px", borderRadius: 4,
-            background: "rgba(168,85,247,0.15)", border: "1px solid rgba(168,85,247,0.4)",
-            color: "#d8b4fe", fontWeight: 700,
-          }} title="結果確定後はデータが上書きされません (Round 79 フリーズ機構)">
-            🔒 固定済
-          </span>
-        )}
+        <Check ok={status.saved} label="① 保存済み" />
+        <Check ok={status.hasResult} pending={status.saved && !status.hasResult} label="② 結果取得済み" />
+        <Check ok={status.pnlComputed} pending={status.hasResult && !status.pnlComputed} label="③ 収支計算済み" />
+        <Check ok={status.inPublicLog && !status.isSampleData} pending={status.pnlComputed && !status.inPublicLog && !status.isSampleData} excluded={status.isSampleData} label="④ 公開ログ反映済み" />
+        <Check ok={status.frozen && status.inPublicLog} pending={status.frozen && !status.inPublicLog && !status.isSampleData} excluded={status.isSampleData} label="⑤ 固定済み" />
       </div>
 
       {/* フリーズの注釈 */}

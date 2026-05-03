@@ -175,11 +175,12 @@ export function exportPublicLogJson() {
   }, null, 2);
 }
 
-/* === ログ要約 (全体 + バージョン別 + 日別) === */
+/* === ログ要約 (全体 + バージョン別 + 日別 + スタイル別) === */
 export function summarizePublicLog(log = null) {
   const list = log || loadPublicLog();
   const byVersion = {};
   const byDay = {};
+  const byStyle = { steady: { count: 0, hits: 0, stake: 0, ret: 0 }, balanced: { count: 0, hits: 0, stake: 0, ret: 0 }, aggressive: { count: 0, hits: 0, stake: 0, ret: 0 } };
   // Round 76: 全体集計 + 連敗の最大値 + 最大連勝
   const overall = { count: 0, hits: 0, stake: 0, ret: 0 };
   // 時系列で最大連敗 / 最大連勝 を計算
@@ -208,6 +209,14 @@ export function summarizePublicLog(log = null) {
       byDay[d].stake += e.totalStake || 0;
       byDay[d].ret += e.payout || 0;
       if (e.hit) byDay[d].hits++;
+      // Round 84: スタイル別集計 (検証アプリの中心)
+      const profile = e.profile || "balanced";
+      if (byStyle[profile]) {
+        byStyle[profile].count++;
+        byStyle[profile].stake += e.totalStake || 0;
+        byStyle[profile].ret += e.payout || 0;
+        if (e.hit) byStyle[profile].hits++;
+      }
       // 全体
       overall.count++;
       overall.stake += e.totalStake || 0;
@@ -270,6 +279,21 @@ export function summarizePublicLog(log = null) {
     b.hitRate = b.count > 0 ? +(b.hits / b.count).toFixed(3) : null;
     b.pnl = b.ret - b.stake;
   }
+  // Round 84: スタイル別 ROI / 的中率 / 収支 + 勝者判定
+  for (const s in byStyle) {
+    const b = byStyle[s];
+    b.roi = b.stake > 0 ? +(b.ret / b.stake).toFixed(3) : null;
+    b.hitRate = b.count > 0 ? +(b.hits / b.count).toFixed(3) : null;
+    b.pnl = b.ret - b.stake;
+  }
+  // 勝者 (3 件以上 + ROI 最高) を判定
+  let bestStyle = null, bestRoi = -Infinity;
+  for (const s of ["steady", "balanced", "aggressive"]) {
+    const b = byStyle[s];
+    if (b.count >= 3 && b.roi != null && b.roi > bestRoi) {
+      bestRoi = b.roi; bestStyle = s;
+    }
+  }
 
-  return { overall, byVersion, byDay, byMonth, total: list.length };
+  return { overall, byVersion, byDay, byMonth, byStyle, bestStyle, bestRoi: bestStyle ? bestRoi : null, total: list.length };
 }

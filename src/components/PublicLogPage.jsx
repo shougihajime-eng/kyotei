@@ -285,6 +285,81 @@ export default function PublicLogPage() {
           </div>
         )}
 
+        {/* === Round 84: スタイル別成績 (検証アプリの中心) === */}
+        {summary.byStyle && (summary.byStyle.steady.count + summary.byStyle.balanced.count + summary.byStyle.aggressive.count) > 0 && (
+          <section style={{ marginBottom: 16 }}>
+            <h2 style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>
+              🏆 スタイル別成績 (どれが一番勝っているか)
+            </h2>
+            <div style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+              gap: 8,
+            }}>
+              {[
+                { k: "steady", label: "🛡️ 安定", color: "#3b82f6", desc: "的中率重視" },
+                { k: "balanced", label: "⚖️ バランス", color: "#fbbf24", desc: "中庸" },
+                { k: "aggressive", label: "🎯 攻め", color: "#ef4444", desc: "高配当狙い" },
+              ].map(({ k, label, color, desc }) => {
+                const s = summary.byStyle[k];
+                const isWinner = summary.bestStyle === k;
+                const profitable = s.roi != null && s.roi >= 1.0;
+                return (
+                  <div key={k} style={{
+                    padding: 12, borderRadius: 8,
+                    background: isWinner ? "rgba(16,185,129,0.10)" : "rgba(0,0,0,0.20)",
+                    border: `1px solid ${isWinner ? "rgba(16,185,129,0.6)" : color + "60"}`,
+                    position: "relative",
+                  }}>
+                    {isWinner && (
+                      <div style={{
+                        position: "absolute", top: -8, right: 8,
+                        padding: "2px 8px", borderRadius: 999,
+                        background: "rgba(16,185,129,0.95)", color: "#fff",
+                        fontSize: 10, fontWeight: 800, letterSpacing: 0.5,
+                      }}>
+                        🏆 BEST
+                      </div>
+                    )}
+                    <div style={{ fontSize: 13, fontWeight: 800, color, marginBottom: 4 }}>{label}</div>
+                    <div style={{ fontSize: 9, opacity: 0.7, marginBottom: 6 }}>{desc}</div>
+                    {s.count > 0 ? (
+                      <>
+                        <div style={{ fontSize: 22, fontWeight: 900, color: profitable ? "#34d399" : "#fca5a5", lineHeight: 1.1 }}>
+                          ROI {s.roi != null ? `${Math.round(s.roi * 100)}%` : "—"}
+                        </div>
+                        <div style={{ fontSize: 11, opacity: 0.85, marginTop: 4 }}>
+                          {s.count} 戦・{s.hits} 勝 / 的中率 {s.hitRate != null ? `${Math.round(s.hitRate * 100)}%` : "—"}
+                        </div>
+                        <div style={{ fontSize: 10, opacity: 0.75, marginTop: 2 }}>
+                          賭 {yen(s.stake)} → 戻 {yen(s.ret)}
+                          <br/>
+                          <span style={{ color: s.pnl >= 0 ? "#34d399" : "#fca5a5", fontWeight: 700 }}>
+                            収支 {s.pnl >= 0 ? "+" : "−"}{yen(Math.abs(s.pnl))}
+                          </span>
+                        </div>
+                      </>
+                    ) : (
+                      <div style={{ fontSize: 11, opacity: 0.5 }}>未蓄積</div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            {summary.bestStyle && (
+              <div style={{
+                marginTop: 8, padding: "6px 10px", borderRadius: 6,
+                background: "rgba(16,185,129,0.06)",
+                border: "1px solid rgba(16,185,129,0.3)",
+                color: "#a7f3d0", fontSize: 11, lineHeight: 1.55,
+              }}>
+                ✨ <b>{summary.bestStyle === "steady" ? "🛡️ 安定型" : summary.bestStyle === "balanced" ? "⚖️ バランス型" : "🎯 攻め型"}</b>
+                {" "}が現時点で最も成績良好 (ROI {Math.round(summary.bestRoi * 100)}% / 3 戦以上のスタイルから判定)
+              </div>
+            )}
+          </section>
+        )}
+
         {/* === バージョン別成績 === */}
         {versions.length > 0 && (
           <section style={{ marginBottom: 16 }}>

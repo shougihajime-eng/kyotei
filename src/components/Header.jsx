@@ -2,6 +2,7 @@
 import { memo } from "react";
 import { yen } from "../lib/format.js";
 import StyleSelector from "./StyleSelector.jsx";
+import { cloudEnabled } from "../lib/supabaseClient.js";
 
 const TABS = [
   { k: "home", label: "🏠 ホーム" },
