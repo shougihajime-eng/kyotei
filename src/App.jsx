@@ -1255,6 +1255,8 @@ export default function App() {
             styleAllocation={styleAllocation}
             styleHeadlines={styleHeadlines}
             goMode={goMode}
+            isSampleMode={isSampleMode}
+            storageStatus={storageStatus}
             onPickRace={(t) => setTab(t)}
           />
         )}

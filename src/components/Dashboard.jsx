@@ -7,6 +7,7 @@ import EVExplainer from "./EVExplainer.jsx";
 import TodaySummary from "./TodaySummary.jsx";
 import TopDecisionBar from "./TopDecisionBar.jsx";
 import KpiPanel from "./KpiPanel.jsx";
+import TodayVerificationPanel from "./TodayVerificationPanel.jsx";
 import { yen } from "../lib/format.js";
 
 /**
@@ -28,6 +29,7 @@ export default function Dashboard({
   switchProfile, strategyRanking, scanStats,
   styleAllocation, styleHeadlines, goMode,
   visibleData, evals,
+  isSampleMode, storageStatus,
 }) {
   const [showDetails, setShowDetails] = useState(false);
 
@@ -72,6 +74,13 @@ export default function Dashboard({
         currentStyle={settings.riskProfile}
         switchProfile={switchProfile}
         onRetry={onRetry || onRefresh}
+      />
+
+      {/* Round 80: 本日の検証状態パネル (ユーザー向け可視化 — DevTools 不要) */}
+      <TodayVerificationPanel
+        predictions={visibleData?.predictions}
+        isSampleMode={isSampleMode}
+        storageStatus={storageStatus}
       />
 
       {/* Round 73 Phase 1②: 検証 KPI パネル (ROI / 的中率 / 平均オッズ / 最大連敗 / 連敗確率) */}
