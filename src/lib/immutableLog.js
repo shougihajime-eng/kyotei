@@ -29,10 +29,12 @@ export function quickHash(s) {
   return (h >>> 0).toString(16).padStart(8, "0");
 }
 
-/* === ログエントリ正規化 === */
+/* === ログエントリ正規化 ===
+   Round 79: 判断材料も公開ログに含める (なぜ買いと判断したかを第三者が検証可能に)。
+   ただし全 combos / 全 boats を入れると公開ログが肥大するので、 軽量サマリのみ。
+   詳細は localStorage の predictions に残るのでアプリ内で参照可。 */
 function normalizeEntry(prediction) {
   if (!prediction) return null;
-  // 公開する最小フィールドのみ抽出 (個人情報や内部状態は除く)
   return {
     key: prediction.key,
     date: prediction.date,
@@ -48,13 +50,29 @@ function normalizeEntry(prediction) {
       prob: prediction.combos[0].prob,
       ev: prediction.combos[0].ev,
     } : null,
+    // Round 79: 全 combos も含める (買い目全部の検証用)
+    combos: Array.isArray(prediction.combos) ? prediction.combos.map((c) => ({
+      kind: c.kind, combo: c.combo, stake: c.stake,
+      odds: c.odds, prob: c.prob, ev: c.ev, grade: c.grade,
+    })) : null,
     totalStake: prediction.totalStake || 0,
     confidence: prediction.confidence,
+    grade: prediction.grade || null,
     verificationVersion: prediction.verificationVersion,
     preCloseTarget: !!prediction.preCloseTarget,
     isGoCandidate: !!prediction.isGoCandidate,
-    isSampleData: !!prediction.isSampleData,   // Round 76: 仮データ起源フラグ (公開ログでは除外)
+    isSampleData: !!prediction.isSampleData,
     snapshotAt: prediction.snapshotAt,
+    // Round 79: 判断材料サマリ (なぜ買いか / 最大リスク / 天候 / 1号艇信頼度)
+    reasoning: prediction.reasoning ? {
+      whyBuy: prediction.reasoning.whyBuy || [],
+      whyNot: prediction.reasoning.whyNot || [],
+      maxRisk: prediction.reasoning.maxRisk || null,
+      oneLine: prediction.reasoning.oneLine || null,
+    } : null,
+    weather: prediction.weatherSnapshot || null,
+    inTrust: prediction.inTrust ? { level: prediction.inTrust.level } : null,
+    development: prediction.development ? { scenario: prediction.development.scenario } : null,
     // 結果 (確定後のみ)
     result: prediction.result?.first ? {
       first: prediction.result.first,

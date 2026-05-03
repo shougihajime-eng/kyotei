@@ -181,7 +181,49 @@ console.log("\n▶ 8. 3 スタイル分離 — 同一レースで steady/balance
   expect("countsByStyle.aggressive=1", vis.countsByStyle.aggressive, 1);
 }
 
-/* ⑨ saveAndVerify 失敗検出 (expectedKeys が無い場合) */
+/* ⑨ Round 79: 買い推奨レースの詳細ログがリロード後も完全復元される */
+console.log("\n▶ 9b. Round 79 — 買い詳細ログがリロード後も保持される");
+{
+  _store.clear();
+  const buy = {
+    key: "20260503_kr2_balanced",
+    date: "2026-05-03", raceId: "kr2",
+    venue: "桐生", raceNo: 2, startTime: "14:00",
+    profile: "balanced",
+    decision: "buy",
+    combos: [{ kind: "3連単", combo: "1-2-3", odds: 5.5, prob: 0.30, ev: 1.65, stake: 500 }],
+    totalStake: 500,
+    confidence: 78,
+    snapshotAt: new Date().toISOString(),
+    version: CURRENT_VERSION,
+    verificationVersion: "v2.preclose-strict.r70",
+    preCloseTarget: true, isGoCandidate: true, isSampleData: false,
+    // 詳細スナップショット
+    boatsSnapshot: Array.from({ length: 6 }, (_, i) => ({
+      boatNo: i + 1, racer: `選手${i+1}`, class: "A1",
+      winRate: 5.5 + i * 0.2, motor2: 38, exTime: 6.85, avgST: 0.16,
+    })),
+    weatherSnapshot: { weather: "晴", wind: 2, wave: 2 },
+    reasoning: { whyBuy: ["A", "B", "C"], whyNot: ["D"], maxRisk: "リスク", oneLine: "1-2-3" },
+    inTrust: { level: "イン逃げ濃厚" },
+  };
+  const state = { settings: {}, predictions: { [buy.key]: buy } };
+  const res = saveAndVerify(state, [buy.key]);
+  expectTrue("save ok", res.ok);
+  // リロード = loadState() で別オブジェクト取得
+  const reloaded = loadState();
+  const back = reloaded?.predictions?.[buy.key];
+  expectTrue("key 復元", !!back);
+  expectTrue("boatsSnapshot 復元 (6 艇)", Array.isArray(back?.boatsSnapshot) && back.boatsSnapshot.length === 6);
+  expect("各艇の class 復元", back.boatsSnapshot.map(b => b.class), Array(6).fill("A1"));
+  expectTrue("weatherSnapshot 復元", back?.weatherSnapshot?.wind === 2);
+  expectTrue("reasoning.whyBuy 復元", back?.reasoning?.whyBuy?.length === 3);
+  expectTrue("reasoning.maxRisk 復元", back?.reasoning?.maxRisk === "リスク");
+  expectTrue("inTrust 復元", back?.inTrust?.level === "イン逃げ濃厚");
+  expect("confidence 復元", back?.confidence, 78);
+}
+
+/* ⑩ saveAndVerify 失敗検出 (expectedKeys が無い場合) */
 console.log("\n▶ 9. saveAndVerify — expected key 欠落で ok=false");
 {
   _store.clear();

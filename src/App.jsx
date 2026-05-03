@@ -40,6 +40,7 @@ import { computeRecentPurchaseAnalysis, computeDeepReview, computeLabelDistribut
 import { CURRENT_VERIFICATION_VERSION, computeKpiSummary, evaluateWinnability } from "./lib/verificationLog.js";
 import { isPreCloseTarget } from "./lib/styleAllocation.js";
 import { syncPublicLog } from "./lib/immutableLog.js";
+import { buildReasoningSummary } from "./lib/reasoningSummary.js";
 
 const PublicLogPage = lazy(() => import("./components/PublicLogPage.jsx"));
 import { getJstDateString, getEffectiveRaceDate, validateDateConsistency, detectDateChange } from "./lib/dateGuard.js";
@@ -520,6 +521,12 @@ export default function App() {
           const existing = next[key] || {};
           // 手動記録は触らない (manuallyRecorded=true)
           if (existing.manuallyRecorded) continue;
+          // Round 79: 「結果確定後は判断材料をフリーズ」 (後付け書き換え禁止)
+          //   買い推奨した瞬間の情報を固定保存し、 後から見返した時に検証可能にする
+          if (existing.result?.first) continue;
+          // Round 79: 既に「買い」 として保存済なら、 後で skip / no-odds 等に降格しない
+          //   (買い瞬間の判断材料を保持。 買い → 買い の更新は許可: より新しいオッズ反映)
+          if (existing.decision === "buy" && rec.decision !== "buy") continue;
           // Round 77: 全 AI 判定を保存 (rec が存在 = 保存対象)
           // フラグ付与で後段フィルタ可能
           const isGoTarget = goRacesByStyle[style].has(r.id);
@@ -545,13 +552,51 @@ export default function App() {
 
           let updated;
           if (rec.decision === "buy") {
-            // === 買い: 詳細保存 ===
+            // === Round 79: 買い = 判断材料を全て厚く保存 (検証用) ===
             const combos = rec.items.map((it) => ({
               kind: it.kind, combo: it.combo, stake: it.stake,
               odds: it.odds, prob: it.prob, ev: it.ev,
               expectedReturn: it.expectedReturn, evMinus1: it.evMinus1,
               role: it.role, grade: it.grade, pickReason: it.pickReason,
             }));
+            // 出走表スナップショット (買い時点の選手・モーター・展示・進入)
+            const boatsSnapshot = (r.boats || []).map((b) => ({
+              boatNo: b.boatNo,
+              racer: b.racer || b.name || null,
+              class: b.class || null,                     // A1/A2/B1/B2
+              winRate: b.winRate ?? null,                  // 全国勝率
+              placeRate: b.placeRate ?? null,              // 全国2連率
+              localWinRate: b.localWinRate ?? null,        // 当地勝率
+              localPlaceRate: b.localPlaceRate ?? null,    // 当地2連率
+              motor2: b.motor2 ?? null,                    // モーター2連率
+              motor3: b.motor3 ?? null,                    // モーター3連率
+              boat2: b.boat2 ?? null,                      // ボート2連率
+              boat3: b.boat3 ?? null,                      // ボート3連率
+              exTime: b.exTime ?? null,                    // 展示タイム
+              tilt: b.tilt ?? null,                        // チルト角
+              avgST: b.avgST ?? null,                      // 平均 ST
+              exST: b.exST ?? null,                        // スタート展示 ST
+              entryHistory: b.entryHistory || null,        // 進入履歴
+              partsExchange: b.partsExchange || null,      // 部品交換
+              exhibitionNote: b.exhibitionNote || null,    // 気配コメント
+              age: b.age ?? null,
+              weight: b.weight ?? null,
+            }));
+            // 天候・水面スナップショット
+            const weatherSnapshot = {
+              weather: r.weather || null,
+              wind: r.wind ?? null,
+              windDir: r.windDir || null,
+              wave: r.wave ?? null,
+              temp: r.temp ?? null,
+              waterTemp: r.waterTemp ?? null,
+            };
+            // 自然言語の判断理由 (whyBuy / whyNot / maxRisk / oneLine)
+            const evForRace = evals[r.id];
+            const reasoning = (() => {
+              try { return buildReasoningSummary(rec, evForRace); }
+              catch { return null; }
+            })();
             updated = {
               ...existing,
               ...baseFields,
@@ -568,6 +613,17 @@ export default function App() {
               worstCaseRoi: rec.worstCaseRoi,
               worstCasePayout: rec.worstCasePayout,
               expectedPayout: rec.expectedPayout,
+              // Round 79: 判断材料スナップショット
+              boatsSnapshot,
+              weatherSnapshot,
+              reasoning,
+              checks: rec.checks || null,           // 9 条件チェック結果
+              development: evForRace?.development || null,  // 展開シナリオ
+              inTrust: evForRace?.inTrust || null,           // 1号艇信頼度
+              accident: evForRace?.accident || null,         // 危険度
+              probConsistency: evForRace?.probConsistency || null,
+              probs: evForRace?.probs || null,               // 各艇 1着確率
+              maxEV: evForRace?.maxEV ?? null,
             };
           } else {
             // === skip / no-odds / data-checking / closed: 軽量保存 ===
