@@ -1135,6 +1135,22 @@ export default function App() {
         </div>
       )}
 
+      {/* Round 91: レート制限通知バナー (429 エラー時に短期表示) */}
+      {rateLimitEvent && (
+        <div style={{
+          background: "rgba(251,191,36,0.15)",
+          borderTop: "2px solid rgba(251,191,36,0.5)",
+          borderBottom: "2px solid rgba(251,191,36,0.5)",
+          color: "#fde68a",
+          padding: "6px 12px",
+          textAlign: "center",
+          fontSize: 11,
+          fontWeight: 700,
+        }} role="status" aria-live="polite">
+          ⏳ <b>API レート制限</b> — {Math.round((rateLimitEvent.retryAfterMs || 0) / 1000)} 秒後に自動リトライ (リクエスト間隔調整中)
+        </div>
+      )}
+
       {/* Round 52: バージョン状態バッジ (常時表示 — 「今見ている数字の信頼性」 を即時把握) */}
       <button
         onClick={() => {
