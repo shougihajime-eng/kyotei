@@ -33,7 +33,8 @@ console.log("\n========== Round 73 検証ログ + KPI 検証 ==========\n");
 /* === 1. バージョン定数 === */
 console.log("▶ 1. CURRENT_VERIFICATION_VERSION");
 {
-  expectTrue("v2 で始まる", typeof CURRENT_VERIFICATION_VERSION === "string" && CURRENT_VERIFICATION_VERSION.startsWith("v2"));
+  // Round 90: v3 に bump (フレッシュスタート)
+  expectTrue("v[0-9]+ で始まる", typeof CURRENT_VERIFICATION_VERSION === "string" && /^v\d+\./.test(CURRENT_VERIFICATION_VERSION));
 }
 
 /* === 2. フィルタ === */

@@ -344,6 +344,24 @@ export async function fullSync(userId, localPredictions) {
   };
 }
 
+/* === Round 90: クラウドデータ完全削除 (フレッシュスタート用) ===
+   このユーザーの全 predictions 行を Supabase から削除。
+   呼び出し前に必ず confirm() を入れる UI 側の責任。 */
+export async function deleteCloudData(userId) {
+  const supabase = getSupabase();
+  if (!supabase || !userId) return { ok: false, error: "未ログイン or Supabase 未設定" };
+  try {
+    const { error, count } = await supabase
+      .from(TABLE)
+      .delete({ count: "exact" })
+      .eq("user_id", userId);
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, deleted: count ?? 0 };
+  } catch (e) {
+    return { ok: false, error: String(e?.message || e) };
+  }
+}
+
 /* === 軽量同期 (起動後・予測保存後) ===
    差分だけを upsert (pull はしない、定期 fullSync で対応) */
 export async function lightSync(userId, localPredictions) {

@@ -166,6 +166,46 @@ export function clearState() {
   }
 }
 
+/* === Round 90: 全データ完全リセット (フレッシュスタート用) ===
+   ・kyoteiAssistantV2 (settings + predictions)
+   ・kyoteiPublicLog (公開検証ログ)
+   ・kyoteiLearningLog (学習履歴)
+   ・legacy キー全部
+   設定 (リスク感覚・予算等) は保持したい場合は preserveSettings=true */
+export function clearAllAppData(opts = {}) {
+  const { preserveSettings = false } = opts;
+  let savedSettings = null;
+  try {
+    if (preserveSettings) {
+      const raw = localStorage.getItem(KEY);
+      if (raw) {
+        const obj = JSON.parse(raw);
+        savedSettings = obj?.settings || null;
+      }
+    }
+  } catch {}
+  try {
+    if (typeof localStorage === "undefined") return false;
+    // 主データ
+    localStorage.removeItem(KEY);
+    localStorage.removeItem("kyoteiPublicLog");      // 公開検証ログ (append-only)
+    localStorage.removeItem("kyoteiLearningLog");    // 学習履歴
+    // 旧バージョンキー
+    localStorage.removeItem("kyoteiAssistantStateV3");
+    localStorage.removeItem("kyoteiAssistantStateV2");
+    // 設定だけ復元
+    if (savedSettings) {
+      localStorage.setItem(KEY, JSON.stringify({ settings: savedSettings, predictions: {} }));
+    }
+    _lastSaveStatus = { ok: true, lastSavedAt: Date.now(), error: null };
+    emit(_lastSaveStatus);
+    return true;
+  } catch (e) {
+    console.warn("[storage] clearAllAppData failed:", e);
+    return false;
+  }
+}
+
 /* === Round 52: バージョン管理 ===
    Round 52 以降の新ロジックで保存する全レコードに version: "v2" を付与。
    version 無し = legacy (Round 51 以前の不完全データ)。

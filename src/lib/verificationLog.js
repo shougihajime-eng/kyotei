@@ -18,8 +18,11 @@
  *   estimateLossStreakProbability(hitRate, n=10) — 期待される連敗確率 (二項分布)
  */
 
-/* === 現在の検証バージョン (ロジック更新ごとに incrementing) === */
-export const CURRENT_VERIFICATION_VERSION = "v2.preclose-strict.r70";
+/* === 現在の検証バージョン (ロジック更新ごとに incrementing) ===
+   Round 90 (フレッシュスタート): 既存データの精度問題により v3 へ昇格。
+   ・既存 v2.* 予想は KPI/グラフから自動的に除外 (verificationVersion フィルタ)
+   ・本日以降の予想は v3.* で記録され、 純度の高い検証データだけが集計対象 */
+export const CURRENT_VERIFICATION_VERSION = "v3.fresh-start.r90";
 
 /* === 検証フィルタ === */
 export function filterForVerification(predictions, opts = {}) {

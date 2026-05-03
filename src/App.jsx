@@ -24,10 +24,11 @@ function LazyFallback() {
   );
 }
 
-import { loadState, saveState, saveAndVerify, verifyVisible, clearState, setStorageStatusListener, gcOldPredictions, getStorageStats, estimateStorageSize, filterByVersion, purgeLegacy, getVisibleData, getVersionInfo, CURRENT_VERSION } from "./lib/storage.js";
+import { loadState, saveState, saveAndVerify, verifyVisible, clearState, clearAllAppData, setStorageStatusListener, gcOldPredictions, getStorageStats, estimateStorageSize, filterByVersion, purgeLegacy, getVisibleData, getVersionInfo, CURRENT_VERSION } from "./lib/storage.js";
 import { cloudEnabled } from "./lib/supabaseClient.js";
 import { getCurrentUser, onAuthChange, signOut as authSignOut } from "./lib/auth.js";
-import { fullSync, lightSync } from "./lib/cloudSync.js";
+import { fullSync, lightSync, deleteCloudData } from "./lib/cloudSync.js";
+import { setRateLimitListener, clearApiCaches } from "./lib/api.js";
 import LoginModal from "./components/LoginModal.jsx";
 import { fetchTodaySchedule, fetchRaceProgram, fetchRaceOdds, fetchRaceResult, fetchBeforeInfo } from "./lib/api.js";
 import { evaluateRace, buildBuyRecommendation, computeOverallGrade } from "./lib/predict.js";
@@ -91,6 +92,19 @@ export default function App() {
   useEffect(() => {
     setStorageStatusListener(setStorageStatus);
     return () => setStorageStatusListener(null);
+  }, []);
+
+  /* === Round 91: レート制限イベント (UI 通知用) === */
+  const [rateLimitEvent, setRateLimitEvent] = useState(null);
+  useEffect(() => {
+    setRateLimitListener((ev) => {
+      setRateLimitEvent(ev);
+      // 5 秒で消える (連続発火時は更新)
+      setTimeout(() => {
+        setRateLimitEvent((cur) => (cur && cur.ts === ev.ts ? null : cur));
+      }, Math.max(5000, (ev.retryAfterMs || 0) + 2000));
+    });
+    return () => setRateLimitListener(null);
   }, []);
 
   /* === Round 45: Auth state (handler は showToast 定義後に作る — TDZ 回避) === */
@@ -1019,16 +1033,40 @@ export default function App() {
   }, [settings, showToast]);
 
   /* === Reset === */
-  const handleReset = useCallback(() => {
-    if (!confirm("全データを消去します。よろしいですか?")) return;
-    clearState();
-    setSettings(defaultSettings());
+  /* === Round 90: フレッシュスタート ===
+     既存データの精度問題で本日からの新規収集に切替。
+     ・ローカル: predictions / publicLog / learningLog を全消去
+     ・クラウド: ログイン中なら別ボタンで Supabase 行も削除可
+     ・設定 (予算 / リスク感覚) は保持オプション */
+  const handleReset = useCallback(async (opts = {}) => {
+    const { preserveSettings = true, deleteCloud = false } = opts;
+    const localMsg = preserveSettings
+      ? "ローカルデータを完全リセットします:\n\n・全予想 / 買い目記録\n・公開検証ログ\n・学習履歴\n\n設定 (予算・リスク) は保持されます。\n\nよろしいですか?"
+      : "ローカルデータを完全リセットします:\n\n・全予想 / 買い目記録\n・公開検証ログ\n・学習履歴\n・設定\n\nすべて初期化されます。 よろしいですか?";
+    if (!confirm(localMsg)) return;
+    // クラウド削除も含むなら 2 段確認
+    if (deleteCloud && authUser) {
+      if (!confirm("⚠️ Supabase クラウドの全予想行も完全削除します。\nこれは取り消せません。 続行しますか?")) return;
+    }
+    // ローカル
+    clearAllAppData({ preserveSettings });
+    clearApiCaches();   // API キャッシュもクリア
+    setSettings(preserveSettings ? settings : defaultSettings());
     setPredictions({});
     setRaces([]);
     setLastRefreshAt(null);
-    setRefreshMsg("リセットしました");
-    setTimeout(() => setRefreshMsg(""), 3000);
-  }, []);
+    setRefreshMsg("✅ ローカルリセット完了 — 本日から新規蓄積を開始します");
+    // クラウド
+    if (deleteCloud && authUser) {
+      const res = await deleteCloudData(authUser.id);
+      if (res.ok) {
+        showToast(`☁️ クラウドデータ ${res.deleted} 行を削除しました`, "ok");
+      } else {
+        showToast(`⚠️ クラウド削除失敗: ${res.error}`, "neg");
+      }
+    }
+    setTimeout(() => setRefreshMsg(""), 5000);
+  }, [authUser, settings, showToast]);
 
   /* === Weekly summary for badge === */
   // Round 52: weekly も visiblePredictions (v2 のみ) で集計

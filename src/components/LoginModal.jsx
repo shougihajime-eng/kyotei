@@ -11,7 +11,7 @@ import { useState, useEffect } from "react";
 import {
   signIn, signUp, signOut as authSignOut,
   validateEmail, validatePassword, validatePasswordConfirm,
-  diagnoseAuth,
+  diagnoseAuth, diagnoseAuthLive,
 } from "../lib/auth.js";
 import { cloudEnabled } from "../lib/supabaseClient.js";
 
@@ -23,14 +23,32 @@ export default function LoginModal({ open, onClose, onLogin }) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(null);
   const [diag, setDiag] = useState(null);
+  const [liveDiag, setLiveDiag] = useState(null); // Round 92: 実通信診断
+  const [diagBusy, setDiagBusy] = useState(false);
   const [showDiag, setShowDiag] = useState(false);
 
   useEffect(() => {
     if (open) {
       setDiag(diagnoseAuth());
       setMsg(null);
+      setLiveDiag(null);
     }
   }, [open]);
+
+  /* === Round 92: 実通信診断 (ネットワーク / Supabase 到達性) === */
+  async function runLiveDiagnostics() {
+    setDiagBusy(true);
+    setLiveDiag(null);
+    try {
+      const result = await diagnoseAuthLive();
+      setLiveDiag(result);
+      console.log("[LoginModal] live diagnostics:", result);
+    } catch (e) {
+      setLiveDiag({ error: String(e?.message || e) });
+    } finally {
+      setDiagBusy(false);
+    }
+  }
 
   if (!open) return null;
   const enabled = cloudEnabled();
@@ -49,9 +67,12 @@ export default function LoginModal({ open, onClose, onLogin }) {
     }
     setBusy(true);
     try {
+      // Round 92: 詳細ログ — どこで失敗したかをコンソールで追跡可能に
+      console.log(`[LoginModal] ${mode} 試行: email=${email}`);
       const res = mode === "login"
         ? await signIn(email, password)
         : await signUp(email, password, confirm);
+      console.log(`[LoginModal] ${mode} 結果:`, res);
       if (res.ok) {
         setMsg({ kind: "ok", text: mode === "login" ? "ログインしました" : "登録しました" });
         setTimeout(() => {
@@ -65,7 +86,13 @@ export default function LoginModal({ open, onClose, onLogin }) {
         }, 600);
       } else {
         setMsg({ kind: "err", text: res.error || "失敗", detail: res.detail });
+        // 失敗時に live diagnostics を自動実行
+        runLiveDiagnostics();
       }
+    } catch (e) {
+      console.error(`[LoginModal] ${mode} 例外:`, e);
+      setMsg({ kind: "err", text: "予期しないエラー", detail: String(e?.message || e) });
+      runLiveDiagnostics();
     } finally {
       setBusy(false);
     }
@@ -187,6 +214,58 @@ export default function LoginModal({ open, onClose, onLogin }) {
             className="text-xs opacity-70 underline" style={{ background: "none", border: "none", cursor: "pointer", color: "#bae6fd" }}>
             {showDiag ? "▲ 接続診断を閉じる" : "▼ 接続診断を表示"}
           </button>
+
+          {/* Round 92: ログイン失敗時に自動表示される実通信診断 */}
+          {liveDiag && (
+            <div className="mt-2 text-xs text-left p-3 rounded" style={{
+              background: "rgba(239,68,68,0.10)", border: "1px solid rgba(239,68,68,0.4)",
+              lineHeight: 1.6,
+            }}>
+              <div className="font-bold mb-2" style={{ color: "#fca5a5" }}>🔬 実通信診断 (失敗箇所の特定)</div>
+              <div style={{ color: liveDiag.envSet ? "#a7f3d0" : "#fca5a5" }}>
+                {liveDiag.envSet ? "✅" : "❌"} 環境変数 (VITE_SUPABASE_URL / ANON_KEY)
+              </div>
+              <div style={{ color: liveDiag.clientCreated ? "#a7f3d0" : "#fca5a5" }}>
+                {liveDiag.clientCreated ? "✅" : "❌"} Supabase client 生成
+              </div>
+              <div style={{ color: liveDiag.canReachSupabase ? "#a7f3d0" : "#fca5a5" }}>
+                {liveDiag.canReachSupabase ? "✅" : "❌"} Supabase 通信到達
+              </div>
+              <div style={{ color: liveDiag.canReadSession ? "#a7f3d0" : "#fca5a5" }}>
+                {liveDiag.canReadSession ? "✅" : "❌"} セッション取得 API 動作
+              </div>
+              {liveDiag.error && (
+                <div className="mt-2 p-2 rounded" style={{ background: "rgba(0,0,0,0.4)" }}>
+                  <div className="font-bold" style={{ color: "#fca5a5" }}>エラー詳細:</div>
+                  <div style={{ fontSize: 10, fontFamily: "monospace", marginTop: 4 }}>
+                    {liveDiag.error}
+                  </div>
+                  {liveDiag.detail && (
+                    <div className="opacity-80 mt-1" style={{ fontSize: 10 }}>
+                      → {liveDiag.detail}
+                    </div>
+                  )}
+                </div>
+              )}
+              <div className="mt-2 opacity-75" style={{ fontSize: 10 }}>
+                💡 ブラウザの DevTools コンソールに [LoginModal] のログが出ています。
+                解決しない場合は スクリーンショット送付で対応します。
+              </div>
+            </div>
+          )}
+
+          {/* 失敗時に手動で再診断 */}
+          {msg?.kind === "err" && (
+            <button
+              onClick={runLiveDiagnostics}
+              type="button"
+              disabled={diagBusy}
+              className="text-xs underline mt-2"
+              style={{ background: "none", border: "none", cursor: "pointer", color: "#fde68a" }}>
+              {diagBusy ? "⏳ 診断中…" : "🔬 もう一度診断する"}
+            </button>
+          )}
+
           {showDiag && diag && (
             <div className="mt-2 text-xs text-left p-2 rounded" style={{ background: "rgba(0,0,0,0.3)", lineHeight: 1.55 }}>
               <div className="font-bold mb-1">🔍 接続診断</div>

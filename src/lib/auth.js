@@ -55,6 +55,56 @@ export function diagnoseAuth() {
   return { ok: issues.every(i => i.severity !== "error"), issues, config };
 }
 
+/* === Round 92: 詳細診断 (実通信ベース) ===
+   Supabase の Auth エンドポイントに ping 相当のリクエストを送り、
+   どこで失敗するかを段階的に検出する */
+export async function diagnoseAuthLive() {
+  const result = {
+    envSet: false,
+    clientCreated: false,
+    canReachSupabase: false,
+    canReadSession: false,
+    error: null,
+    detail: null,
+  };
+  try {
+    // Step 1: 環境変数
+    const config = getCloudConfig();
+    result.envSet = config.enabled;
+    if (!config.enabled) {
+      result.error = "環境変数 VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY が未設定";
+      result.detail = "Vercel Settings → Environment Variables に追加 + Redeploy";
+      return result;
+    }
+    // Step 2: クライアント生成
+    const supabase = getSupabase();
+    result.clientCreated = !!supabase;
+    if (!supabase) {
+      result.error = "Supabase client 生成失敗";
+      return result;
+    }
+    // Step 3: Auth エンドポイントへの到達性
+    try {
+      const { data, error } = await supabase.auth.getSession();
+      if (error) {
+        result.error = `getSession 失敗: ${error.message}`;
+        result.detail = "ネットワーク / RLS / Supabase project paused 等の可能性";
+        return result;
+      }
+      result.canReachSupabase = true;
+      result.canReadSession = true;
+      result.session = data?.session ? { hasUser: !!data.session.user, expiresAt: data.session.expires_at } : null;
+    } catch (e) {
+      result.error = `Supabase 通信失敗: ${String(e?.message || e)}`;
+      result.detail = "CORS / ネットワーク / 環境変数の値が不正の可能性";
+      return result;
+    }
+  } catch (e) {
+    result.error = `診断中の例外: ${String(e?.message || e)}`;
+  }
+  return result;
+}
+
 /* === サインアップ === */
 export async function signUp(email, password, confirmPassword) {
   const supabase = getSupabase();
