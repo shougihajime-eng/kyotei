@@ -6,6 +6,7 @@ import NewsPanel from "./NewsPanel.jsx";
 import EVExplainer from "./EVExplainer.jsx";
 import TodaySummary from "./TodaySummary.jsx";
 import TopDecisionBar from "./TopDecisionBar.jsx";
+import TopVerdictBanner from "./TopVerdictBanner.jsx";
 import KpiPanel from "./KpiPanel.jsx";
 import TodayVerificationPanel from "./TodayVerificationPanel.jsx";
 import CloudSyncCheckPanel from "./CloudSyncCheckPanel.jsx";
@@ -69,6 +70,9 @@ export default function Dashboard({
     <div className="space-y-4 max-w-3xl mx-auto px-4 mt-4 pb-20">
       {/* 更新バー (常時) */}
       <RefreshBar onRefresh={onRefresh} refreshing={refreshing} refreshMsg={refreshMsg} lastRefreshAt={lastRefreshAt} />
+
+      {/* Round 88: 最上部「今日の結論」 — どのスタイルが勝っているか 1 枚で */}
+      <TopVerdictBanner predictions={visibleData?.predictions} />
 
       {/* Round 52-58: Top Decision Bar (visibleData 単一ソース — goMode も visibleData 経由) */}
       <TopDecisionBar

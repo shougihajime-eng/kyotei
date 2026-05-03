@@ -415,7 +415,8 @@ function SingleViewImpl({ items, label }) {
                         🏆 BEST
                       </div>
                     )}
-                    <div className="text-sm font-bold">{s.label}</div>
+                    <div className="text-sm font-bold" style={{ lineHeight: 1.1 }}>{s.label}</div>
+                    {s.desc && <div className="text-xs" style={{ opacity: 0.65, fontSize: 10, marginTop: 1 }}>{s.desc}</div>}
                     <div className="text-xs opacity-70 mt-1">{s.count}件 / 的中 {s.hits}件</div>
                     <div className="num font-bold mt-1" style={{ color, fontSize: 22 }}>
                       {s.stake > 0 ? Math.round(s.roi * 100) + "%" : "—"}
@@ -678,9 +679,10 @@ function ActualPerformancePanelImpl({ predictions, virtualMode }) {
         m[k].stake += p.totalStake; m[k].ret += p.payout || 0; m[k].count++;
         if (p.hit) m[k].hits++;
       }
-      const labels = { steady: "🛡️ 本命型", balanced: "⚖️ バランス型", aggressive: "🎯 穴狙い型" };
+      const labels = { steady: "🛡️ 安定型", balanced: "⚖️ バランス型", aggressive: "🎯 攻め型" };
+      const descs = { steady: "的中率特化", balanced: "実戦最適", aggressive: "高配当狙い" };
       return ["steady","balanced","aggressive"].map(k => ({
-        profile: k, label: labels[k],
+        profile: k, label: labels[k], desc: descs[k],
         stake: m[k]?.stake || 0,
         ret:   m[k]?.ret   || 0,
         count: m[k]?.count || 0,

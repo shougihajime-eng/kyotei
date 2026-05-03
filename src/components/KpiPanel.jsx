@@ -15,9 +15,9 @@ import { yen } from "../lib/format.js";
 export default memo(KpiPanel);
 
 const STYLE_LABEL = {
-  steady: { label: "🛡️ 安定", color: "#3b82f6" },
-  balanced: { label: "⚖️ バランス", color: "#fbbf24" },
-  aggressive: { label: "🎯 攻め", color: "#ef4444" },
+  steady: { label: "🛡️ 安定", desc: "的中率特化", color: "#3b82f6" },
+  balanced: { label: "⚖️ バランス", desc: "実戦最適", color: "#fbbf24" },
+  aggressive: { label: "🎯 攻め", desc: "高配当狙い", color: "#ef4444" },
 };
 
 const SIG_COLOR = {
@@ -134,7 +134,8 @@ function KpiPanel({ predictions, options = {} }) {
                         🏆 BEST
                       </div>
                     )}
-                    <div className="text-xs font-bold mb-1" style={{ color: info.color }}>{info.label}</div>
+                    <div className="text-xs font-bold" style={{ color: info.color, lineHeight: 1.1 }}>{info.label}</div>
+                    <div className="text-xs mb-1" style={{ opacity: 0.65, fontSize: 9, lineHeight: 1.3 }}>{info.desc}</div>
                     <div className="text-xs" style={{ lineHeight: 1.4 }}>
                       {sk.count > 0 ? (
                         <>
