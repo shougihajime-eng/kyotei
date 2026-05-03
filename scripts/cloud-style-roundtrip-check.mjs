@@ -248,6 +248,68 @@ console.log("\n▶ 9. 3 スタイル round-trip 完全保持");
   expect("key の一意性 (3 件全て異なる)", uniqueKeys.size, 3);
 }
 
+/* === 10. Round 86: frozen レコード保護 === */
+console.log("\n▶ 10. Round 86 — 結果ありレコード保護 (frozen-wins-over-newer-non-frozen)");
+{
+  // local: snapshotAt 新しい / 結果なし
+  const localNonFrozen = { ...makeLocalBuy("balanced"), snapshotAt: "2026-05-03T15:00:00.000Z" };
+  // cloud: snapshotAt 古い / 結果あり (Device A で確定済)
+  const cloudFrozen = {
+    ...makeLocalBuy("balanced"),
+    snapshotAt: "2026-05-03T14:00:00.000Z",
+    result: { first: 1, second: 2, third: 3 },
+    payout: 2750, hit: true, pnl: 2250,
+    finalized: true,
+  };
+  const local = { [`${dateKey}_${raceId}_balanced`]: localNonFrozen };
+  const cloud = { [`${dateKey}_${raceId}_balanced`]: cloudFrozen };
+  const result = mergeLocalAndCloud(local, cloud);
+  const mp = result.merged;
+  expectTrue("frozen レコードが採用される (snapshotAt が古くても)", !!mp[`${dateKey}_${raceId}_balanced`]?.result?.first);
+  expect("payout = 2750 (cloud 由来)", mp[`${dateKey}_${raceId}_balanced`].payout, 2750);
+  expect("hit = true (cloud 由来)", mp[`${dateKey}_${raceId}_balanced`].hit, true);
+}
+
+/* === 11. Round 86: 逆方向 — local frozen / cloud newer non-frozen → local 保持 === */
+console.log("\n▶ 11. Round 86 — local frozen + cloud newer non-frozen → local 結果消えない");
+{
+  const localFrozen = {
+    ...makeLocalBuy("balanced"),
+    snapshotAt: "2026-05-03T14:00:00.000Z",
+    result: { first: 1, second: 2, third: 3 },
+    payout: 2750, hit: true, pnl: 2250,
+    finalized: true,
+  };
+  // cloud に別の "より新しい snapshot" があるが結果なし (= 別端末の偽更新)
+  const cloudNewerNonFrozen = { ...makeLocalBuy("balanced"), snapshotAt: "2026-05-03T15:00:00.000Z" };
+  const local = { [`${dateKey}_${raceId}_balanced`]: localFrozen };
+  const cloud = { [`${dateKey}_${raceId}_balanced`]: cloudNewerNonFrozen };
+  const result = mergeLocalAndCloud(local, cloud);
+  const mp = result.merged;
+  expectTrue("local frozen が保持される", !!mp[`${dateKey}_${raceId}_balanced`]?.result?.first);
+  expect("payout 不変 = 2750 (local 由来、 cloud に潰されない)", mp[`${dateKey}_${raceId}_balanced`].payout, 2750);
+  expect("hit 不変 = true (local 由来)", mp[`${dateKey}_${raceId}_balanced`].hit, true);
+}
+
+/* === 12. Round 86: 両方 frozen → snapshotAt 新しい方 === */
+console.log("\n▶ 12. Round 86 — 両方 frozen → snapshotAt 新しい方が勝つ");
+{
+  const localFrozen = {
+    ...makeLocalBuy("balanced"), snapshotAt: "2026-05-03T14:00:00.000Z",
+    result: { first: 1, second: 2, third: 3 }, payout: 1000, hit: true, pnl: 500, finalized: true,
+  };
+  const cloudFrozen = {
+    ...makeLocalBuy("balanced"), snapshotAt: "2026-05-03T15:00:00.000Z",
+    result: { first: 2, second: 1, third: 3 }, payout: 0, hit: false, pnl: -500, finalized: true,
+  };
+  const local = { [`${dateKey}_${raceId}_balanced`]: localFrozen };
+  const cloud = { [`${dateKey}_${raceId}_balanced`]: cloudFrozen };
+  const result = mergeLocalAndCloud(local, cloud);
+  const mp = result.merged;
+  expect("cloud frozen 採用 (snapshotAt 新しい)", mp[`${dateKey}_${raceId}_balanced`].payout, 0);
+  expect("hit = false (cloud 由来)", mp[`${dateKey}_${raceId}_balanced`].hit, false);
+}
+
 /* === 6. profile が key の suffix と一致するか (整合性チェック) === */
 console.log("\n▶ 6. key の suffix と profile が一致");
 {

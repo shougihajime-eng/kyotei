@@ -246,18 +246,44 @@ export function mergeLocalAndCloud(local, cloud) {
     }
     const lTs = Date.parse(l.snapshotAt || "") || 0;
     const cTs = Date.parse(c.snapshotAt || "") || 0;
-    if (cTs > lTs) {
-      // local が手動記録 + 画像/メモあり → 上書きしない (大事な情報保護)
-      const localHasIrreplaceable = l.manuallyRecorded && (l.imageData || l.reflection || l.memo);
+    // Round 86: 結果ありレコード (= 検証材料 frozen) を優先
+    //   ・lFrozen=true / cFrozen=false → 必ず local 採用 (cloud に潰されて結果を失わない)
+    //   ・lFrozen=false / cFrozen=true → 必ず cloud 採用 (別端末で確定した結果を取り込む)
+    //   ・両方 frozen / 両方 non-frozen → 従来通り snapshotAt 新しい方
+    const lFrozen = !!l?.result?.first;
+    const cFrozen = !!c?.result?.first;
+    const localHasIrreplaceable = l.manuallyRecorded && (l.imageData || l.reflection || l.memo);
+
+    if (lFrozen && !cFrozen) {
+      // local 完了済み、 cloud は未完了 → local を保持 (結果消えない保護)
+      localWon++;
+      continue;
+    }
+    if (!lFrozen && cFrozen) {
+      // cloud 完了済み、 local は未完了 → cloud 採用 (別端末の結果取り込み)
       if (localHasIrreplaceable) {
-        // cloud の新しいフィールドだけマージ (local の画像/メモは保持)
         merged[key] = {
           ...c,
-          // local 専有フィールドを優先
           imageData: l.imageData ?? c.imageData,
           reflection: l.reflection ?? c.reflection,
           memo: l.memo ?? c.memo,
-          // snapshotAt は local より大きく置く (再 push されないように cloud)
+          snapshotAt: c.snapshotAt,
+        };
+      } else {
+        merged[key] = c;
+      }
+      cloudWon++;
+      continue;
+    }
+
+    // 両方 frozen / 両方 non-frozen — 従来通り snapshotAt 新しい方
+    if (cTs > lTs) {
+      if (localHasIrreplaceable) {
+        merged[key] = {
+          ...c,
+          imageData: l.imageData ?? c.imageData,
+          reflection: l.reflection ?? c.reflection,
+          memo: l.memo ?? c.memo,
           snapshotAt: c.snapshotAt,
         };
         cloudWon++;
