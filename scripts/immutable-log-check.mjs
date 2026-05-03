@@ -226,6 +226,38 @@ console.log("\n▶ 12. Round 76 — overall 集計 + 最大連敗 / 連勝");
   expectTrue("overall.avgOdds 数値", typeof sum.overall.avgOdds === "number");
 }
 
+/* === 14. Round 78: skip / no-odds は公開ログから除外 === */
+console.log("\n▶ 14. Round 78 — 買い推奨 (decision=buy) のみ追記");
+{
+  _store.clear();
+  // skip は拒否
+  const skipPred = makeFinalizedPred("s1", { hit: false });
+  skipPred.decision = "skip";
+  const r1 = appendPublicLog(skipPred);
+  expectTrue("skip は append 拒否", r1.ok === false);
+  expectTrue("理由に「買い推奨ではない」", /買い推奨ではない/.test(r1.reason || ""));
+  // no-odds も拒否
+  const noOdds = makeFinalizedPred("n1", { hit: false });
+  noOdds.decision = "no-odds";
+  const r2 = appendPublicLog(noOdds);
+  expectTrue("no-odds は append 拒否", r2.ok === false);
+  expect("ログは 0 件のまま", loadPublicLog().length, 0);
+  // buy だけ通る
+  const buy = makeFinalizedPred("b1", { hit: true });
+  const r3 = appendPublicLog(buy);
+  expectTrue("buy は append OK", r3.ok && !!r3.entry);
+  expect("ログは 1 件", loadPublicLog().length, 1);
+  // syncPublicLog でも skip は除外される
+  const preds = {
+    s1: { ...makeFinalizedPred("s1", { hit: false }), decision: "skip" },
+    s2: { ...makeFinalizedPred("s2", { hit: false }), decision: "no-odds" },
+    b2: makeFinalizedPred("b2", { hit: true }),
+    b3: makeFinalizedPred("b3", { hit: false }),
+  };
+  const syncRes = syncPublicLog(preds);
+  expect("sync added=2 (buy のみ)", syncRes.added, 2);
+}
+
 /* === 13. Round 76: byMonth 集計 === */
 console.log("\n▶ 13. Round 76 — byMonth 集計");
 {

@@ -100,10 +100,14 @@ export function verifyIntegrity(log) {
 /* === append-only 追記 ===
    ・既に同 key の確定エントリがあれば追記しない
    ・finalized=true のエントリのみ受け付ける
-   ・Round 76: 仮データ起源 (isSampleData=true) は絶対に追記しない (信用毀損防止) */
+   ・Round 76: 仮データ起源 (isSampleData=true) は絶対に追記しない (信用毀損防止)
+   ・Round 78: 「買い推奨」 (decision="buy") のみ追記
+     公開検証ログは「AI が買えと言ったときに本当に勝てているか」 を見せるため、
+     見送り / no-odds / closed 等は混ぜない。 KPI 純度を構造的に保証。 */
 export function appendPublicLog(prediction) {
   if (!prediction || !prediction.finalized) return { ok: false, reason: "未確定 (finalized=false)" };
   if (prediction.isSampleData) return { ok: false, reason: "仮データ起源 — 公開ログには追記しません" };
+  if (prediction.decision !== "buy") return { ok: false, reason: `買い推奨ではない (decision=${prediction.decision || "—"}) — 公開ログには買いのみ追記` };
   const entry = normalizeEntry(prediction);
   if (!entry || !entry.key) return { ok: false, reason: "key 欠落" };
   const log = loadPublicLog();
@@ -125,11 +129,12 @@ export function appendPublicLog(prediction) {
 }
 
 /* === predictions から finalized 全件を一括 sync ===
+   Round 78: 「買い推奨」 (decision="buy") のみ対象。
    起動時等に呼ぶ。 既に追加済の key はスキップされる。 */
 export function syncPublicLog(predictions) {
   let added = 0, skipped = 0;
   const items = Object.values(predictions || {})
-    .filter((p) => p?.finalized && p?.result?.first)
+    .filter((p) => p?.finalized && p?.result?.first && p?.decision === "buy")
     // 安定 order: snapshotAt 順
     .sort((a, b) => (a.snapshotAt || "").localeCompare(b.snapshotAt || ""));
   for (const p of items) {
