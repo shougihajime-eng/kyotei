@@ -26,7 +26,8 @@
     "test:immutable": "node scripts/immutable-log-check.mjs",
     "test:detail": "node scripts/detail-snapshot-check.mjs",
     "test:separation": "node scripts/style-separation-check.mjs",
-    "test:all": "npm run tdz && npm run test:sanity && npm run test:pnl && npm run test:storage && npm run test:cloud && npm run test:jst && npm run test:label && npm run test:save && npm run test:preclose && npm run test:styles && npm run test:verify && npm run test:immutable && npm run test:detail && npm run test:separation",
+    "test:cloudstyle": "node scripts/cloud-style-roundtrip-check.mjs",
+    "test:all": "npm run tdz && npm run test:sanity && npm run test:pnl && npm run test:storage && npm run test:cloud && npm run test:jst && npm run test:label && npm run test:save && npm run test:preclose && npm run test:styles && npm run test:verify && npm run test:immutable && npm run test:detail && npm run test:separation && npm run test:cloudstyle",
     "check": "npm run test:all && npm run build"
   },
   "dependencies": {

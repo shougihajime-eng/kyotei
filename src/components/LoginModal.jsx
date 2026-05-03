@@ -79,18 +79,38 @@ export default function LoginModal({ open, onClose, onLogin }) {
           <button onClick={onClose} className="btn btn-ghost text-xs" style={{ minHeight: 36 }}>✕</button>
         </div>
 
-        {/* === 診断バナー (常に表示で問題を見える化) === */}
+        {/* === Round 83: 未設定時のセットアップガイド (詳細) === */}
         {!enabled && (
-          <div className="alert-error text-xs mb-3" style={{ lineHeight: 1.55 }}>
-            <b>❌ Supabase 環境変数が未設定です</b><br/>
-            このままでは新規登録/ログインができません。<br/>
-            <ul style={{ paddingLeft: 16, marginTop: 4, listStyle: "disc" }}>
-              <li>Vercel のプロジェクト設定 → Environment Variables を確認</li>
-              <li>VITE_SUPABASE_URL を設定</li>
-              <li>VITE_SUPABASE_ANON_KEY を設定</li>
-              <li>設定後 Redeploy が必要</li>
-              <li>詳細: docs/supabase-setup.md</li>
-            </ul>
+          <div className="alert-error text-xs mb-3" style={{ lineHeight: 1.6 }}>
+            <div className="font-bold text-sm mb-2">❌ クラウド機能 (Supabase) が未設定です</div>
+            <div className="mb-2">
+              ログイン無しでも アプリは <b>ローカル保存のみで通常動作</b> します。
+              端末間同期が必要なら以下を設定:
+            </div>
+            <div style={{
+              background: "rgba(0,0,0,0.25)", padding: "8px 10px", borderRadius: 6,
+              border: "1px solid rgba(255,255,255,0.08)",
+            }}>
+              <div className="font-bold mb-1">📋 セットアップ 4 ステップ</div>
+              <ol style={{ paddingLeft: 18, lineHeight: 1.7 }}>
+                <li>
+                  <a href="https://supabase.com" target="_blank" rel="noopener noreferrer" style={{ color: "#bae6fd", textDecoration: "underline" }}>supabase.com</a> で プロジェクト作成 (無料枠)
+                </li>
+                <li>SQL Editor で <code style={{ background: "rgba(255,255,255,0.05)", padding: "0 4px" }}>predictions</code> テーブル作成 (docs/supabase-setup.md)</li>
+                <li>Authentication → Providers → Email → 「Confirm email」 を <b>OFF</b></li>
+                <li>
+                  Vercel → Settings → Environment Variables に追加:
+                  <div style={{ background: "rgba(0,0,0,0.40)", padding: "4px 8px", borderRadius: 4, marginTop: 4, fontFamily: "monospace", fontSize: 10 }}>
+                    VITE_SUPABASE_URL=https://xxxxx.supabase.co<br/>
+                    VITE_SUPABASE_ANON_KEY=eyJ…
+                  </div>
+                </li>
+                <li>Vercel で <b>Redeploy</b> (環境変数は再ビルド時のみ反映)</li>
+              </ol>
+            </div>
+            <div className="opacity-80 mt-2" style={{ fontSize: 10 }}>
+              📖 詳細手順: <code>docs/supabase-setup.md</code> をリポジトリで参照
+            </div>
           </div>
         )}
 

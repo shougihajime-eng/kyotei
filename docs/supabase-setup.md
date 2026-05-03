@@ -25,7 +25,7 @@ Supabase ダッシュボード → 左メニュー「SQL Editor」 → 新規ク
 create table predictions (
   id uuid default gen_random_uuid() primary key,
   user_id uuid references auth.users not null,
-  key text not null,
+  key text not null,                -- ${dateKey}_${raceId}_${style} 形式 (3 スタイルが別 key で保存される)
   date date,
   race_id text,
   venue text,
@@ -35,7 +35,7 @@ create table predictions (
   decision text,
   combos jsonb,
   total_stake int default 0,
-  profile text,
+  profile text,                     -- 'steady' | 'balanced' | 'aggressive' (key にも含まれるが二重防御で別カラム)
   virtual boolean,
   result jsonb,
   payout int default 0,
@@ -44,16 +44,18 @@ create table predictions (
   manually_recorded boolean default false,
   memo text,
   reflection text,
-  image_data text,        -- 画像 (base64)。 不要ならカラム削除
+  image_data text,                  -- 画像 (base64)。 不要ならカラム削除
   matched_ai boolean,
   snapshot_at timestamptz default now(),
   updated_at timestamptz default now(),
-  unique (user_id, key)
+  details jsonb,                    -- Round 85: 判断材料 + 検証メタ (boatsSnapshot/reasoning/preCloseTarget/verificationVersion 等)
+  unique (user_id, key)             -- 3 スタイル (異なる key) は衝突しない
 );
 
 -- インデックス (検索高速化)
 create index predictions_user_date_idx on predictions(user_id, date desc);
 create index predictions_user_updated_idx on predictions(user_id, updated_at desc);
+create index predictions_user_profile_idx on predictions(user_id, profile);   -- スタイル別集計用 (Round 85)
 
 -- 行レベルセキュリティ (RLS) 有効化 — 他人のデータが見えないように
 alter table predictions enable row level security;
@@ -68,6 +70,18 @@ create policy "Users can update own predictions" on predictions
 create policy "Users can delete own predictions" on predictions
   for delete using (auth.uid() = user_id);
 ```
+
+### 既存テーブルからのマイグレーション (Round 84 以前から使っている場合)
+
+既に predictions テーブルが存在する場合、 details カラムだけ後から追加:
+
+```sql
+alter table predictions add column if not exists details jsonb;
+create index if not exists predictions_user_profile_idx on predictions(user_id, profile);
+```
+
+これだけで Round 85 の検証フィールド (boatsSnapshot / reasoning / verificationVersion 等)
+が round-trip 保存されるようになります。 既存行は details=null のままでも動作します。
 
 ## 3. Auth 設定
 

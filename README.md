@@ -76,11 +76,55 @@
 - **手動記録 (✏️) は GC されない** — ただしブラウザデータをクリアすれば消えます
 - エア / リアル / スタイル別 を分離して集計
 
-### 長期保管したい場合 (今できる対処)
+### 長期保管したい場合 (Supabase クラウド同期 — 任意)
 
-- 大事な記録は **スクリーンショット** で控えを取る
-- 常用ブラウザを 1 つに固定する (キャッシュクリアの影響を最小化)
-- 将来、ログイン + クラウド保存 (Supabase 等) の対応予定 — **現時点では未実装**
+ログイン + クラウド同期に対応 (Round 45+, Round 85 拡張):
+
+- **任意機能**: 環境変数を設定しなければ ローカルのみで通常動作
+- **3 スタイル分離保証**: `key = ${dateKey}_${raceId}_${style}` でクラウドでも完全分離
+- **検証メタ完全保持**: boatsSnapshot / weatherSnapshot / reasoning / verificationVersion / preCloseTarget /
+  isGoCandidate / finalized などすべて round-trip (`details JSONB` カラムに格納)
+- **詳細ログも復元可**: 別端末でログインしても 「なぜ買いと判断したか」 が完全に見られる
+
+#### セットアップ手順 (Vercel)
+
+1. **Supabase プロジェクト作成** (無料枠) → [supabase.com](https://supabase.com)
+2. **テーブル作成** (詳細は [`docs/supabase-setup.md`](docs/supabase-setup.md)):
+   ```sql
+   create table predictions (
+     id uuid default gen_random_uuid() primary key,
+     user_id uuid references auth.users not null,
+     key text not null,         -- ${dateKey}_${raceId}_${style} で 3 スタイル分離
+     date date, race_id text, venue text, jcd text, race_no int, start_time text,
+     decision text, combos jsonb, total_stake int default 0,
+     profile text,              -- 'steady' | 'balanced' | 'aggressive'
+     virtual boolean, result jsonb,
+     payout int default 0, hit boolean default false, pnl int,
+     manually_recorded boolean default false, memo text, reflection text, image_data text,
+     matched_ai boolean,
+     snapshot_at timestamptz default now(), updated_at timestamptz default now(),
+     details jsonb,             -- Round 85: 判断材料 (boats/reasoning/verificationVersion 等)
+     unique (user_id, key)
+   );
+   ```
+3. **Authentication → Providers → Email** → 「Confirm email」 を **OFF**
+4. **Vercel Environment Variables**:
+   - `VITE_SUPABASE_URL` = `https://xxxxx.supabase.co`
+   - `VITE_SUPABASE_ANON_KEY` = `eyJ…` (anon public key)
+5. **Vercel で Redeploy** (環境変数は再ビルド時のみ反映)
+
+#### 既存テーブルからのマイグレーション (Round 84 以前)
+
+```sql
+alter table predictions add column if not exists details jsonb;
+create index if not exists predictions_user_profile_idx on predictions(user_id, profile);
+```
+
+#### 動作確認
+
+- 設定済みなら Header の「🔑 ログイン」 ボタンが青色で表示
+- 未設定なら「⚠️ クラウド未設定」 が黄色で表示 + ログインモーダルにセットアップ手順
+- ログイン後、 別端末 / 別ブラウザで同じ email + password で同期可能
 
 ### 検証
 

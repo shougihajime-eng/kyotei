@@ -126,19 +126,26 @@ function HeaderImpl({ tab, setTab, today, settings, setSettings, switchProfile, 
                     : "ログイン中"}
                 </span>
               </button>
-            ) : (
-              <button onClick={onOpenLogin}
-                style={{
-                  minHeight: 44, padding: "6px 10px", borderRadius: 10,
-                  border: "1px solid rgba(56,189,248,0.5)",
-                  background: "rgba(56,189,248,0.10)",
-                  color: "#bae6fd", fontSize: 12, cursor: "pointer",
-                  fontWeight: 700, display: "flex", flexDirection: "column", alignItems: "center", lineHeight: 1.1,
-                }}>
-                <span>🔑 ログイン</span>
-                <span style={{ fontSize: 9, opacity: 0.85 }}>任意 (端末同期)</span>
-              </button>
-            )}
+            ) : (() => {
+              const cloudOk = cloudEnabled();
+              return (
+                <button onClick={onOpenLogin}
+                  title={cloudOk ? "Supabase 設定済 — タップでログイン/新規登録" : "Supabase 未設定 — タップで設定手順を表示"}
+                  style={{
+                    minHeight: 44, padding: "6px 10px", borderRadius: 10,
+                    border: cloudOk ? "1px solid rgba(56,189,248,0.5)" : "1px solid rgba(251,191,36,0.5)",
+                    background: cloudOk ? "rgba(56,189,248,0.10)" : "rgba(251,191,36,0.10)",
+                    color: cloudOk ? "#bae6fd" : "#fde68a",
+                    fontSize: 12, cursor: "pointer",
+                    fontWeight: 700, display: "flex", flexDirection: "column", alignItems: "center", lineHeight: 1.1,
+                  }}>
+                  <span>{cloudOk ? "🔑 ログイン" : "⚠️ クラウド未設定"}</span>
+                  <span style={{ fontSize: 9, opacity: 0.85 }}>
+                    {cloudOk ? "任意 (端末同期)" : "ローカル保存のみ"}
+                  </span>
+                </button>
+              );
+            })()}
             <button onClick={handleRefresh} disabled={refreshing} className="btn btn-primary"
               style={{ minHeight: 44, minWidth: 100, fontSize: 14 }}>
               {refreshing ? "🔄 更新中…" : "🔄 更新"}

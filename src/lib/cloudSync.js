@@ -21,12 +21,59 @@ const TABLE = "predictions";
    ユーザーが写真を保存した端末でのみ閲覧可能 (ローカル専有)。 */
 const SYNC_IMAGE_DATA = false;
 
-/* === 1 行を Supabase 形式に変換 (push 用) === */
-function toRow(userId, p) {
-  if (!p?.key) return null; // key なしは送信不可
+/* === 1 行を Supabase 形式に変換 (push 用) ===
+   Round 85: スタイル分離 + Round 73-79 で追加した検証フィールド全てを保持。
+   ・profile は明示カラムでも存在 (key にも含まれる) → 二重防御
+   ・details JSONB に判断材料 + 検証メタを格納 (1 列でスキーマ変更最小化)
+   ・details が DB に無い (旧スキーマ) 環境でも push は成功する想定
+   テスト用に export */
+export function toRow(userId, p) {
+  if (!p?.key) return null;
+  // Round 85: 検証用 details (boats / weather / reasoning / 検証メタ)
+  // localStorage に書いた全フィールドを round-trip 保持するためにまとめて格納
+  const details = {
+    confidence: p.confidence ?? null,
+    grade: p.grade ?? null,
+    reason: p.reason ?? null,
+    rationale: p.rationale ?? null,
+    warnings: p.warnings ?? null,
+    intendedMain: p.intendedMain ?? null,
+    reasons: p.reasons ?? null,
+    venueProfile: p.venueProfile ?? null,
+    timeSlot: p.timeSlot ?? null,
+    worstCaseRoi: p.worstCaseRoi ?? null,
+    worstCasePayout: p.worstCasePayout ?? null,
+    expectedPayout: p.expectedPayout ?? null,
+    // 検証メタ (Round 73-79)
+    verificationVersion: p.verificationVersion ?? null,
+    preCloseTarget: !!p.preCloseTarget,
+    isGoCandidate: !!p.isGoCandidate,
+    isSampleData: !!p.isSampleData,
+    finalized: !!p.finalized,
+    skipCorrect: p.skipCorrect ?? null,
+    skipMissed: p.skipMissed ?? null,
+    // 判断材料スナップショット (買い時のみ)
+    boatsSnapshot: p.boatsSnapshot ?? null,
+    weatherSnapshot: p.weatherSnapshot ?? null,
+    reasoning: p.reasoning ?? null,
+    inTrust: p.inTrust ?? null,
+    development: p.development ?? null,
+    accident: p.accident ?? null,
+    probConsistency: p.probConsistency ?? null,
+    probs: p.probs ?? null,
+    maxEV: p.maxEV ?? null,
+    checks: p.checks ?? null,
+    // バージョン管理
+    version: p.version ?? null,
+    predictionTime: p.predictionTime ?? null,
+    closingTime: p.closingTime ?? null,
+    predictionType: p.predictionType ?? null,
+    // ラベル管理 (Round 63)
+    labelOverride: p.labelOverride ?? null,
+  };
   return {
     user_id: userId,
-    key: p.key,
+    key: p.key,                     // ${dateKey}_${raceId}_${style} で一意
     date: p.date || null,
     race_id: p.raceId || null,
     venue: p.venue || null,
@@ -36,7 +83,7 @@ function toRow(userId, p) {
     decision: p.decision || null,
     combos: p.combos || null,
     total_stake: p.totalStake || 0,
-    profile: p.profile || null,
+    profile: p.profile || null,     // スタイル明示カラム (key と二重防御)
     virtual: p.virtual === true ? true : (p.virtual === false ? false : null),
     result: p.result || null,
     payout: p.payout || 0,
@@ -49,12 +96,16 @@ function toRow(userId, p) {
     matched_ai: p.matchedAi == null ? null : !!p.matchedAi,
     snapshot_at: p.snapshotAt || new Date().toISOString(),
     updated_at: new Date().toISOString(),
+    details,                        // Round 85: 検証材料 JSONB
   };
 }
 
-/* === Supabase 行を localStorage 形式に変換 (pull 用) === */
-function fromRow(r) {
+/* === Supabase 行を localStorage 形式に変換 (pull 用) ===
+   Round 85: details JSONB から検証フィールドを復元。 details が無い古い行とも互換
+   テスト用に export */
+export function fromRow(r) {
   if (!r?.key) return null;
+  const d = r.details || {}; // 旧スキーマ (details なし) でも空オブジェクトで処理
   return {
     key: r.key,
     date: r.date,
@@ -66,7 +117,7 @@ function fromRow(r) {
     decision: r.decision,
     combos: r.combos || [],
     totalStake: r.total_stake || 0,
-    profile: r.profile,
+    profile: r.profile,                        // スタイル
     virtual: r.virtual === true ? true : (r.virtual === false ? false : undefined),
     result: r.result || undefined,
     payout: r.payout || 0,
@@ -75,9 +126,44 @@ function fromRow(r) {
     manuallyRecorded: !!r.manually_recorded,
     memo: r.memo,
     reflection: r.reflection,
-    imageData: SYNC_IMAGE_DATA ? r.image_data : undefined, // 画像は受け取らない
+    imageData: SYNC_IMAGE_DATA ? r.image_data : undefined,
     matchedAi: r.matched_ai,
     snapshotAt: r.snapshot_at,
+    // Round 85: details JSONB から検証フィールド復元
+    confidence: d.confidence ?? undefined,
+    grade: d.grade ?? undefined,
+    reason: d.reason ?? undefined,
+    rationale: d.rationale ?? undefined,
+    warnings: d.warnings ?? undefined,
+    intendedMain: d.intendedMain ?? undefined,
+    reasons: d.reasons ?? undefined,
+    venueProfile: d.venueProfile ?? undefined,
+    timeSlot: d.timeSlot ?? undefined,
+    worstCaseRoi: d.worstCaseRoi ?? undefined,
+    worstCasePayout: d.worstCasePayout ?? undefined,
+    expectedPayout: d.expectedPayout ?? undefined,
+    verificationVersion: d.verificationVersion ?? undefined,
+    preCloseTarget: !!d.preCloseTarget,
+    isGoCandidate: !!d.isGoCandidate,
+    isSampleData: !!d.isSampleData,
+    finalized: !!d.finalized,
+    skipCorrect: d.skipCorrect ?? undefined,
+    skipMissed: d.skipMissed ?? undefined,
+    boatsSnapshot: d.boatsSnapshot ?? undefined,
+    weatherSnapshot: d.weatherSnapshot ?? undefined,
+    reasoning: d.reasoning ?? undefined,
+    inTrust: d.inTrust ?? undefined,
+    development: d.development ?? undefined,
+    accident: d.accident ?? undefined,
+    probConsistency: d.probConsistency ?? undefined,
+    probs: d.probs ?? undefined,
+    maxEV: d.maxEV ?? undefined,
+    checks: d.checks ?? undefined,
+    version: d.version ?? undefined,
+    predictionTime: d.predictionTime ?? undefined,
+    closingTime: d.closingTime ?? undefined,
+    predictionType: d.predictionType ?? undefined,
+    labelOverride: d.labelOverride ?? undefined,
   };
 }
 
