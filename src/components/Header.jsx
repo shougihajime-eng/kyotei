@@ -1,45 +1,48 @@
-/* ヘッダ + タブナビ + エア/リアル損益 + 更新ボタン + 現在のスタイル大表示 + StyleSelector */
+/* Round 97: Header premium refinement
+   ・ロゴエリアの整理 (アイコン + ブランド + 対象日)
+   ・損益エリアを 2 行コンパクト + 大きい数字
+   ・ログイン/更新を整理
+   ・スタイルセレクタを refined card 風 + スムーズ animation
+   ・タブナビを sophisticated underline 表示 */
 import { memo } from "react";
 import { yen } from "../lib/format.js";
-import StyleSelector from "./StyleSelector.jsx";
 import { cloudEnabled } from "../lib/supabaseClient.js";
 
 const TABS = [
-  { k: "home", label: "🏠 ホーム" },
-  { k: "list", label: "📋 一覧" },
-  { k: "verify", label: "📅 検証" },
-  { k: "stats", label: "📈 グラフ" },
-  { k: "analysis", label: "🔍 分析" },
-  { k: "settings", label: "💼 設定" },
+  { k: "home",     label: "ホーム",  icon: "🏠" },
+  { k: "list",     label: "一覧",    icon: "📋" },
+  { k: "verify",   label: "検証",    icon: "📅" },
+  { k: "stats",    label: "グラフ",  icon: "📈" },
+  { k: "analysis", label: "分析",    icon: "🔍" },
+  { k: "settings", label: "設定",    icon: "⚙️" },
 ];
 
 const PROFILE_INFO = {
-  steady:     { label: "🛡️ 安定型", color: "#3b82f6", bg: "rgba(59,130,246,0.18)" },
-  balanced:   { label: "⚖️ バランス型", color: "#fbbf24", bg: "rgba(251,191,36,0.18)" },
-  aggressive: { label: "🎯 攻め型", color: "#ef4444", bg: "rgba(239,68,68,0.18)" },
+  steady:     { label: "安定型",     short: "🛡️", desc: "的中率特化",  color: "#3B82F6", bg: "rgba(59, 130, 246, 0.10)", border: "rgba(59, 130, 246, 0.40)" },
+  balanced:   { label: "バランス型", short: "⚖️", desc: "実戦最適",     color: "#F59E0B", bg: "rgba(245, 158, 11, 0.10)", border: "rgba(245, 158, 11, 0.40)" },
+  aggressive: { label: "攻め型",     short: "🎯", desc: "高配当狙い",   color: "#EF4444", bg: "rgba(239, 68, 68, 0.10)",  border: "rgba(239, 68, 68, 0.40)" },
 };
 
 export default memo(HeaderImpl);
 function HeaderImpl({ tab, setTab, today, settings, setSettings, switchProfile, switchVirtualMode, refreshing, onRefresh, lastRefreshAt, nextRefreshAt, savedCount, authUser, onOpenLogin, onLogout, syncStatus, effectiveRaceDate, suggestedStyle }) {
   const air = today?.air || { stake: 0, pnl: 0 };
   const real = today?.real || { stake: 0, pnl: 0 };
-  const realLabel = real.stake === 0 ? "未入力" : (real.pnl >= 0 ? "+" + yen(real.pnl) : "−" + yen(Math.abs(real.pnl)));
+  const realLabel = real.stake === 0 ? "—" : (real.pnl >= 0 ? "+" + yen(real.pnl) : "−" + yen(Math.abs(real.pnl)));
   const airLabel = air.stake === 0 ? "—" : (air.pnl >= 0 ? "+" + yen(air.pnl) : "−" + yen(Math.abs(air.pnl)));
 
   const profileInfo = PROFILE_INFO[settings.riskProfile] || PROFILE_INFO.balanced;
   const isVirtual = !!settings.virtualMode;
+  const cloudOk = cloudEnabled();
 
   function handleRefresh(e) {
     e.preventDefault();
     if (refreshing) return;
     onRefresh && onRefresh();
   }
-
   function handleStyle(p) {
     if (switchProfile) switchProfile(p);
     else if (setSettings) setSettings({ ...settings, riskProfile: p });
   }
-
   function handleVirtualToggle(e) {
     e?.preventDefault?.();
     e?.stopPropagation?.();
@@ -48,173 +51,229 @@ function HeaderImpl({ tab, setTab, today, settings, setSettings, switchProfile, 
   }
 
   return (
-    <header className="brand-header sticky top-0 z-30" style={{ minHeight: 130 }}>
-      <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between flex-wrap gap-3">
-        {/* ロゴ + 対象日 (Round 59) */}
-        <div style={{ minWidth: 130 }} className="flex items-center gap-2">
+    <header className="brand-header sticky top-0 z-30">
+      {/* ===== 第一行: ロゴ + 損益サマリ + アクション ===== */}
+      <div className="max-w-5xl mx-auto px-4 py-3 flex items-center gap-3 flex-wrap">
+        {/* ロゴエリア */}
+        <div className="flex items-center gap-2.5" style={{ minWidth: 0, flex: "0 0 auto" }}>
           <div style={{
-            width: 36, height: 36, borderRadius: 10,
-            background: "linear-gradient(135deg, #38bdf8 0%, #2563eb 100%)",
+            width: 38, height: 38, borderRadius: 11,
+            background: "linear-gradient(135deg, #22D3EE 0%, #2563EB 100%)",
             display: "flex", alignItems: "center", justifyContent: "center",
-            boxShadow: "0 4px 12px rgba(56,189,248,0.35)",
-            fontSize: 18,
+            boxShadow: "0 4px 14px rgba(34, 211, 238, 0.32), inset 0 1px 0 rgba(255,255,255,0.20)",
+            fontSize: 19,
           }}>🚤</div>
-          <div>
-            <div className="brand-logo" style={{ fontSize: 17, lineHeight: 1.05 }}>競艇 AI</div>
+          <div style={{ minWidth: 0 }}>
+            <div className="brand-logo" style={{ fontSize: 18, lineHeight: 1.0, letterSpacing: "-0.01em" }}>競艇 AI</div>
             {effectiveRaceDate ? (
-              <div className="text-xs" style={{ color: "var(--brand)", letterSpacing: "0.02em", fontWeight: 700 }}>📅 {effectiveRaceDate}</div>
+              <div style={{ fontSize: 10.5, color: "var(--brand-text)", letterSpacing: "0.04em", fontWeight: 600, marginTop: 2 }}>
+                📅 {effectiveRaceDate}
+              </div>
             ) : (
-              <div className="text-xs" style={{ color: "var(--text-mute)", letterSpacing: "0.04em" }}>EXPECTED VALUE ASSISTANT</div>
+              <div style={{ fontSize: 9, color: "var(--text-quaternary)", letterSpacing: "0.10em", marginTop: 2, fontWeight: 600 }}>
+                EV ASSISTANT
+              </div>
             )}
           </div>
         </div>
 
-        {/* エア / リアル モード切替 (タップで即時切替) + 損益 */}
+        {/* スペーサー */}
+        <div style={{ flex: "1 1 0", minWidth: 16 }} />
+
+        {/* 損益サマリ + モード切替 + ログイン + 更新 (右端固定) */}
         {settings.onboardingDone && (
-          <div className="flex items-center gap-2">
-            {/* モード切替トグル (大きめ) */}
+          <div className="flex items-center gap-2 flex-wrap" style={{ flex: "0 0 auto" }}>
+            {/* モード切替 (エア/リアル) */}
             <button
               type="button"
               onClick={handleVirtualToggle}
-              aria-label={isVirtual ? "エア舟券モード (タップでリアルに切替)" : "リアル舟券モード (タップでエアに切替)"}
-              title={isVirtual ? "🧪 エア中 — タップでリアルに切替" : "💰 リアル中 — タップでエアに切替"}
+              aria-label={isVirtual ? "エア舟券モード" : "リアル舟券モード"}
+              title={isVirtual ? "🧪 エア中 — タップで リアルに" : "💰 リアル中 — タップで エアに"}
               style={{
-                minHeight: 44, minWidth: 80, padding: "6px 10px",
-                borderRadius: 12, border: "2px solid " + (isVirtual ? "#22d3ee" : "#fbbf24"),
-                background: isVirtual ? "rgba(34,211,238,0.15)" : "rgba(251,191,36,0.16)",
-                color: isVirtual ? "#67e8f9" : "#fcd34d",
-                fontWeight: 800, fontSize: 12, cursor: "pointer",
-                display: "flex", flexDirection: "column", alignItems: "center", gap: 2,
-                transition: "all 0.12s ease",
+                minHeight: 46, padding: "5px 12px",
+                borderRadius: 12,
+                border: `1.5px solid ${isVirtual ? "rgba(34, 211, 238, 0.55)" : "rgba(245, 158, 11, 0.55)"}`,
+                background: isVirtual ? "rgba(34, 211, 238, 0.10)" : "rgba(245, 158, 11, 0.10)",
+                color: isVirtual ? "#67E8F9" : "#FCD34D",
+                fontWeight: 700, fontSize: 11.5, cursor: "pointer",
+                display: "flex", flexDirection: "column", alignItems: "center", gap: 1,
+                transition: "all 0.18s ease",
                 lineHeight: 1.1,
+                letterSpacing: "0.01em",
+                boxShadow: "inset 0 1px 0 rgba(255,255,255,0.04)",
               }}>
-              <span>{isVirtual ? "🧪 エア" : "💰 リアル"}</span>
-              <span style={{ fontSize: 9, opacity: 0.75, fontWeight: 600 }}>タップで切替</span>
+              <span style={{ fontSize: 12 }}>{isVirtual ? "🧪 エア" : "💰 リアル"}</span>
+              <b className={"num " + ((isVirtual ? air.pnl : real.pnl) >= 0 ? "text-pos" : "text-neg")} style={{ fontSize: 13 }}>
+                {isVirtual ? airLabel : realLabel}
+              </b>
             </button>
-            <div className="flex flex-col items-end gap-1 text-xs">
-              <div className="flex gap-2 items-center">
-                <span className="pill badge-brand" style={{ fontSize: 10 }}>エア</span>
-                <b className={"num " + (air.pnl >= 0 ? "text-pos" : "text-neg")} style={{ fontSize: 13 }}>{airLabel}</b>
-              </div>
-              <div className="flex gap-2 items-center">
-                <span className="pill badge-warn" style={{ fontSize: 10 }}>リアル</span>
-                <b className={"num " + (real.stake === 0 ? "opacity-60" : (real.pnl >= 0 ? "text-pos" : "text-neg"))} style={{ fontSize: 13 }}>{realLabel}</b>
-              </div>
-            </div>
-          </div>
-        )}
 
-        {/* 更新ボタン (右上固定 / 大きめ) */}
-        {settings.onboardingDone && (
-          <div className="flex items-center gap-2">
-            {/* Round 45: ログインボタン / ユーザー表示 */}
+            {/* ログインボタン or ユーザー表示 */}
             {authUser ? (
               <button onClick={onLogout}
-                title={`${authUser.username} (タップでログアウト)`}
+                title={`${authUser.username || authUser.email} (タップでログアウト)`}
                 style={{
-                  minHeight: 44, padding: "6px 10px", borderRadius: 10,
-                  border: "1px solid rgba(16,185,129,0.5)",
-                  background: "rgba(16,185,129,0.15)",
-                  color: "#a7f3d0", fontSize: 12, cursor: "pointer",
+                  minHeight: 46, padding: "5px 12px", borderRadius: 12,
+                  border: "1.5px solid rgba(16, 185, 129, 0.45)",
+                  background: "rgba(16, 185, 129, 0.10)",
+                  color: "#A7F3D0", fontSize: 11.5, cursor: "pointer",
                   fontWeight: 700, display: "flex", flexDirection: "column", alignItems: "center", lineHeight: 1.1,
+                  gap: 1,
+                  boxShadow: "inset 0 1px 0 rgba(255,255,255,0.04)",
                 }}>
-                <span>👤 {authUser.username}</span>
-                <span style={{ fontSize: 9, opacity: 0.85 }}>
-                  {syncStatus?.state === "syncing" ? "🔄 同期中…"
+                <span>👤 {(authUser.username || authUser.email || "user").slice(0, 12)}</span>
+                <span style={{ fontSize: 9.5, opacity: 0.85, fontWeight: 600 }}>
+                  {syncStatus?.state === "syncing" ? "🔄 同期中"
                     : syncStatus?.state === "error" ? "⚠️ 同期失敗"
                     : syncStatus?.state === "synced" ? "✅ 同期済"
                     : "ログイン中"}
                 </span>
               </button>
-            ) : (() => {
-              const cloudOk = cloudEnabled();
-              return (
-                <button onClick={onOpenLogin}
-                  title={cloudOk ? "Supabase 設定済 — タップでログイン/新規登録" : "Supabase 未設定 — タップで設定手順を表示"}
-                  style={{
-                    minHeight: 44, padding: "6px 10px", borderRadius: 10,
-                    border: cloudOk ? "1px solid rgba(56,189,248,0.5)" : "1px solid rgba(251,191,36,0.5)",
-                    background: cloudOk ? "rgba(56,189,248,0.10)" : "rgba(251,191,36,0.10)",
-                    color: cloudOk ? "#bae6fd" : "#fde68a",
-                    fontSize: 12, cursor: "pointer",
-                    fontWeight: 700, display: "flex", flexDirection: "column", alignItems: "center", lineHeight: 1.1,
-                  }}>
-                  <span>{cloudOk ? "🔑 ログイン" : "⚠️ クラウド未設定"}</span>
-                  <span style={{ fontSize: 9, opacity: 0.85 }}>
-                    {cloudOk ? "任意 (端末同期)" : "ローカル保存のみ"}
-                  </span>
-                </button>
-              );
-            })()}
+            ) : (
+              <button onClick={onOpenLogin}
+                title={cloudOk ? "Supabase 設定済 — タップでログイン" : "Supabase 未設定 — タップで設定手順を表示"}
+                style={{
+                  minHeight: 46, padding: "5px 12px", borderRadius: 12,
+                  border: cloudOk ? "1.5px solid rgba(34, 211, 238, 0.45)" : "1.5px solid rgba(245, 158, 11, 0.45)",
+                  background: cloudOk ? "rgba(34, 211, 238, 0.08)" : "rgba(245, 158, 11, 0.08)",
+                  color: cloudOk ? "#67E8F9" : "#FCD34D", fontSize: 11.5, cursor: "pointer",
+                  fontWeight: 700, display: "flex", flexDirection: "column", alignItems: "center", lineHeight: 1.1,
+                  gap: 1,
+                  boxShadow: "inset 0 1px 0 rgba(255,255,255,0.04)",
+                }}>
+                <span>{cloudOk ? "🔑 ログイン" : "⚠️ 未設定"}</span>
+                <span style={{ fontSize: 9.5, opacity: 0.85, fontWeight: 600 }}>
+                  {cloudOk ? "端末同期" : "ローカルのみ"}
+                </span>
+              </button>
+            )}
+
+            {/* 更新ボタン (cyan primary) */}
             <button onClick={handleRefresh} disabled={refreshing} className="btn btn-primary"
-              style={{ minHeight: 44, minWidth: 100, fontSize: 14 }}>
+              style={{ minHeight: 46, minWidth: 92, padding: "6px 14px", fontSize: 14 }}>
               {refreshing ? "🔄 更新中…" : "🔄 更新"}
             </button>
           </div>
         )}
       </div>
 
-      {/* 現在のスタイル + 切替ボタン (大きく表示) */}
+      {/* ===== 第二行: スタイルセレクタ (大きく一目で) ===== */}
       {settings.onboardingDone && (
-        <div className="max-w-5xl mx-auto px-4 pb-2">
-          <div className="flex items-center justify-center gap-2 flex-wrap mb-2">
-            <span className="text-xs opacity-70">現在の予想スタイル:</span>
-            <span style={{
-              padding: "5px 14px", borderRadius: 999,
-              background: profileInfo.bg, color: profileInfo.color,
-              fontWeight: 800, fontSize: 14,
-              border: `2px solid ${profileInfo.color}`,
-              transition: "all 0.15s",
-            }}>
-              {profileInfo.label}
-            </span>
-          </div>
+        <div className="max-w-5xl mx-auto px-4 pb-2.5">
           <BigStyleButtons current={settings.riskProfile} onChange={handleStyle} suggested={suggestedStyle} />
         </div>
       )}
 
-      {/* タブナビ */}
+      {/* ===== 第三行: タブナビ (洗練された pill style) ===== */}
       <div className="max-w-5xl mx-auto px-4 pb-2">
-        <div className="flex gap-1 overflow-x-auto scrollbar">
-          {TABS.map((t) => (
-            <button key={t.k} className={"tab-btn whitespace-nowrap " + (tab === t.k ? "active" : "")}
-              onClick={() => setTab(t.k)}>{t.label}</button>
-          ))}
+        <div className="flex gap-1 overflow-x-auto scrollbar" style={{ scrollSnapType: "x proximity" }}>
+          {TABS.map((t) => {
+            const active = tab === t.k;
+            return (
+              <button
+                key={t.k}
+                onClick={() => setTab(t.k)}
+                className="whitespace-nowrap"
+                style={{
+                  flex: "0 0 auto",
+                  scrollSnapAlign: "start",
+                  padding: "9px 14px",
+                  borderRadius: 10,
+                  background: active ? "linear-gradient(180deg, var(--brand) 0%, var(--brand-hover) 100%)" : "transparent",
+                  color: active ? "#021824" : "var(--text-tertiary)",
+                  fontSize: 13,
+                  fontWeight: active ? 700 : 600,
+                  border: "1px solid " + (active ? "transparent" : "transparent"),
+                  cursor: "pointer",
+                  transition: "all 0.18s ease",
+                  letterSpacing: "0.01em",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  boxShadow: active ? "0 1px 0 rgba(255,255,255,0.20) inset, 0 4px 14px rgba(34, 211, 238, 0.25)" : "none",
+                  minHeight: 40,
+                }}
+                onMouseEnter={(e) => {
+                  if (!active) e.currentTarget.style.background = "rgba(255,255,255,0.04)";
+                }}
+                onMouseLeave={(e) => {
+                  if (!active) e.currentTarget.style.background = "transparent";
+                }}
+              >
+                <span style={{ fontSize: 14 }}>{t.icon}</span>
+                <span>{t.label}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
     </header>
   );
 }
 
-/* スタイル切替ボタン (大きめ + 即時反応) */
+/* スタイルセレクタ — 3 列カード形式、 active には光と若干スケール */
 function BigStyleButtons({ current, onChange, suggested }) {
-  const styles = [
-    { k: "steady",     label: "🛡️ 安定", short: "本命党" },
-    { k: "balanced",   label: "⚖️ バランス", short: "中堅党" },
-    { k: "aggressive", label: "🎯 攻め", short: "穴党" },
+  const items = [
+    { k: "steady",     label: "安定型",   short: "🛡️", desc: "的中率特化" },
+    { k: "balanced",   label: "バランス", short: "⚖️", desc: "実戦最適" },
+    { k: "aggressive", label: "攻め型",   short: "🎯", desc: "高配当狙い" },
   ];
   return (
     <div className="grid grid-cols-3 gap-2">
-      {styles.map((s) => {
+      {items.map((s) => {
         const info = PROFILE_INFO[s.k];
         const active = current === s.k;
+        const isSuggested = suggested === s.k && !active;
         return (
-          <button key={s.k} onClick={() => onChange(s.k)}
+          <button
+            key={s.k}
+            onClick={() => onChange(s.k)}
             style={{
-              padding: "10px 8px", borderRadius: 10,
-              border: active ? `2px solid ${info.color}` : "2px solid transparent",
-              background: active ? info.bg : "rgba(15,24,48,0.6)",
-              color: active ? info.color : "#9fb0c9",
-              fontWeight: active ? 800 : 600,
-              fontSize: 13, cursor: "pointer",
-              transition: "all 0.12s ease-out",
-              minHeight: 44,
-              boxShadow: active ? `0 0 0 1px ${info.color}40, 0 2px 8px ${info.color}30` : "none",
-              transform: active ? "scale(1.02)" : "scale(1.0)",
+              padding: "10px 6px",
+              borderRadius: 12,
+              border: active ? `1.5px solid ${info.color}` : "1.5px solid var(--border-soft)",
+              background: active
+                ? `linear-gradient(180deg, ${info.bg} 0%, rgba(255,255,255,0.02) 100%)`
+                : "rgba(255,255,255,0.02)",
+              color: active ? info.color : "var(--text-secondary)",
+              fontWeight: active ? 700 : 600,
+              fontSize: 13,
+              cursor: "pointer",
+              transition: "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
+              minHeight: 56,
+              boxShadow: active
+                ? `0 0 0 1px ${info.color}40, 0 4px 16px ${info.color}25, inset 0 1px 0 rgba(255,255,255,0.06)`
+                : "inset 0 1px 0 rgba(255,255,255,0.02)",
+              transform: active ? "translateY(-1px)" : "translateY(0)",
+              display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3,
+              position: "relative",
+              overflow: "hidden",
             }}>
-            {active && <span style={{ marginRight: 4 }}>✓</span>}
-            {s.label}
-            {suggested === s.k && !active && <span style={{ marginLeft: 4, fontSize: 11 }}>💡</span>}
+            {/* おすすめバッジ */}
+            {isSuggested && (
+              <div style={{
+                position: "absolute", top: 4, right: 4,
+                padding: "1px 5px", borderRadius: 999,
+                background: "rgba(34, 211, 238, 0.20)",
+                color: "#67E8F9",
+                fontSize: 8, fontWeight: 700, letterSpacing: "0.05em",
+              }}>
+                推奨
+              </div>
+            )}
+            <div style={{ display: "flex", alignItems: "baseline", gap: 5 }}>
+              <span style={{ fontSize: 16, lineHeight: 1 }}>{s.short}</span>
+              <span style={{ fontSize: 13, lineHeight: 1.1, letterSpacing: "0.01em" }}>{s.label}</span>
+            </div>
+            <div style={{
+              fontSize: 9.5,
+              opacity: active ? 0.95 : 0.65,
+              letterSpacing: "0.04em",
+              lineHeight: 1.2,
+              fontWeight: 500,
+            }}>
+              {s.desc}
+            </div>
           </button>
         );
       })}
