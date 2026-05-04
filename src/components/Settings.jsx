@@ -38,6 +38,47 @@ export default function Settings({ settings, setSettings, switchVirtualMode, swi
 
   return (
     <div className="max-w-2xl mx-auto px-4 mt-4 space-y-4">
+      {/* Round 95: 保存方式表示 (Supabase 主管理化) */}
+      <section className="card p-4" style={{
+        border: authUser ? "2px solid rgba(16,185,129,0.4)" : "2px solid rgba(251,191,36,0.4)",
+        background: authUser ? "rgba(16,185,129,0.04)" : "rgba(251,191,36,0.04)",
+      }}>
+        <h2 className="text-base font-bold mb-2" style={{ color: authUser ? "#a7f3d0" : "#fde68a" }}>
+          {authUser ? "☁️ 現在: Supabase 主管理 (推奨)" : "💾 現在: ローカル管理のみ"}
+        </h2>
+        {authUser ? (
+          <div className="text-xs opacity-90" style={{ lineHeight: 1.6 }}>
+            ・データは <b>Supabase クラウド</b> に保存され、 別端末からも同じ履歴を参照できます<br/>
+            ・1 秒ごとに自動同期 (debounced)<br/>
+            ・ローカル localStorage は一時キャッシュとして併用<br/>
+            ・現在のログイン: <b>{authUser.email || authUser.username}</b>
+          </div>
+        ) : (
+          <div className="text-xs" style={{ lineHeight: 1.6 }}>
+            <div style={{ color: "#fde68a", marginBottom: 8 }}>
+              ⚠️ 現在は <b>このブラウザの localStorage のみ</b> に保存されています。
+              <br/>
+              ・別端末では履歴が見られません<br/>
+              ・ブラウザクリアで全データ消失します
+            </div>
+            <button
+              onClick={onOpenLogin}
+              style={{
+                width: "100%", minHeight: 44, padding: "8px 16px",
+                borderRadius: 10, border: "1.5px solid rgba(56,189,248,0.6)",
+                background: "rgba(56,189,248,0.15)",
+                color: "#bae6fd",
+                fontSize: 13, fontWeight: 700, cursor: "pointer",
+              }}>
+              🔑 ログイン or 新規登録 → クラウド管理に切替
+            </button>
+            <div className="opacity-70 mt-2" style={{ fontSize: 10 }}>
+              ※ Supabase 環境変数が未設定の場合は LoginModal で詳細手順を案内します
+            </div>
+          </div>
+        )}
+      </section>
+
       <section className="card p-4">
         <h2 className="text-lg font-bold mb-3">💼 資金 (表示・参考)</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

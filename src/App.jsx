@@ -198,7 +198,7 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authUser]);
 
-  // 予測変化時の light sync (debounced 5 秒)
+  // Round 95: 予測変化時の light sync (5s → 1s に短縮 — Supabase 主管理化)
   const lightSyncTimerRef = useRef(null);
   useEffect(() => {
     if (!authUser) return;
@@ -212,7 +212,7 @@ export default function App() {
           setSyncStatus({ state: "error", lastAt: Date.now(), error: res.error, stats: null });
         }
       });
-    }, 5000);
+    }, 1000);   // Round 95: 5000 → 1000ms (即時同期に近づける)
     return () => clearTimeout(lightSyncTimerRef.current);
   }, [predictions, authUser]);
   /* スタイル切替の差分通知用 ref。switchProfile / useEffect は recommendations 定義後に作る (TDZ 回避) */
