@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { yen } from "../lib/format.js";
 import { getStorageStats, estimateStorageSize, getLastSaveStatus } from "../lib/storage.js";
 
@@ -6,6 +6,9 @@ import { getStorageStats, estimateStorageSize, getLastSaveStatus } from "../lib/
  * 設定 — 資金管理 + リスク感覚 + 仮想モード切替 + リセット + 保存ステータス
  */
 export default function Settings({ settings, setSettings, switchVirtualMode, switchProfile, onReset, predictions, visiblePredictions, versionInfo, onPurgeLegacy, authUser, onOpenLogin, onLogout, onManualSync, syncStatus }) {
+  // Round 94: フレッシュスタート オプション
+  const [includeCloud, setIncludeCloud] = useState(false);
+  const [keepSettings, setKeepSettings] = useState(true);
   const stats = useMemo(() => getStorageStats(predictions || {}), [predictions]);
   const sz = useMemo(() => estimateStorageSize(), [predictions]);
   const lastSave = getLastSaveStatus();
@@ -277,12 +280,81 @@ export default function Settings({ settings, setSettings, switchVirtualMode, swi
         </div>
       </section>
 
-      <section className="card p-4">
-        <h3 className="text-sm font-bold mb-2">リセット</h3>
-        <div className="text-xs opacity-70 mb-2">壊れた状態をクリアして、初期化します。</div>
-        <button className="btn btn-ghost text-xs" onClick={onReset}>
-          🗑 全データを消去
+      {/* Round 94: フレッシュスタート (大きく目立つ位置に) */}
+      <section className="card p-4" style={{
+        border: "2px solid rgba(239,68,68,0.4)",
+        background: "rgba(239,68,68,0.04)",
+      }}>
+        <h3 className="text-base font-bold mb-2" style={{ color: "#fca5a5" }}>
+          🗑 フレッシュスタート (全データリセット)
+        </h3>
+        <div className="text-xs opacity-85 mb-3" style={{ lineHeight: 1.6 }}>
+          以下を完全消去します:
+          <ul className="mt-1" style={{ paddingLeft: 18, listStyle: "disc" }}>
+            <li>全 AI 予想 / 買い目 / 結果記録</li>
+            <li>公開検証ログ (kyoteiPublicLog)</li>
+            <li>学習履歴 (kyoteiLearningLog)</li>
+            <li>累計成績 / 連敗 / ROI</li>
+          </ul>
+        </div>
+
+        {/* オプション */}
+        <div className="space-y-2 mb-3 p-3 rounded" style={{
+          background: "rgba(0,0,0,0.20)",
+          border: "1px solid rgba(255,255,255,0.06)",
+        }}>
+          <label className="flex items-start gap-2 cursor-pointer text-xs">
+            <input
+              type="checkbox"
+              checked={keepSettings}
+              onChange={(e) => setKeepSettings(e.target.checked)}
+              style={{ marginTop: 3, minWidth: 16, minHeight: 16 }}
+            />
+            <span style={{ lineHeight: 1.5 }}>
+              設定 (予算 / リスク感覚 / モード) を保持する
+              <br />
+              <span className="opacity-70">OFF にすると初期設定にも戻ります</span>
+            </span>
+          </label>
+          <label className="flex items-start gap-2 cursor-pointer text-xs" style={{
+            opacity: authUser ? 1 : 0.5,
+          }}>
+            <input
+              type="checkbox"
+              checked={includeCloud && !!authUser}
+              disabled={!authUser}
+              onChange={(e) => setIncludeCloud(e.target.checked)}
+              style={{ marginTop: 3, minWidth: 16, minHeight: 16 }}
+            />
+            <span style={{ lineHeight: 1.5 }}>
+              ☁️ Supabase クラウドデータも削除
+              <br />
+              <span className="opacity-70">
+                {authUser
+                  ? "ログイン中のため有効 (取り消し不可)"
+                  : "未ログインのため無効 (ローカルのみ削除されます)"}
+              </span>
+            </span>
+          </label>
+        </div>
+
+        <button
+          onClick={() => onReset && onReset({ preserveSettings: keepSettings, deleteCloud: includeCloud && !!authUser })}
+          style={{
+            width: "100%", minHeight: 50, padding: "10px 16px",
+            borderRadius: 10, border: "2px solid rgba(239,68,68,0.6)",
+            background: "rgba(239,68,68,0.18)",
+            color: "#fecaca",
+            fontSize: 14, fontWeight: 800, cursor: "pointer",
+            transition: "all 0.12s",
+          }}>
+          🗑 フレッシュスタートを実行
         </button>
+        <div className="text-xs opacity-70 mt-2" style={{ lineHeight: 1.5 }}>
+          ※ 確認ダイアログで再度 「OK」 が必要です。 取り消しできません。
+          <br />
+          ※ 本日からの新規 AI 予想 (verificationVersion=v3) で蓄積を再開します。
+        </div>
       </section>
     </div>
   );
