@@ -115,121 +115,200 @@ function GoModePanel({ goMode }) {
     excludedCount = 0,
     excludedReasons = [],
     threshold = 60,
-    // Round 67: 直前判定型情報
     preCloseMode = false,
     preCloseRaceCount = 0,
     preCloseWindow = null,
     preCloseThresholds = null,
   } = goMode || {};
   const isSuppressed = !!suppressedReason || confidenceLabel === "見送り推奨";
-  const labelColor = confidenceLabel === "Go" ? "#34d399"
-                   : confidenceLabel === "様子見" ? "#fde68a"
-                   : "#fca5a5";
-  const labelBg = confidenceLabel === "Go" ? "rgba(16,185,129,0.18)"
-                : confidenceLabel === "様子見" ? "rgba(251,191,36,0.18)"
-                : "rgba(239,68,68,0.18)";
+  // Round 99: ステータス accent カラー (洗練)
+  const accent = confidenceLabel === "Go" ? "#10B981"
+              : confidenceLabel === "様子見" ? "#F59E0B"
+              : "#EF4444";
+  const accentText = confidenceLabel === "Go" ? "#34D399"
+                  : confidenceLabel === "様子見" ? "#FCD34D"
+                  : "#FCA5A5";
 
-  // 除外理由のツールチップ用テキスト (上位 5 件)
   const excludedTooltip = excludedReasons.length > 0
     ? excludedReasons.slice(0, 5).map(e => `${e.venue || ""} ${e.raceNo || ""}R: ${e.reason}`).join("\n")
     : "除外なし";
 
   return (
-    <div className="mb-3 p-3 rounded" style={{ background: "rgba(0,0,0,0.18)", border: `1px solid ${labelColor}40` }}>
-      {/* 信頼度バー (Go/様子見/見送り推奨 + 除外バッジ) */}
-      <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
-        <div className="flex items-center gap-2">
-          <span className="text-xs opacity-80">本日の信頼度:</span>
-          <span className="num font-bold" style={{ fontSize: 22, color: labelColor }} aria-label={`信頼度 ${dayConfidence} / 100`}>
+    <div style={{
+      marginBottom: 12,
+      padding: 14,
+      borderRadius: 14,
+      background: `linear-gradient(180deg, ${accent}10 0%, rgba(0,0,0,0.10) 100%)`,
+      border: `1px solid ${accent}40`,
+    }}>
+      {/* === 信頼度ヒーロー: 大きい数字 + ラベルピル === */}
+      <div className="flex items-center justify-between flex-wrap gap-3 mb-2">
+        <div className="flex items-baseline gap-2.5">
+          <span style={{ fontSize: 10.5, color: "var(--text-quaternary)", letterSpacing: "0.10em", fontWeight: 600, textTransform: "uppercase" }}>
+            本日の信頼度
+          </span>
+          <span className="num kpi-num" style={{ fontSize: 30, color: accentText, lineHeight: 1 }} aria-label={`信頼度 ${dayConfidence} / 100`}>
             {dayConfidence}
           </span>
-          <span className="opacity-60">/</span>
-          <span className="opacity-60 text-xs">100 (閾値 {threshold})</span>
+          <span style={{ fontSize: 11, color: "var(--text-quaternary)" }}>
+            / 100
+          </span>
         </div>
-        <span className="pill" style={{ background: labelBg, color: labelColor, border: `1px solid ${labelColor}`, fontSize: 11, fontWeight: 800 }}>
+        <span style={{
+          padding: "5px 12px",
+          borderRadius: 999,
+          background: `${accent}18`,
+          border: `1px solid ${accent}50`,
+          color: accentText,
+          fontSize: 11,
+          fontWeight: 700,
+          letterSpacing: "0.02em",
+        }}>
           {confidenceLabel === "Go" ? "🎯 直前候補あり" : confidenceLabel === "様子見" ? "⚠️ 様子見" : "📊 見送り推奨"}
         </span>
       </div>
-      <div className="text-xs opacity-85 mb-2" style={{ lineHeight: 1.5 }}>{confidenceReason}</div>
+      <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 10, lineHeight: 1.55 }}>
+        {confidenceReason}
+      </div>
 
-      {/* Round 67: 直前判定型バッジ */}
+      {/* === 直前判定型バッジ (cyan tint) === */}
       {preCloseMode && (
-        <div className="text-xs mb-2 p-2 rounded" style={{
-          background: "rgba(56,189,248,0.10)",
-          border: "1px solid rgba(56,189,248,0.4)",
-          color: "#bae6fd",
+        <div style={{
+          fontSize: 11,
+          marginBottom: 8,
+          padding: "8px 10px",
+          borderRadius: 8,
+          background: "rgba(34, 211, 238, 0.08)",
+          border: "1px solid rgba(34, 211, 238, 0.30)",
+          color: "var(--brand-text)",
           lineHeight: 1.55,
         }}>
-          ⏰ <b>直前判定型</b> — 締切 {preCloseWindow?.min ?? 3}〜{preCloseWindow?.max ?? 25} 分前のレースを評価
-          {preCloseRaceCount > 0
-            ? <span className="opacity-80 ml-1">/ 対象 {preCloseRaceCount} レース</span>
-            : <span className="opacity-80 ml-1">/ 対象レースなし (時間外)</span>
-          }
-          {preCloseThresholds && (
-            <span className="opacity-70 ml-1">/ 判定基準 EV≥{Math.round(preCloseThresholds.ev * 100)}% + 自信≥{preCloseThresholds.confidence}</span>
-          )}
+          <b>⏰ 直前判定型</b> — 締切 {preCloseWindow?.min ?? 3}〜{preCloseWindow?.max ?? 25} 分前のレースを評価
+          <div style={{ opacity: 0.85, marginTop: 2 }}>
+            {preCloseRaceCount > 0
+              ? `対象 ${preCloseRaceCount} レース`
+              : "対象レースなし (時間外)"}
+            {preCloseThresholds && ` / 判定基準 EV≥${Math.round(preCloseThresholds.ev * 100)}% + 自信≥${preCloseThresholds.confidence}`}
+          </div>
         </div>
       )}
 
-      {/* 除外バッジ (オッズ未取得 / データ欠損 等) */}
+      {/* === 除外バッジ (subtle warn tint) === */}
       {excludedCount > 0 && (
-        <div className="text-xs mb-3" style={{ color: "#fde68a" }} title={excludedTooltip}>
+        <div title={excludedTooltip} style={{
+          fontSize: 11,
+          color: "var(--c-warning-text)",
+          marginBottom: 10,
+          opacity: 0.85,
+          lineHeight: 1.5,
+        }}>
           ⚠️ <b>{excludedCount} 件除外</b>
-          <span className="opacity-80 ml-1">(オッズ未取得 / データ欠損 などの理由 — ホバーで詳細)</span>
+          <span style={{ opacity: 0.8, marginLeft: 4 }}>
+            (オッズ未取得 / データ欠損 — ホバーで詳細)
+          </span>
         </div>
       )}
 
-      {/* 抑制理由 (閾値未満) */}
+      {/* === 抑制理由 (赤背景) === */}
       {suppressedReason && (
-        <div className="text-xs mb-3 p-2 rounded" style={{ background: "rgba(239,68,68,0.10)", border: "1px solid rgba(239,68,68,0.3)", color: "#fca5a5", lineHeight: 1.55 }}>
-          🛑 <b>購買 UI を抑制中</b><br/>
-          {suppressedReason}
+        <div style={{
+          fontSize: 11.5,
+          marginBottom: 10,
+          padding: "10px 12px",
+          borderRadius: 10,
+          background: "rgba(239, 68, 68, 0.08)",
+          border: "1px solid rgba(239, 68, 68, 0.30)",
+          color: "var(--c-danger-text)",
+          lineHeight: 1.55,
+        }}>
+          <b>🛑 購買 UI を抑制中</b>
+          <div style={{ marginTop: 4, fontWeight: 500 }}>{suppressedReason}</div>
         </div>
       )}
 
-      {/* Top 3 picks (抑制時は非表示) */}
+      {/* === Top picks (premium card) === */}
       {goPicks.length > 0 && !isSuppressed ? (
         <div>
-          <div className="text-xs font-bold mb-2" style={{ color: "#a7f3d0" }}>🎯 直前判定で条件を満たした候補 ({goPicks.length} 件 / 勝利保証なし)</div>
-          <div className="grid grid-cols-1 gap-2">
+          <div style={{
+            fontSize: 11,
+            fontWeight: 700,
+            color: "var(--c-success-text)",
+            marginBottom: 8,
+            letterSpacing: "0.02em",
+          }}>
+            🎯 直前判定で条件を満たした候補 ({goPicks.length} 件 / 勝利保証なし)
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 8 }}>
             {goPicks.map((p, i) => (
-              <div key={p.raceId} className="p-2 rounded flex items-center justify-between flex-wrap gap-2"
-                style={{
-                  background: "rgba(16,185,129,0.10)",
-                  border: "1px solid rgba(16,185,129,0.4)",
-                }}>
-                <div className="flex items-center gap-2">
-                  <span className="num font-bold" style={{ fontSize: 16, color: "#fde68a" }}>#{i + 1}</span>
+              <div key={p.raceId} style={{
+                padding: "10px 12px",
+                borderRadius: 12,
+                background: "linear-gradient(180deg, rgba(16, 185, 129, 0.08) 0%, rgba(16, 185, 129, 0.02) 100%)",
+                border: "1px solid rgba(16, 185, 129, 0.35)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                flexWrap: "wrap",
+                gap: 10,
+                boxShadow: "inset 0 1px 0 rgba(255,255,255,0.04)",
+              }}>
+                <div className="flex items-center gap-3">
+                  <div className="num" style={{
+                    fontSize: 18,
+                    fontWeight: 800,
+                    color: "var(--c-warning-text)",
+                    minWidth: 26,
+                  }}>
+                    #{i + 1}
+                  </div>
                   <div>
-                    <div className="text-xs font-bold">{p.race?.venue} {p.race?.raceNo}R <span className="opacity-70">{p.race?.startTime}</span></div>
-                    <div className="text-xs opacity-80">
-                      {STYLE_LABELS[p.style]?.label} / {p.mainCombo} ({p.recommendation?.main?.kind})
+                    <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.01em" }}>
+                      {p.race?.venue} <span className="num">{p.race?.raceNo}R</span>
+                      <span style={{ opacity: 0.7, marginLeft: 6, fontSize: 11, fontWeight: 500 }}>{p.race?.startTime}</span>
+                    </div>
+                    <div style={{ fontSize: 11.5, opacity: 0.85, marginTop: 2 }}>
+                      {STYLE_LABELS[p.style]?.label} / <b>{p.mainCombo}</b> ({p.recommendation?.main?.kind})
                     </div>
                     {p.simpleReason && (
-                      <div className="text-xs opacity-70 mt-1" style={{ fontSize: 10 }}>{p.simpleReason}</div>
+                      <div style={{ fontSize: 10, opacity: 0.7, marginTop: 2 }}>{p.simpleReason}</div>
                     )}
                   </div>
                 </div>
-                <div className="text-right">
-                  <div className="num font-bold text-xs" style={{ color: "#a7f3d0" }}>EV {Math.round(p.ev * 100)}%</div>
-                  <div className="text-xs opacity-70">自信 {p.confidence}/100</div>
+                <div style={{ textAlign: "right" }}>
+                  <div className="num" style={{ fontSize: 13, fontWeight: 800, color: "var(--c-success-text)" }}>
+                    EV {Math.round(p.ev * 100)}%
+                  </div>
+                  <div style={{ fontSize: 10.5, opacity: 0.75, marginTop: 1 }}>
+                    自信 {p.confidence}/100
+                  </div>
                 </div>
               </div>
             ))}
           </div>
           {totalCandidates > goPicks.length && (
-            <div className="text-xs opacity-70 mt-2">
+            <div style={{ fontSize: 10.5, opacity: 0.7, marginTop: 8, lineHeight: 1.5 }}>
               💡 他 {totalCandidates - goPicks.length} 件は EV/自信 が低いため除外 (top {goPicks.length} のみ表示)
             </div>
           )}
         </div>
       ) : isSuppressed ? (
-        <div className="text-xs opacity-85" style={{ background: "rgba(0,0,0,0.22)", padding: 8, borderRadius: 8, lineHeight: 1.55 }}>
-          📊 <b>本日は見送り推奨</b><br/>
-          無理に買わない判断もアプリの価値です。 「📅 検証」 で過去の実績を振り返ってください。
+        <div style={{
+          fontSize: 11.5,
+          padding: 12,
+          borderRadius: 10,
+          background: "rgba(0, 0, 0, 0.22)",
+          lineHeight: 1.6,
+          color: "var(--text-secondary)",
+        }}>
+          <b>📊 本日は見送り推奨</b>
+          <div style={{ marginTop: 4, opacity: 0.85 }}>
+            無理に買わない判断もアプリの価値です。 「📅 検証」 で過去の実績を振り返ってください。
+          </div>
         </div>
       ) : (
-        <div className="text-xs opacity-70">候補レース蓄積中…</div>
+        <div style={{ fontSize: 11.5, opacity: 0.7, padding: "8px 0" }}>
+          候補レース蓄積中…
+        </div>
       )}
     </div>
   );
