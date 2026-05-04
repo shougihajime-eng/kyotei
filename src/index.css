@@ -2,301 +2,552 @@
 @tailwind components;
 @tailwind utilities;
 
-/* === ブランド・デザイントークン (Round 16: クリーン UI) ===
-   ・基調: 深いネイビー + 鮮やかなシアン/ブルーのアクセント (信頼感 + 競艇らしさ)
-   ・色は「意味」 として固定:
-     緑 = 買い (期待値プラス) / 赤 = 見送り / 紫 = 穴 / 黄 = 微妙 / グレー = データ不足
-*/
+/* =====================================================================
+ * Round 96: デザインシステム premium 刷新
+ *
+ * 設計指針:
+ *   ・余白 / フォント / 色を 8px / 4px グリッド + 整理されたスケールへ
+ *   ・配色は深紺 + シアン + 緑/赤/黄/紫の意味色で限定使用 (色ノイズ削減)
+ *   ・カードは 半透明 + backdrop-blur + 多層シャドウ で premium feel
+ *   ・タイポは Inter + Hiragino + 日本語カーニング (palt) で「本物」 感
+ *   ・既存クラス名は全て後方互換 (壊さず磨く)
+ * ===================================================================== */
+
 :root {
-  /* ベース面 */
-  --bg-page: #060c1c;
-  --bg-page-2: #0a1428;
-  --bg-surface: #0f1a30;
-  --bg-surface-2: #142440;
-  --bg-input: #0c1a32;
-  --border-soft: #1d2c4a;
-  --border-strong: #2a3d63;
+  /* === 背景 (深紺、 4 階層) === */
+  --bg-base:    #060A18;           /* 最深部 */
+  --bg-elev-1:  #0E1424;           /* card 外殻 */
+  --bg-elev-2:  #131B30;           /* card 内側 */
+  --bg-elev-3:  #1B2540;           /* hover / 内ネスト */
+  --bg-input:   #0B111F;
+  /* 旧名 (後方互換) */
+  --bg-page:    var(--bg-base);
+  --bg-page-2:  #050912;
+  --bg-surface: var(--bg-elev-1);
+  --bg-surface-2: var(--bg-elev-2);
 
-  /* ブランド (青/シアン) */
-  --brand: #38bdf8;
-  --brand-2: #2563eb;
-  --brand-bg: rgba(56,189,248,0.12);
-  --brand-border: rgba(56,189,248,0.45);
+  /* === 境界線 (透過ベースで層別) === */
+  --border-subtle: rgba(255, 255, 255, 0.04);
+  --border-soft:   rgba(255, 255, 255, 0.08);
+  --border-medium: rgba(255, 255, 255, 0.14);
+  --border-strong: rgba(255, 255, 255, 0.22);
 
-  /* テキスト */
-  --text: #e7eef8;
-  --text-soft: #b8c5db;
-  --text-mute: #8294b3;
+  /* === テキスト (WCAG AA+ 高コントラスト) === */
+  --text-primary:    #F1F5F9;
+  --text-secondary:  #CBD5E1;
+  --text-tertiary:   #94A3B8;
+  --text-quaternary: #64748B;
+  --text-disabled:   #475569;
+  /* 旧名 */
+  --text:      var(--text-primary);
+  --text-soft: var(--text-secondary);
+  --text-mute: var(--text-tertiary);
 
-  /* セマンティック */
-  --c-buy: #10b981;
-  --c-buy-bg: rgba(16,185,129,0.16);
-  --c-buy-border: rgba(16,185,129,0.5);
-  --c-buy-text: #6ee7b7;
+  /* === ブランド (洗練された cyan) === */
+  --brand:        #22D3EE;
+  --brand-hover:  #06B6D4;
+  --brand-2:      #2563EB;
+  --brand-text:   #67E8F9;
+  --brand-bg:     rgba(34, 211, 238, 0.10);
+  --brand-border: rgba(34, 211, 238, 0.30);
+  --brand-glow:   rgba(34, 211, 238, 0.18);
 
-  --c-skip: #ef4444;
-  --c-skip-bg: rgba(239,68,68,0.15);
-  --c-skip-border: rgba(239,68,68,0.5);
-  --c-skip-text: #fecaca;
+  /* === セマンティック (意味色) === */
+  --c-success:        #10B981;
+  --c-success-text:   #6EE7B7;
+  --c-success-bg:     rgba(16, 185, 129, 0.09);
+  --c-success-border: rgba(16, 185, 129, 0.32);
 
-  --c-hole: #a855f7;
-  --c-hole-bg: rgba(168,85,247,0.16);
-  --c-hole-border: rgba(168,85,247,0.5);
-  --c-hole-text: #d8b4fe;
+  --c-danger:         #EF4444;
+  --c-danger-text:    #FCA5A5;
+  --c-danger-bg:      rgba(239, 68, 68, 0.09);
+  --c-danger-border:  rgba(239, 68, 68, 0.32);
 
-  --c-warn: #fbbf24;
-  --c-warn-bg: rgba(251,191,36,0.18);
-  --c-warn-border: rgba(251,191,36,0.5);
-  --c-warn-text: #fde68a;
+  --c-warning:        #F59E0B;
+  --c-warning-text:   #FCD34D;
+  --c-warning-bg:     rgba(245, 158, 11, 0.09);
+  --c-warning-border: rgba(245, 158, 11, 0.32);
 
-  --c-mute: #6b7280;
-  --c-mute-bg: rgba(107,114,128,0.15);
-  --c-mute-border: rgba(107,114,128,0.4);
-  --c-mute-text: #d1d5db;
+  --c-info:           #3B82F6;
+  --c-info-text:      #93C5FD;
+  --c-info-bg:        rgba(59, 130, 246, 0.09);
+  --c-info-border:    rgba(59, 130, 246, 0.32);
 
-  /* シャドウ */
-  --shadow-card: 0 1px 0 rgba(255,255,255,0.04) inset, 0 8px 24px rgba(0,0,0,0.35);
-  --shadow-glow: 0 0 0 1px var(--brand-border), 0 8px 24px rgba(56,189,248,0.18);
+  --c-purple:         #A855F7;
+  --c-purple-text:    #D8B4FE;
+  --c-purple-bg:      rgba(168, 85, 247, 0.09);
+  --c-purple-border:  rgba(168, 85, 247, 0.32);
+
+  /* 旧名 buy/skip/hole/warn/mute (後方互換) */
+  --c-buy:        var(--c-success);
+  --c-buy-bg:     var(--c-success-bg);
+  --c-buy-border: var(--c-success-border);
+  --c-buy-text:   var(--c-success-text);
+
+  --c-skip:        var(--c-danger);
+  --c-skip-bg:     var(--c-danger-bg);
+  --c-skip-border: var(--c-danger-border);
+  --c-skip-text:   var(--c-danger-text);
+
+  --c-warn:        var(--c-warning);
+  --c-warn-bg:     var(--c-warning-bg);
+  --c-warn-border: var(--c-warning-border);
+  --c-warn-text:   var(--c-warning-text);
+
+  --c-hole:        var(--c-purple);
+  --c-hole-bg:     var(--c-purple-bg);
+  --c-hole-border: var(--c-purple-border);
+  --c-hole-text:   var(--c-purple-text);
+
+  --c-mute:        #6B7280;
+  --c-mute-bg:     rgba(107, 114, 128, 0.10);
+  --c-mute-border: rgba(107, 114, 128, 0.32);
+  --c-mute-text:   #D1D5DB;
+
+  /* === 余白スケール (4px base) === */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* === border-radius スケール === */
+  --r-xs:  4px;
+  --r-sm:  6px;
+  --r-md:  8px;
+  --r-lg:  12px;
+  --r-xl:  16px;
+  --r-2xl: 20px;
+  --r-3xl: 24px;
+  --r-full: 9999px;
+
+  /* === シャドウ (多層 + premium feel) === */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.20);
+  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.25), 0 1px 2px rgba(0, 0, 0, 0.18);
+  --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.30), 0 2px 4px rgba(0, 0, 0, 0.20);
+  --shadow-lg: 0 8px 16px rgba(0, 0, 0, 0.35), 0 4px 8px rgba(0, 0, 0, 0.25);
+  --shadow-xl: 0 16px 32px rgba(0, 0, 0, 0.40), 0 8px 16px rgba(0, 0, 0, 0.30);
+  --shadow-card:
+    0 1px 0 rgba(255, 255, 255, 0.04) inset,
+    0 2px 4px rgba(0, 0, 0, 0.18),
+    0 8px 24px rgba(0, 0, 0, 0.28);
+  --shadow-card-hover:
+    0 1px 0 rgba(255, 255, 255, 0.06) inset,
+    0 4px 8px rgba(0, 0, 0, 0.25),
+    0 12px 32px rgba(0, 0, 0, 0.35);
+  --shadow-glow:
+    0 0 0 1px var(--brand-border),
+    0 0 32px var(--brand-glow);
+
+  /* === タイポスケール === */
+  --fs-xs:   11px;
+  --fs-sm:   12px;
+  --fs-md:   13px;
+  --fs-base: 14px;
+  --fs-lg:   16px;
+  --fs-xl:   18px;
+  --fs-2xl:  22px;
+  --fs-3xl:  28px;
+  --fs-4xl:  36px;
+  --fs-display: 44px;
+
+  /* === 行間 === */
+  --lh-tight:  1.2;
+  --lh-snug:   1.4;
+  --lh-base:   1.55;
+  --lh-relaxed: 1.7;
+
+  /* === トランジション === */
+  --t-fast:  0.12s ease;
+  --t-base:  0.18s ease;
+  --t-slow:  0.28s ease;
+  --t-spring: 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-/* === ベース === */
-/* Round 42: iOS Safari の 100vh バグ対応 — dvh (dynamic viewport height) を使う
-   100vh はアドレスバー分含むため画面が切れる / 100dvh は実際の表示領域 */
+/* =====================================================================
+ * 基礎
+ * ===================================================================== */
+
+/* iOS 100vh バグ対応 */
 .min-h-screen { min-height: 100vh; min-height: 100dvh; }
 
 html, body {
   background:
-    radial-gradient(1200px 600px at 80% -100px, rgba(56,189,248,0.08), transparent 60%),
-    radial-gradient(900px 500px at -10% 20%, rgba(37,99,235,0.10), transparent 60%),
-    linear-gradient(180deg, var(--bg-page) 0%, var(--bg-page-2) 100%);
-  color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
-    "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+    radial-gradient(1400px 800px at 75% -200px, rgba(34, 211, 238, 0.05), transparent 60%),
+    radial-gradient(1100px 700px at -15% 35%, rgba(99, 102, 241, 0.07), transparent 60%),
+    linear-gradient(180deg, var(--bg-base) 0%, #03060E 100%);
+  background-attachment: fixed;
+  color: var(--text-primary);
+  font-family:
+    -apple-system, BlinkMacSystemFont,
+    "Inter", "Segoe UI", "Helvetica Neue",
+    "Hiragino Sans", "Hiragino Kaku Gothic ProN",
+    "Noto Sans JP", "Yu Gothic UI", "Yu Gothic",
+    Meiryo, sans-serif;
+  font-feature-settings: "palt", "calt";       /* 日本語カーニング */
+  letter-spacing: 0.003em;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
 }
 
-/* セマンティック クラス (要素の背景/枠/文字を一括) */
-.sem-buy   { color: var(--c-buy-text);  background: var(--c-buy-bg);  border-color: var(--c-buy-border); }
-.sem-skip  { color: var(--c-skip-text); background: var(--c-skip-bg); border-color: var(--c-skip-border); }
-.sem-hole  { color: var(--c-hole-text); background: var(--c-hole-bg); border-color: var(--c-hole-border); }
-.sem-warn  { color: var(--c-warn-text); background: var(--c-warn-bg); border-color: var(--c-warn-border); }
-.sem-mute  { color: var(--c-mute-text); background: var(--c-mute-bg); border-color: var(--c-mute-border); }
+/* セーフエリア対応 (iOS notch / Dynamic Island) */
+body { padding-bottom: env(safe-area-inset-bottom, 0); }
 
-/* === カード === */
+/* タップ高速化 */
+* { -webkit-tap-highlight-color: transparent; }
+
+/* リンク (デフォルト) */
+a {
+  color: var(--brand-text);
+  text-decoration: none;
+  transition: color var(--t-fast);
+}
+a:hover { color: var(--brand); }
+
+/* セレクション (selected text) */
+::selection { background: var(--brand-bg); color: var(--text-primary); }
+
+/* =====================================================================
+ * セマンティック クラス (要素背景/枠/文字 一括)
+ * ===================================================================== */
+.sem-buy   { color: var(--c-success-text); background: var(--c-success-bg); border-color: var(--c-success-border); }
+.sem-skip  { color: var(--c-danger-text);  background: var(--c-danger-bg);  border-color: var(--c-danger-border); }
+.sem-hole  { color: var(--c-purple-text);  background: var(--c-purple-bg);  border-color: var(--c-purple-border); }
+.sem-warn  { color: var(--c-warning-text); background: var(--c-warning-bg); border-color: var(--c-warning-border); }
+.sem-mute  { color: var(--c-mute-text);    background: var(--c-mute-bg);    border-color: var(--c-mute-border); }
+
+/* =====================================================================
+ * カード (premium glass-morphism feel)
+ * ===================================================================== */
 .card {
-  background: linear-gradient(180deg, var(--bg-surface) 0%, var(--bg-surface-2) 100%);
+  background:
+    linear-gradient(180deg, rgba(19, 27, 48, 0.85) 0%, rgba(14, 20, 36, 0.85) 100%);
   border: 1px solid var(--border-soft);
-  border-radius: 16px;
+  border-radius: var(--r-xl);
   box-shadow: var(--shadow-card);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  transition: box-shadow var(--t-base), border-color var(--t-base);
+}
+.card-hover:hover {
+  border-color: var(--border-medium);
+  box-shadow: var(--shadow-card-hover);
 }
 .card-glow {
   border-color: var(--brand-border) !important;
   box-shadow: var(--shadow-glow) !important;
 }
 
-/* タイトル小バッジ */
+/* セクションタイトル (caps lock な小タイトル) */
 .section-title {
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.12em;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-bold, 700);
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--text-mute);
+  color: var(--text-tertiary);
 }
 
-/* === バッジ (pill) === */
+/* =====================================================================
+ * バッジ / ピル
+ * ===================================================================== */
 .pill {
   padding: 3px 10px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 700;
+  border-radius: var(--r-full);
+  font-size: var(--fs-xs);
+  font-weight: 600;
   display: inline-block;
+  letter-spacing: 0.01em;
+  line-height: 1.4;
+  -webkit-tap-highlight-color: transparent;
+}
+.badge-buy   { background: var(--c-success-bg); color: var(--c-success-text); border: 1px solid var(--c-success-border); }
+.badge-skip  { background: var(--c-danger-bg);  color: var(--c-danger-text);  border: 1px solid var(--c-danger-border); }
+.badge-warn  { background: var(--c-warning-bg); color: var(--c-warning-text); border: 1px solid var(--c-warning-border); }
+.badge-hole  { background: var(--c-purple-bg);  color: var(--c-purple-text);  border: 1px solid var(--c-purple-border); }
+.badge-mute  { background: var(--c-mute-bg);    color: var(--c-mute-text);    border: 1px solid var(--c-mute-border); }
+.badge-brand { background: var(--brand-bg);     color: var(--brand-text);     border: 1px solid var(--brand-border); }
+
+/* グレード S/A/B/C */
+.badge-grade-S {
+  background: linear-gradient(135deg, #10B981 0%, #047857 100%);
+  color: #FFFFFF;
+  font-weight: 700;
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.20), var(--shadow-sm);
   letter-spacing: 0.02em;
 }
-.badge-buy   { background: var(--c-buy-bg);   color: var(--c-buy-text);   border: 1px solid var(--c-buy-border); }
-.badge-skip  { background: var(--c-skip-bg);  color: var(--c-skip-text);  border: 1px solid var(--c-skip-border); }
-.badge-warn  { background: var(--c-warn-bg);  color: var(--c-warn-text);  border: 1px solid var(--c-warn-border); }
-.badge-hole  { background: var(--c-hole-bg);  color: var(--c-hole-text);  border: 1px solid var(--c-hole-border); }
-.badge-mute  { background: var(--c-mute-bg);  color: var(--c-mute-text);  border: 1px solid var(--c-mute-border); }
-.badge-brand { background: var(--brand-bg);   color: var(--brand);        border: 1px solid var(--brand-border); }
+.badge-grade-A { background: var(--c-success-bg); color: var(--c-success-text); border: 1px solid var(--c-success-border); }
+.badge-grade-B { background: var(--c-warning-bg); color: var(--c-warning-text); border: 1px solid var(--c-warning-border); }
+.badge-grade-C { background: var(--c-mute-bg);    color: var(--c-mute-text);    border: 1px solid var(--c-mute-border); }
 
-/* グレード: S=買い (緑グラデ) / A=買い候補 (緑薄) / B=判断微妙 (黄) / C=データ不足 (グレー) */
-.badge-grade-S { background: linear-gradient(135deg,#10b981,#047857); color:#fff; font-weight: 800; box-shadow: 0 0 0 2px rgba(16,185,129,0.25); }
-.badge-grade-A { background: var(--c-buy-bg);  color: var(--c-buy-text);  border: 1px solid var(--c-buy-border); }
-.badge-grade-B { background: var(--c-warn-bg); color: var(--c-warn-text); border: 1px solid var(--c-warn-border); }
-.badge-grade-C { background: var(--c-mute-bg); color: var(--c-mute-text); border: 1px solid var(--c-mute-border); }
-
-/* === ボタン === */
+/* =====================================================================
+ * ボタン (premium feel)
+ * ===================================================================== */
 .btn {
   padding: 10px 16px;
-  border-radius: 12px;
-  font-weight: 700;
-  font-size: 13px;
+  border-radius: var(--r-lg);
+  font-weight: 600;
+  font-size: var(--fs-md);
   cursor: pointer;
-  transition: all 0.14s ease;
+  transition: transform var(--t-fast), filter var(--t-fast), box-shadow var(--t-base);
   border: 1px solid transparent;
+  letter-spacing: 0.01em;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
 }
-.btn[disabled] { opacity: 0.45; cursor: not-allowed; }
+.btn[disabled] { opacity: 0.4; cursor: not-allowed; }
+.btn:active:not([disabled]) { transform: scale(0.97); }
+
 .btn-primary {
-  background: linear-gradient(180deg, #3b82f6 0%, #2563eb 100%);
-  color: white;
-  box-shadow: 0 1px 0 rgba(255,255,255,0.18) inset, 0 4px 12px rgba(37,99,235,0.35);
+  background: linear-gradient(180deg, var(--brand) 0%, var(--brand-hover) 100%);
+  color: #021824;
+  font-weight: 700;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.25) inset,
+    0 4px 12px rgba(34, 211, 238, 0.30);
 }
-.btn-primary:hover:not([disabled]) { filter: brightness(1.08); }
+.btn-primary:hover:not([disabled]) {
+  filter: brightness(1.06);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.30) inset,
+    0 6px 16px rgba(34, 211, 238, 0.40);
+}
+
 .btn-success {
-  background: linear-gradient(180deg, #10b981 0%, #059669 100%);
-  color: white;
-  box-shadow: 0 1px 0 rgba(255,255,255,0.18) inset, 0 4px 12px rgba(16,185,129,0.3);
+  background: linear-gradient(180deg, #10B981 0%, #059669 100%);
+  color: #FFFFFF;
+  font-weight: 700;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.18) inset,
+    0 4px 12px rgba(16, 185, 129, 0.28);
 }
-.btn-success:hover:not([disabled]) { filter: brightness(1.08); }
+.btn-success:hover:not([disabled]) {
+  filter: brightness(1.06);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.22) inset,
+    0 6px 16px rgba(16, 185, 129, 0.36);
+}
+
 .btn-ghost {
-  background: rgba(56,189,248,0.06);
-  color: var(--text);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-primary);
   border: 1px solid var(--border-soft);
 }
 .btn-ghost:hover:not([disabled]) {
-  background: rgba(56,189,248,0.14);
-  border-color: var(--brand-border);
+  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--border-medium);
 }
 
-/* === Input / Select === */
+/* =====================================================================
+ * Input / Select (洗練された focus)
+ * ===================================================================== */
 .input,
 .select {
   background: var(--bg-input);
   border: 1px solid var(--border-soft);
-  border-radius: 10px;
+  border-radius: var(--r-md);
   padding: 10px 12px;
-  color: var(--text);
-  font-size: 13px;
+  color: var(--text-primary);
+  font-size: var(--fs-md);
   width: 100%;
-  transition: border-color 0.12s ease;
+  transition: border-color var(--t-fast), box-shadow var(--t-fast), background var(--t-fast);
+  font-family: inherit;
 }
+.input::placeholder,
+.select::placeholder { color: var(--text-quaternary); }
+.input:hover,
+.select:hover { border-color: var(--border-medium); }
 .input:focus,
 .select:focus {
   outline: none;
   border-color: var(--brand);
-  box-shadow: 0 0 0 3px rgba(56,189,248,0.15);
+  background: var(--bg-elev-1);
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.18);
 }
 
-/* === 数字フォーマット === */
-.num { font-variant-numeric: tabular-nums; }
+/* =====================================================================
+ * 数値 (tabular-nums で揃える)
+ * ===================================================================== */
+.num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" on;
+}
 
-/* === タブナビ === */
+/* =====================================================================
+ * タブナビ
+ * ===================================================================== */
 .tab-btn {
   padding: 10px 14px;
-  border-radius: 10px;
-  font-weight: 700;
-  font-size: 13px;
+  border-radius: var(--r-md);
+  font-weight: 600;
+  font-size: var(--fs-md);
   cursor: pointer;
-  transition: all 0.12s ease;
+  transition: all var(--t-fast);
   border: 1px solid transparent;
   background: transparent;
-  color: var(--text-mute);
+  color: var(--text-tertiary);
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  letter-spacing: 0.01em;
 }
 .tab-btn.active {
-  background: linear-gradient(180deg, #2563eb 0%, #1d4ed8 100%);
-  color: #fff;
-  box-shadow: 0 4px 14px rgba(37,99,235,0.35);
+  background: linear-gradient(180deg, var(--brand) 0%, var(--brand-hover) 100%);
+  color: #021824;
+  font-weight: 700;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.20) inset,
+    0 4px 14px rgba(34, 211, 238, 0.30);
 }
 .tab-btn:hover:not(.active) {
-  background: rgba(56,189,248,0.08);
-  color: var(--text);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-primary);
 }
+.tab-btn:active:not(.active) { transform: scale(0.97); }
 
-/* === スクロールバー === */
-.scrollbar::-webkit-scrollbar { width: 10px; height: 10px; }
-.scrollbar::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 6px; }
+/* =====================================================================
+ * スクロールバー
+ * ===================================================================== */
+.scrollbar::-webkit-scrollbar { width: 8px; height: 8px; }
+.scrollbar::-webkit-scrollbar-track { background: transparent; }
+.scrollbar::-webkit-scrollbar-thumb {
+  background: var(--border-medium);
+  border-radius: var(--r-full);
+}
+.scrollbar::-webkit-scrollbar-thumb:hover { background: var(--border-strong); }
 
-/* === 状態色テキスト === */
-.text-pos { color: #34d399; font-weight: 700; }
-.text-neg { color: #f87171; font-weight: 700; }
-.text-brand { color: var(--brand); }
+/* =====================================================================
+ * 状態色テキスト
+ * ===================================================================== */
+.text-pos { color: #34D399; font-weight: 700; }
+.text-neg { color: #F87171; font-weight: 700; }
+.text-brand { color: var(--brand-text); }
+.text-mute { color: var(--text-tertiary); }
+.text-soft { color: var(--text-secondary); }
 
-/* === 通知 === */
-.alert-info  { background: rgba(56,189,248,0.10); border: 1px solid rgba(56,189,248,0.4); color: #bae6fd; padding: 10px 14px; border-radius: 12px; font-size: 13px; }
-.alert-warn  { background: var(--c-warn-bg); border: 1px solid var(--c-warn-border); color: var(--c-warn-text); padding: 10px 14px; border-radius: 12px; font-size: 13px; }
-.alert-error { background: var(--c-skip-bg); border: 1px solid var(--c-skip-border); color: var(--c-skip-text); padding: 10px 14px; border-radius: 12px; font-size: 13px; }
-.alert-ok    { background: var(--c-buy-bg);  border: 1px solid var(--c-buy-border);  color: var(--c-buy-text);  padding: 10px 14px; border-radius: 12px; font-size: 13px; }
+/* =====================================================================
+ * 通知 (alert)
+ * ===================================================================== */
+.alert-info,
+.alert-warn,
+.alert-error,
+.alert-ok {
+  padding: 10px 14px;
+  border-radius: var(--r-lg);
+  font-size: var(--fs-md);
+  line-height: var(--lh-base);
+  border: 1px solid;
+}
+.alert-info  { background: var(--c-info-bg);    color: var(--c-info-text);    border-color: var(--c-info-border); }
+.alert-warn  { background: var(--c-warning-bg); color: var(--c-warning-text); border-color: var(--c-warning-border); }
+.alert-error { background: var(--c-danger-bg);  color: var(--c-danger-text);  border-color: var(--c-danger-border); }
+.alert-ok    { background: var(--c-success-bg); color: var(--c-success-text); border-color: var(--c-success-border); }
 
-/* === Pulse + Toast アニメ === */
+/* =====================================================================
+ * アニメーション
+ * ===================================================================== */
 @keyframes pulse-soft {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(16,185,129,0.4); }
-  50%      { box-shadow: 0 0 0 12px rgba(16,185,129,0); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.40); }
+  50%      { box-shadow: 0 0 0 14px rgba(16, 185, 129, 0); }
 }
-.pulse-soft { animation: pulse-soft 2s infinite; }
+.pulse-soft { animation: pulse-soft 2.4s infinite; }
 
 @keyframes toast-slide {
-  0%   { opacity: 0; transform: translate(-50%, -16px); }
-  100% { opacity: 1; transform: translate(-50%, 0); }
+  0%   { opacity: 0; transform: translate(-50%, -16px) scale(0.96); }
+  100% { opacity: 1; transform: translate(-50%, 0) scale(1); }
 }
 
-/* === ヘッダ (sticky) のブランドアクセント === */
-.brand-header {
-  background:
-    linear-gradient(180deg, rgba(15,26,48,0.92) 0%, rgba(10,20,40,0.9) 100%);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border-bottom: 1px solid var(--border-soft);
-  box-shadow: 0 6px 24px rgba(0,0,0,0.25);
-  /* iOS notch 対応 (safe-area) */
-  padding-top: env(safe-area-inset-top, 0);
+@keyframes fade-in {
+  0%   { opacity: 0; transform: translateY(4px); }
+  100% { opacity: 1; transform: translateY(0); }
 }
+.fade-in { animation: fade-in var(--t-base); }
 
-/* body もセーフエリア対応 */
-body {
-  padding-bottom: env(safe-area-inset-bottom, 0);
-}
-
-/* ブランドロゴ周り */
-.brand-logo {
-  background: linear-gradient(135deg, #38bdf8 0%, #2563eb 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  font-weight: 900;
-  letter-spacing: -0.01em;
-}
-
-/* === KPI 数値 (大きめ) === */
-.kpi-num {
-  font-variant-numeric: tabular-nums;
-  font-weight: 900;
-  letter-spacing: -0.02em;
-  line-height: 1.05;
-}
-
-/* === スマホ用 余白調整 === */
-@media (max-width: 480px) {
-  .card { border-radius: 14px; }
-  .btn  { padding: 12px 18px; font-size: 14px; min-height: 44px; }   /* 押しやすく + タップターゲット 44px+ */
-  .pill { font-size: 11px; padding: 4px 10px; }
-  .tab-btn { min-height: 44px; }                                      /* スマホでタブ押しやすく */
-  /* iOS の自動ズーム (フォント < 16px で input フォーカス時) を防止 */
-  .input, .select { font-size: 16px; min-height: 44px; }
-}
-
-/* === Round 40: タップ即時フィードバック === */
-.btn { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
-.btn:active:not([disabled]) { transform: scale(0.97); transition: transform 0.05s ease-out; }
-.tab-btn { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
-.tab-btn:active:not(.active) { transform: scale(0.97); }
-.pill { -webkit-tap-highlight-color: transparent; }
-
-/* スケルトン (ローディング表示用) */
 @keyframes skeleton-shine {
   0%   { background-position: -200% 0; }
   100% { background-position: 200% 0; }
 }
 .skeleton {
-  background: linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.10) 50%, rgba(255,255,255,0.04) 75%);
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.04) 25%,
+    rgba(255, 255, 255, 0.10) 50%,
+    rgba(255, 255, 255, 0.04) 75%
+  );
   background-size: 200% 100%;
-  animation: skeleton-shine 1.4s ease-in-out infinite;
-  border-radius: 8px;
+  animation: skeleton-shine 1.6s ease-in-out infinite;
+  border-radius: var(--r-md);
 }
 
-/* 全体: スクロールスムーズ + pull-to-refresh 抑制 */
+/* =====================================================================
+ * ヘッダ (premium glass)
+ * ===================================================================== */
+.brand-header {
+  background:
+    linear-gradient(180deg, rgba(14, 20, 36, 0.92) 0%, rgba(10, 16, 30, 0.92) 100%);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  border-bottom: 1px solid var(--border-soft);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 6px 24px rgba(0, 0, 0, 0.35);
+  padding-top: env(safe-area-inset-top, 0);
+}
+
+/* ブランドロゴ (gradient text) */
+.brand-logo {
+  background: linear-gradient(135deg, #22D3EE 0%, #3B82F6 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+/* =====================================================================
+ * KPI 数値 (大きめ + 洗練)
+ * ===================================================================== */
+.kpi-num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" on;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  line-height: 1.05;
+}
+
+/* =====================================================================
+ * モバイル最適化
+ * ===================================================================== */
+@media (max-width: 480px) {
+  .card { border-radius: var(--r-lg); }
+  .btn  { padding: 12px 18px; font-size: var(--fs-base); min-height: 44px; }
+  .pill { font-size: var(--fs-xs); padding: 4px 10px; }
+  .tab-btn { min-height: 44px; padding: 10px 12px; }
+  /* iOS: 16px 未満で input フォーカス時の自動ズームを防ぐ */
+  .input, .select { font-size: 16px; min-height: 44px; }
+}
+
+/* =====================================================================
+ * スクロール (smooth + over-scroll 抑制)
+ * ===================================================================== */
 html { scroll-behavior: smooth; overscroll-behavior-y: none; }
 body { -webkit-overflow-scrolling: touch; overscroll-behavior-y: none; }
 
-/* React のリストレンダリングで安定する prop */
-* { -webkit-touch-callout: none; }
+/* =====================================================================
+ * Prefers-reduced-motion (アクセシビリティ)
+ * ===================================================================== */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
