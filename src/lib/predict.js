@@ -890,14 +890,14 @@ function isBoat6CandidateValid(race, scores, probs, inTrust) {
  *   aggressive (穴党)  : 厳選 1〜5 点 / 3連単 + 2連単
  */
 
-/* スタイル別 EV 下限 (Round 69-70: ロジック完全分離) ===
-   ・steady (的中率重視) : EV 1.05 — 「損しない」 程度に緩和、 代わりに勝率・モーター・展示・ST 厳格ゲート
-   ・balanced (中庸)     : EV 1.20 — EV と的中率のバランス
-   ・aggressive (EV 重視) : EV 1.50 — 高配当狙いで EV を最優先 */
+/* スタイル別 EV 下限 (Round 69-70 + Round 93 緩和) ===
+   ・steady (的中率重視) : EV 1.05 — 「損しない」 程度、 代わりに勝率/モーター/展示/ST ゲート
+   ・balanced (中庸)     : EV 1.18 — EV と的中率のバランス (1.20 → 1.18 微緩和)
+   ・aggressive (EV 重視) : EV 1.40 — 高配当狙い (1.50 → 1.40 緩和、 中穴も拾う) */
 export const EV_MIN_BY_PROFILE = {
-  steady:     1.05,  // 本命党: EV 撤廃寄り — 当たりやすさ最優先
-  balanced:   1.20,  // 中堅党: 期待回収率 120% 以上
-  aggressive: 1.50,  // 穴党:   期待回収率 150% 以上 (高配当のみ)
+  steady:     1.05,
+  balanced:   1.18,  // Round 93: 1.20 → 1.18
+  aggressive: 1.40,  // Round 93: 1.50 → 1.40
 };
 
 /* スタイル別 「点数上限」 */
@@ -1102,37 +1102,37 @@ export function buildBuyRecommendation(ev, riskProfile, perRaceCap) {
     const wave = ev.race?.wave ?? 0;
     const trustLevel = ev.inTrust?.level;
 
-    // (a) 1号艇 勝率
+    // (a) 1号艇 勝率 — Round 93: 5.50 → 5.20 緩和 (B1-A2 ボーダー)
     if (winRate1 == null) {
       skipReasons.push("本命型ゲート: 1号艇勝率データ不足 — 的中率重視のため判定保留");
-    } else if (winRate1 < 5.50) {
-      skipReasons.push(`本命型ゲート: 1号艇勝率 ${winRate1.toFixed(2)} < 5.50 — 的中率不足`);
+    } else if (winRate1 < 5.20) {
+      skipReasons.push(`本命型ゲート: 1号艇勝率 ${winRate1.toFixed(2)} < 5.20 — 的中率不足`);
     }
-    // (b) モーター
+    // (b) モーター — Round 93: 35 → 32 緩和 (中堅モーター可)
     if (motor1 == null) {
       skipReasons.push("本命型ゲート: 1号艇モーター値データ不足");
-    } else if (motor1 < 35) {
-      skipReasons.push(`本命型ゲート: 1号艇モーター ${motor1.toFixed(1)}% < 35% — 上位ではない`);
+    } else if (motor1 < 32) {
+      skipReasons.push(`本命型ゲート: 1号艇モーター ${motor1.toFixed(1)}% < 32% — 平均以下`);
     }
-    // (c) 展示タイム
+    // (c) 展示タイム — Round 93: 上位 3 位 → 上位 4 位 緩和 (前半グループ)
     if (exTime1 == null) {
       skipReasons.push("本命型ゲート: 1号艇展示タイムデータ不足");
     } else {
       const allEx = boats.map((b) => b?.exTime).filter((t) => t != null).sort((a, b) => a - b);
-      const top3Cut = allEx[2];
-      if (top3Cut != null && exTime1 > top3Cut) {
-        skipReasons.push(`本命型ゲート: 1号艇展示 ${exTime1.toFixed(2)}秒 (上位3位外) — 当たりやすさ不足`);
+      const top4Cut = allEx[3];
+      if (top4Cut != null && exTime1 > top4Cut) {
+        skipReasons.push(`本命型ゲート: 1号艇展示 ${exTime1.toFixed(2)}秒 (上位4位外) — 当たりやすさ不足`);
       }
     }
-    // (d) スタート力
+    // (d) スタート力 — Round 93: 0.17 → 0.18 緩和 (許容範囲を 0.01 拡大)
     if (avgST1 == null) {
       skipReasons.push("本命型ゲート: 1号艇スタート力データ不足");
-    } else if (avgST1 > 0.17) {
-      skipReasons.push(`本命型ゲート: 1号艇平均ST ${avgST1.toFixed(2)} > 0.17 — スタート遅い`);
+    } else if (avgST1 > 0.18) {
+      skipReasons.push(`本命型ゲート: 1号艇平均ST ${avgST1.toFixed(2)} > 0.18 — スタート遅い`);
     }
-    // (e) 強風・荒水面
-    if (wind >= 5) skipReasons.push(`本命型ゲート: 風 ${wind}m が強い (>=5) — 本命型対象外`);
-    if (wave >= 6) skipReasons.push(`本命型ゲート: 波 ${wave}cm が荒い (>=6) — 本命型対象外`);
+    // (e) 強風・荒水面 — Round 93: 風 5→6 / 波 6→7 緩和
+    if (wind >= 6) skipReasons.push(`本命型ゲート: 風 ${wind}m が強い (>=6) — 本命型対象外`);
+    if (wave >= 7) skipReasons.push(`本命型ゲート: 波 ${wave}cm が荒い (>=7) — 本命型対象外`);
     // (f) 1号艇信頼度
     const trustOk = (trustLevel === "イン逃げ濃厚" || trustLevel === "1号艇やや有利");
     if (!trustOk) {
@@ -1191,13 +1191,13 @@ export function buildBuyRecommendation(ev, riskProfile, perRaceCap) {
       return evidence >= 2;
     });
     // (b) 高配当のみ (オッズ < 8 倍は除外)
-    candidates = candidates.filter((t) => t.odds >= 8);
-    // (a) 候補本線 EV ≥ 1.50
-    if (candidates.length > 0 && candidates[0].ev < 1.50) {
-      skipReasons.push(`穴狙い型ゲート: 本線 EV ${Math.round(candidates[0].ev*100)}% < 150% — 高配当ねらいに値しない`);
+    // Round 93: オッズ 8 → 6 / EV 1.50 → 1.40 緩和 (中穴も拾う)
+    candidates = candidates.filter((t) => t.odds >= 6);
+    if (candidates.length > 0 && candidates[0].ev < 1.40) {
+      skipReasons.push(`穴狙い型ゲート: 本線 EV ${Math.round(candidates[0].ev*100)}% < 140% — 高配当ねらいに値しない`);
     }
     if (candidates.length === 0 && skipReasons.length === 0) {
-      skipReasons.push("穴狙い型ゲート: EV ≥ 150% かつオッズ ≥ 8倍 の候補なし — 高配当狙いの対象外");
+      skipReasons.push("穴狙い型ゲート: EV ≥ 140% かつオッズ ≥ 6倍 の候補なし — 高配当狙いの対象外");
     }
   }
 

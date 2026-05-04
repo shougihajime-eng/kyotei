@@ -235,11 +235,14 @@ export function pickHeadlineForEachStyle(races, evals, allStyleRecommendations, 
    返り値:
      { isTarget, minutesToClose, dataReady, missing }
 */
-export const PRE_CLOSE_WINDOW_MIN = 5;     // 締切前 5 分まで対象 (発走直前)
-export const PRE_CLOSE_WINDOW_MAX = 15;    // 締切前 15 分から対象開始
-export const PRE_CLOSE_MIN_EV = 1.30;      // 直前判定: EV 130% 以上 (通常の 1.20 より厳しい)
-export const PRE_CLOSE_MIN_CONFIDENCE = 75; // 直前判定: confidence 75 以上 (通常の 65 より厳しい)
-export const PRE_CLOSE_DEGRADED_EV = 1.35; // 直近成績悪化時はさらに 135% に
+// Round 93: 厳しすぎ問題対応で緩和 (見送りばかりで 0 件にならないように)
+//   旧: 5-15 分 / EV 1.30 / conf 75 → 厳しすぎ (該当 0 件続出)
+//   新: 3-25 分 / EV 1.22 / conf 68 → moderate (現実的に候補が出る)
+export const PRE_CLOSE_WINDOW_MIN = 3;     // 締切前 3 分まで対象 (発走直前)
+export const PRE_CLOSE_WINDOW_MAX = 25;    // 締切前 25 分から対象開始 (10 分→25 分に拡大)
+export const PRE_CLOSE_MIN_EV = 1.22;      // 直前判定: EV 122% 以上 (通常 GO 1.20 より少し厳しい程度)
+export const PRE_CLOSE_MIN_CONFIDENCE = 68; // 直前判定: confidence 68 以上 (通常 65 とほぼ同等)
+export const PRE_CLOSE_DEGRADED_EV = 1.28; // 直近成績悪化時はさらに 128% に
 
 export function isPreCloseTarget(race, now = new Date()) {
   if (!race || !race.startTime || !race.date) {

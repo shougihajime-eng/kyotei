@@ -80,10 +80,10 @@ function makeStrongEv(opts = {}) {
 }
 
 /* === 2. steady ゲート — 1号艇 winRate 不足で skip === */
-console.log("\n▶ 2. steady ゲート — 1号艇 winRate < 5.50 → skip");
+console.log("\n▶ 2. steady ゲート — 1号艇 winRate < 5.20 → skip (Round 93 緩和)");
 {
   const ev = makeStrongEv();
-  ev.race.boats[0].winRate = 5.30;
+  ev.race.boats[0].winRate = 5.10;  // 5.20 未満
   const rec = buildBuyRecommendation(ev, "steady", 1000);
   expect("decision = skip", rec.decision, "skip");
   expectTrue("理由に「勝率」 が含まれる", (rec.reasons || []).some((r) => /勝率/.test(r)));

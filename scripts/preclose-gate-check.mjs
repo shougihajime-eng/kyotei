@@ -60,15 +60,21 @@ console.log("▶ 1. isPreCloseTarget — 時間ウィンドウ判定");
   const pc2 = isPreCloseTarget(r2, now);
   expectTrue("締切 30 分前 → isTarget=false", pc2.isTarget === false);
 
-  // 14:03 → 締切まで 3 分 → 対象外 (既に締切間際)
-  const r3 = makeFullRace("14:03", "2026-05-02");
+  // Round 93: ウィンドウ 3-25 分に拡大
+  // 14:02 → 締切まで 2 分 → 対象外 (既に締切間際 < 3 min)
+  const r3 = makeFullRace("14:02", "2026-05-02");
   const pc3 = isPreCloseTarget(r3, now);
-  expectTrue("締切 3 分前 → isTarget=false (既に間際)", pc3.isTarget === false);
+  expectTrue("締切 2 分前 → isTarget=false (既に間際)", pc3.isTarget === false);
 
-  // 14:14 → 締切まで 14 分 → 対象 (上限ぎりぎり)
+  // 14:14 → 締切まで 14 分 → 対象 (Round 93 では問題なく対象)
   const r4 = makeFullRace("14:14", "2026-05-02");
   const pc4 = isPreCloseTarget(r4, now);
   expectTrue("締切 14 分前 → isTarget=true", pc4.isTarget === true);
+
+  // 14:24 → 締切まで 24 分 → 対象 (Round 93 で 25 分まで拡大)
+  const r5 = makeFullRace("14:24", "2026-05-02");
+  const pc5 = isPreCloseTarget(r5, now);
+  expectTrue("締切 24 分前 → isTarget=true (Round 93 拡大窓)", pc5.isTarget === true);
 }
 
 /* === 2. データ不足検出 === */
@@ -104,13 +110,14 @@ console.log("\n▶ 2. isPreCloseTarget — データ不足検出");
   expectTrue("missing にスタート", pc4.missing.includes("スタート"));
 }
 
-/* === 3. 閾値定数の正当性 === */
-console.log("\n▶ 3. 閾値定数 — 直前判定は通常より厳しい");
+/* === 3. 閾値定数の正当性 (Round 93 緩和反映) === */
+console.log("\n▶ 3. 閾値定数 — 直前判定は通常 (1.20/65) と同等以上");
 {
-  expectTrue(`PRE_CLOSE_MIN_EV (${PRE_CLOSE_MIN_EV}) > GO_MIN_EV (1.20)`, PRE_CLOSE_MIN_EV >= 1.20);
-  expectTrue(`PRE_CLOSE_MIN_CONFIDENCE (${PRE_CLOSE_MIN_CONFIDENCE}) > GO_MIN_CONFIDENCE (65)`, PRE_CLOSE_MIN_CONFIDENCE >= 65);
-  expect("PRE_CLOSE_WINDOW_MAX = 15", PRE_CLOSE_WINDOW_MAX, 15);
-  expectTrue("PRE_CLOSE_WINDOW_MIN >= 5", PRE_CLOSE_WINDOW_MIN >= 5);
+  expectTrue(`PRE_CLOSE_MIN_EV (${PRE_CLOSE_MIN_EV}) >= 1.20`, PRE_CLOSE_MIN_EV >= 1.20);
+  expectTrue(`PRE_CLOSE_MIN_CONFIDENCE (${PRE_CLOSE_MIN_CONFIDENCE}) >= 65`, PRE_CLOSE_MIN_CONFIDENCE >= 65);
+  expectTrue(`PRE_CLOSE_WINDOW_MAX >= 15`, PRE_CLOSE_WINDOW_MAX >= 15);
+  expectTrue(`PRE_CLOSE_WINDOW_MIN <= 5`, PRE_CLOSE_WINDOW_MIN <= 5);
+  expectTrue(`window 幅 >= 10 分`, (PRE_CLOSE_WINDOW_MAX - PRE_CLOSE_WINDOW_MIN) >= 10);
 }
 
 /* === 4. computeGoMode preCloseOnly=true で対象外レースは除外 === */
