@@ -79,8 +79,11 @@ export default function Settings({ settings, setSettings, switchVirtualMode, swi
         )}
       </section>
 
-      <section className="card p-4">
-        <h2 className="text-lg font-bold mb-3">💼 資金 (表示・参考)</h2>
+      <section className="card" style={{ padding: 18 }}>
+        <h2 style={{ fontSize: 15, fontWeight: 700, marginBottom: 4, letterSpacing: "0.01em" }}>💼 資金 (表示・参考)</h2>
+        <div style={{ fontSize: 11.5, color: "var(--text-tertiary)", marginBottom: 12, lineHeight: 1.5 }}>
+          1 レース上限・1 日予算を超えても警告のみ (自動停止なし)
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {field("bankroll", "現在の資金 (円)")}
           {field("dailyBudget", "1日の予算 (円)")}
@@ -89,74 +92,101 @@ export default function Settings({ settings, setSettings, switchVirtualMode, swi
         </div>
       </section>
 
-      <section className="card p-4">
-        <h2 className="text-lg font-bold mb-3">🎯 戦略 (買い目の方向性)</h2>
-        <div>
-          <label className="text-xs opacity-80">3 パターンから選択 — 買い目の券種と本数が変わります</label>
-          <div className="grid grid-cols-3 gap-2 mt-1">
-            {[
-              { k: "steady",     icon: "🛡️", title: "安全", desc: "2連複 + 3連複 / 的中重視" },
-              { k: "balanced",   icon: "⚖️", title: "バランス", desc: "2連単 + 3連単" },
-              { k: "aggressive", icon: "🎯", title: "攻め", desc: "3連単 / 高配当狙い" },
-            ].map((o) => (
+      <section className="card" style={{ padding: 18 }}>
+        <h2 style={{ fontSize: 15, fontWeight: 700, marginBottom: 4, letterSpacing: "0.01em" }}>🎯 戦略 (買い目の方向性)</h2>
+        <div style={{ fontSize: 11.5, color: "var(--text-tertiary)", marginBottom: 12, lineHeight: 1.5 }}>
+          3 パターンから選択 — 買い目の券種と本数が変わります
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          {[
+            { k: "steady",     icon: "🛡️", title: "安定型",   desc: "的中率特化",   color: "#3B82F6" },
+            { k: "balanced",   icon: "⚖️", title: "バランス型", desc: "実戦最適",     color: "#F59E0B" },
+            { k: "aggressive", icon: "🎯", title: "攻め型",   desc: "高配当狙い",   color: "#EF4444" },
+          ].map((o) => {
+            const active = settings.riskProfile === o.k;
+            return (
               <button key={o.k} type="button"
-                style={{ minHeight: 88, cursor: "pointer", transition: "all 0.12s" }}
-                className={"p-2 rounded-lg border-2 text-left " + (settings.riskProfile === o.k ? "border-cyan-400 bg-[#0e2440]" : "border-[#243154] bg-[#0f1830]")}
-                onClick={() => handleProfileChange(o.k)}>
-                <div style={{ fontSize: 22 }}>{o.icon}</div>
-                <div className="font-bold text-sm">{o.title}</div>
-                <div className="text-xs opacity-70">{o.desc}</div>
+                onClick={() => handleProfileChange(o.k)}
+                style={{
+                  minHeight: 96,
+                  padding: "12px 8px",
+                  borderRadius: 12,
+                  border: active ? `1.5px solid ${o.color}` : "1.5px solid var(--border-soft)",
+                  background: active
+                    ? `linear-gradient(180deg, ${o.color}18 0%, rgba(255,255,255,0.02) 100%)`
+                    : "rgba(255, 255, 255, 0.02)",
+                  color: active ? o.color : "var(--text-secondary)",
+                  cursor: "pointer",
+                  transition: "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
+                  display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
+                  boxShadow: active
+                    ? `0 0 0 1px ${o.color}40, 0 4px 16px ${o.color}25, inset 0 1px 0 rgba(255,255,255,0.06)`
+                    : "inset 0 1px 0 rgba(255,255,255,0.02)",
+                  transform: active ? "translateY(-1px)" : "translateY(0)",
+                }}>
+                <div style={{ fontSize: 22, lineHeight: 1 }}>{o.icon}</div>
+                <div style={{ fontSize: 13, fontWeight: 700, lineHeight: 1.1, letterSpacing: "0.01em" }}>{o.title}</div>
+                <div style={{ fontSize: 10, opacity: active ? 0.95 : 0.65, fontWeight: 500, letterSpacing: "0.04em" }}>
+                  {o.desc}
+                </div>
+                {active && (
+                  <div style={{ fontSize: 9, marginTop: 1, opacity: 0.85, fontWeight: 700, letterSpacing: "0.06em" }}>
+                    ✓ 選択中
+                  </div>
+                )}
               </button>
-            ))}
-          </div>
+            );
+          })}
         </div>
       </section>
 
-      <section className="card p-4">
-        <h2 className="text-lg font-bold mb-3">🧪 購入モード (エア / リアル)</h2>
-        <div className="text-xs opacity-80 mb-3">
-          記録モードを切り替えます。Header の大ボタンからもいつでも切替できます。
+      <section className="card" style={{ padding: 18 }}>
+        <h2 style={{ fontSize: 15, fontWeight: 700, marginBottom: 4, letterSpacing: "0.01em" }}>🧪 購入モード (エア / リアル)</h2>
+        <div style={{ fontSize: 11.5, color: "var(--text-tertiary)", marginBottom: 12, lineHeight: 1.5 }}>
+          記録モードを切り替えます。 Header からもいつでも切替できます
         </div>
         <div className="grid grid-cols-2 gap-2">
-          <button
-            type="button"
-            onClick={() => setMode(true)}
-            style={{
-              padding: "14px 12px", minHeight: 64, borderRadius: 12,
-              border: "2px solid " + (isVirtual ? "#22d3ee" : "#243154"),
-              background: isVirtual ? "rgba(34,211,238,0.15)" : "rgba(15,24,48,0.6)",
-              color: isVirtual ? "#67e8f9" : "#9fb0c9",
-              fontWeight: 800, fontSize: 14, cursor: "pointer",
-              transition: "all 0.12s ease",
-              boxShadow: isVirtual ? "0 0 0 1px #22d3ee40, 0 4px 14px rgba(34,211,238,0.2)" : "none",
-              transform: isVirtual ? "scale(1.02)" : "scale(1)",
-            }}>
-            <div style={{ fontSize: 22 }}>🧪</div>
-            <div>エア舟券</div>
-            <div style={{ fontSize: 11, opacity: 0.7, fontWeight: 600, marginTop: 2 }}>検証用 (購入なし)</div>
-            {isVirtual && <div style={{ fontSize: 10, marginTop: 2 }}>✓ 選択中</div>}
-          </button>
-          <button
-            type="button"
-            onClick={() => setMode(false)}
-            style={{
-              padding: "14px 12px", minHeight: 64, borderRadius: 12,
-              border: "2px solid " + (!isVirtual ? "#fbbf24" : "#243154"),
-              background: !isVirtual ? "rgba(251,191,36,0.16)" : "rgba(15,24,48,0.6)",
-              color: !isVirtual ? "#fcd34d" : "#9fb0c9",
-              fontWeight: 800, fontSize: 14, cursor: "pointer",
-              transition: "all 0.12s ease",
-              boxShadow: !isVirtual ? "0 0 0 1px #fbbf2440, 0 4px 14px rgba(251,191,36,0.2)" : "none",
-              transform: !isVirtual ? "scale(1.02)" : "scale(1)",
-            }}>
-            <div style={{ fontSize: 22 }}>💰</div>
-            <div>リアル舟券</div>
-            <div style={{ fontSize: 11, opacity: 0.7, fontWeight: 600, marginTop: 2 }}>実購入を記録</div>
-            {!isVirtual && <div style={{ fontSize: 10, marginTop: 2 }}>✓ 選択中</div>}
-          </button>
+          {[
+            { virtual: true,  icon: "🧪", title: "エア舟券",   desc: "検証用 (購入なし)", color: "#22D3EE" },
+            { virtual: false, icon: "💰", title: "リアル舟券", desc: "実購入を記録",       color: "#F59E0B" },
+          ].map((m) => {
+            const active = m.virtual === isVirtual;
+            return (
+              <button key={String(m.virtual)} type="button"
+                onClick={() => setMode(m.virtual)}
+                style={{
+                  padding: "16px 12px",
+                  minHeight: 88,
+                  borderRadius: 12,
+                  border: active ? `1.5px solid ${m.color}` : "1.5px solid var(--border-soft)",
+                  background: active
+                    ? `linear-gradient(180deg, ${m.color}1A 0%, rgba(255,255,255,0.02) 100%)`
+                    : "rgba(255, 255, 255, 0.02)",
+                  color: active ? m.color : "var(--text-secondary)",
+                  cursor: "pointer",
+                  transition: "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
+                  display: "flex", flexDirection: "column", alignItems: "center", gap: 5,
+                  boxShadow: active
+                    ? `0 0 0 1px ${m.color}40, 0 4px 16px ${m.color}25, inset 0 1px 0 rgba(255,255,255,0.06)`
+                    : "inset 0 1px 0 rgba(255,255,255,0.02)",
+                  transform: active ? "translateY(-1px)" : "translateY(0)",
+                }}>
+                <div style={{ fontSize: 24, lineHeight: 1 }}>{m.icon}</div>
+                <div style={{ fontSize: 14, fontWeight: 700, letterSpacing: "0.01em" }}>{m.title}</div>
+                <div style={{ fontSize: 10.5, opacity: active ? 0.9 : 0.65, fontWeight: 500, letterSpacing: "0.04em" }}>
+                  {m.desc}
+                </div>
+                {active && (
+                  <div style={{ fontSize: 9, opacity: 0.85, fontWeight: 700, letterSpacing: "0.06em" }}>
+                    ✓ 選択中
+                  </div>
+                )}
+              </button>
+            );
+          })}
         </div>
-        <div className="text-xs opacity-70 mt-3">
-          ※ 切替は localStorage に保存され、リロードしても維持されます。
+        <div style={{ fontSize: 10.5, color: "var(--text-tertiary)", marginTop: 10, lineHeight: 1.5 }}>
+          ※ 切替は localStorage に保存され、 リロードしても維持されます
         </div>
       </section>
 

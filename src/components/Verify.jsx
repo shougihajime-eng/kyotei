@@ -77,8 +77,8 @@ export default function Verify({ predictions, onManualBet, onDeleteRecord, curre
   }, [buys]);
 
   return (
-    <div className="max-w-3xl mx-auto px-4 mt-4 space-y-4">
-      {/* タブ + 手動記録ボタン */}
+    <div className="max-w-3xl mx-auto px-4 mt-4" style={{ display: "grid", gap: 16 }}>
+      {/* === タブ + 手動記録ボタン === */}
       <div className="flex gap-2 items-center flex-wrap">
         <button onClick={() => setTab("air")} className={"tab-btn flex-1 " + (tab === "air" ? "active" : "")}>
           🧪 エア舟券
@@ -87,58 +87,39 @@ export default function Verify({ predictions, onManualBet, onDeleteRecord, curre
           💰 リアル舟券
         </button>
         <button onClick={() => { setEditing(null); setFormOpen(true); }}
-          style={{ minHeight: 44, minWidth: 120, padding: "8px 14px", borderRadius: 10, fontSize: 14, fontWeight: 800, border: "none", cursor: "pointer", background: "#10b981", color: "#fff" }}>
+          className="btn btn-success"
+          style={{ minHeight: 44, minWidth: 120, padding: "8px 14px", fontSize: 13.5 }}>
           + 手動記録
         </button>
       </div>
 
-      {/* 期間フィルタ */}
-      <div className="flex gap-2 items-center flex-wrap">
-        <span className="text-xs opacity-70">期間:</span>
+      {/* === 期間フィルタ === */}
+      <FilterRow label="期間">
         {[
-          { k: "today", label: "📅 今日",   color: "#22d3ee" },
-          { k: "week",  label: "🗓️ 今週",   color: "#10b981" },
-          { k: "month", label: "📆 今月",   color: "#a855f7" },
-          { k: "all",   label: "📚 全期間", color: "#fbbf24" },
+          { k: "today", label: "📅 今日" },
+          { k: "week",  label: "🗓️ 今週" },
+          { k: "month", label: "📆 今月" },
+          { k: "all",   label: "📚 全期間" },
         ].map((f) => (
-          <button key={f.k} onClick={() => setPeriodFilter(f.k)}
-            className="pill"
-            style={{
-              padding: "6px 12px", fontSize: 12,
-              cursor: "pointer", border: "none",
-              background: periodFilter === f.k ? f.color : "rgba(15,24,48,0.6)",
-              color: periodFilter === f.k ? "#0b1220" : "#9fb0c9",
-              fontWeight: periodFilter === f.k ? 800 : 600,
-              transition: "all 0.12s",
-            }}>
+          <FilterChip key={f.k} active={periodFilter === f.k} onClick={() => setPeriodFilter(f.k)}>
             {f.label}
-          </button>
+          </FilterChip>
         ))}
-      </div>
+      </FilterRow>
 
-      {/* スタイル別フィルタ */}
-      <div className="flex gap-2 items-center flex-wrap">
-        <span className="text-xs opacity-70">スタイル別:</span>
+      {/* === スタイル別フィルタ === */}
+      <FilterRow label="スタイル">
         {[
-          { k: "all",        label: "全部",        color: "#9fb0c9" },
-          { k: "steady",     label: "🛡️ 安定",     color: "#3b82f6" },
-          { k: "balanced",   label: "⚖️ バランス", color: "#fbbf24" },
-          { k: "aggressive", label: "🎯 攻め",     color: "#ef4444" },
+          { k: "all",        label: "全部" },
+          { k: "steady",     label: "🛡️ 安定" },
+          { k: "balanced",   label: "⚖️ バランス" },
+          { k: "aggressive", label: "🎯 攻め" },
         ].map((f) => (
-          <button key={f.k} onClick={() => setStyleFilter(f.k)}
-            className="pill"
-            style={{
-              padding: "6px 12px", fontSize: 12,
-              cursor: "pointer", border: "none",
-              background: styleFilter === f.k ? f.color : "rgba(15,24,48,0.6)",
-              color: styleFilter === f.k ? "#fff" : "#9fb0c9",
-              fontWeight: styleFilter === f.k ? 800 : 600,
-              transition: "all 0.12s",
-            }}>
+          <FilterChip key={f.k} active={styleFilter === f.k} onClick={() => setStyleFilter(f.k)}>
             {f.label}
-          </button>
+          </FilterChip>
         ))}
-      </div>
+      </FilterRow>
 
       {/* 会場フィルタ */}
       {venueOptions.length > 1 && (
@@ -313,5 +294,36 @@ function RaceCardImpl({ p, onEdit, onDelete }) {
         </>
       )}
     </section>
+  );
+}
+
+/* Round 102: refined filter row + chip */
+function FilterRow({ label, children }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+      <span style={{ fontSize: 10.5, color: "var(--text-tertiary)", letterSpacing: "0.06em", fontWeight: 600, textTransform: "uppercase", minWidth: 56 }}>
+        {label}
+      </span>
+      {children}
+    </div>
+  );
+}
+function FilterChip({ active, onClick, children }) {
+  return (
+    <button onClick={onClick}
+      style={{
+        padding: "6px 12px",
+        borderRadius: 999,
+        fontSize: 11.5,
+        fontWeight: active ? 700 : 500,
+        cursor: "pointer",
+        border: active ? "1px solid var(--brand)" : "1px solid var(--border-soft)",
+        background: active ? "linear-gradient(180deg, var(--brand) 0%, var(--brand-hover) 100%)" : "rgba(255,255,255,0.02)",
+        color: active ? "#021824" : "var(--text-secondary)",
+        transition: "all 0.18s ease",
+        letterSpacing: "0.01em",
+      }}>
+      {children}
+    </button>
   );
 }
