@@ -164,14 +164,17 @@ function HeaderImpl({ tab, setTab, today, settings, setSettings, switchProfile, 
         </div>
       )}
 
-      {/* ===== 第三行: タブナビ (洗練された pill style) ===== */}
-      <div className="max-w-5xl mx-auto px-4 pb-2">
+      {/* ===== 第三行: タブナビ (洗練された pill style — Round 108c で 現在地表示強化) ===== */}
+      <div className="max-w-5xl mx-auto px-4 pb-2" role="tablist" aria-label="メインメニュー">
         <div className="flex gap-1 overflow-x-auto scrollbar" style={{ scrollSnapType: "x proximity" }}>
           {TABS.map((t) => {
             const active = tab === t.k;
             return (
               <button
                 key={t.k}
+                role="tab"
+                aria-selected={active}
+                aria-current={active ? "page" : undefined}
                 onClick={() => setTab(t.k)}
                 className="whitespace-nowrap"
                 style={{
@@ -192,6 +195,7 @@ function HeaderImpl({ tab, setTab, today, settings, setSettings, switchProfile, 
                   gap: 6,
                   boxShadow: active ? "0 1px 0 rgba(255,255,255,0.20) inset, 0 4px 14px rgba(34, 211, 238, 0.25)" : "none",
                   minHeight: 40,
+                  position: "relative",
                 }}
                 onMouseEnter={(e) => {
                   if (!active) e.currentTarget.style.background = "rgba(255,255,255,0.04)";
@@ -202,6 +206,20 @@ function HeaderImpl({ tab, setTab, today, settings, setSettings, switchProfile, 
               >
                 <span style={{ fontSize: 14 }}>{t.icon}</span>
                 <span>{t.label}</span>
+                {/* 現在地ドット (active のみ) */}
+                {active && (
+                  <span aria-hidden="true" style={{
+                    position: "absolute",
+                    bottom: -4,
+                    left: "50%",
+                    transform: "translateX(-50%)",
+                    width: 4,
+                    height: 4,
+                    borderRadius: "50%",
+                    background: "var(--brand)",
+                    boxShadow: "0 0 6px rgba(34, 211, 238, 0.80)",
+                  }} />
+                )}
               </button>
             );
           })}

@@ -1311,7 +1311,7 @@ export default function App() {
         );
       })()}
 
-      <main style={{ paddingBottom: "calc(80px + env(safe-area-inset-bottom, 0px))" }}>
+      <main style={{ paddingBottom: "calc(80px + env(safe-area-inset-bottom, 0px))" }} key={tab} className="page-fade">
         {tab === "home" && (
           <Dashboard
             races={races} predictions={visiblePredictions} recommendations={recommendations}
