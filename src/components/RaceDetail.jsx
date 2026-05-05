@@ -1,6 +1,7 @@
 import BuyDecisionCard from "./BuyDecisionCard.jsx";
 import { pct } from "../lib/format.js";
 import { dataAvailability, getScoreBreakdown } from "../lib/predict.js";
+import RaceLinks from "./RaceLinks.jsx";
 
 /**
  * レース詳細 — 結論カード + 6艇の確率/スコア + 直前情報サマリ + 関連記事
@@ -12,7 +13,15 @@ export default function RaceDetail({ race, evalRes, recommendation, onRecord, on
 
   return (
     <div className="max-w-3xl mx-auto px-4 mt-4 space-y-4">
-      <button className="btn btn-ghost text-xs" onClick={onBack}>← 戻る</button>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+        <button className="btn btn-ghost text-xs" onClick={onBack} style={{ minHeight: 36 }}>← 戻る</button>
+        <RaceLinks
+          race={{ date: race.date, venue: race.venue, jcd: race.jcd, raceNo: race.raceNo, startTime: race.startTime }}
+          showResult
+          showMeta={false}
+          align="right"
+        />
+      </div>
 
       <BuyDecisionCard race={race} recommendation={recommendation} onRecord={onRecord} virtualMode={virtualMode} evalRes={evalRes} />
 

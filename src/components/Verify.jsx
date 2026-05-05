@@ -2,6 +2,7 @@ import { useMemo, useState, useEffect, useDeferredValue, memo } from "react";
 import { yen, pct } from "../lib/format.js";
 import ManualBetForm from "./ManualBetForm.jsx";
 import { classifyLossPattern } from "../lib/venueBias.js";
+import RaceLinks from "./RaceLinks.jsx";
 
 /**
  * 検証画面 — レース別カード一覧 + 集計。
@@ -278,6 +279,15 @@ function RaceCardImpl({ p, onEdit, onDelete }) {
       )}
       {expanded && (
         <>
+          {/* === Round 108: 出走表 / リプレイ ワンタップ === */}
+          <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+            <RaceLinks
+              race={{ date: p.date, venue: p.venue, jcd: p.jcd, raceNo: p.raceNo, startTime: p.startTime }}
+              showResult
+              showMeta={false}
+              align="left"
+            />
+          </div>
           {p.memo && <div className="text-xs opacity-70 mt-2 italic border-l-2 pl-2 border-cyan-400">📝 {p.memo}</div>}
           {/* 負けパターン (Round 17) */}
           {(() => {

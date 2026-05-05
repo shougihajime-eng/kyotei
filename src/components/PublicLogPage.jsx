@@ -3,6 +3,7 @@ import { yen } from "../lib/format.js";
 import {
   loadPublicLog, verifyIntegrity, summarizePublicLog, exportPublicLogJson,
 } from "../lib/immutableLog.js";
+import RaceLinks from "./RaceLinks.jsx";
 
 /**
  * Round 75-76: 公開検証ログページ (read-only)
@@ -525,6 +526,7 @@ export default function PublicLogPage() {
                   <th style={cellH}>EV</th>
                   <th style={cellH}>結果</th>
                   <th style={cellH}>PnL</th>
+                  <th style={cellH}>外部</th>
                   <th style={cellH}>hash</th>
                 </tr>
               </thead>
@@ -544,6 +546,14 @@ export default function PublicLogPage() {
                       <td style={cell}>{e.result ? `${e.result.first}-${e.result.second}-${e.result.third}` : "—"}</td>
                       <td style={{ ...cell, color: e.pnl > 0 ? "#34d399" : e.pnl < 0 ? "#fca5a5" : "inherit", fontWeight: 700 }}>
                         {e.pnl ? (e.pnl > 0 ? "+" : "") + yen(e.pnl) : "—"}
+                      </td>
+                      <td style={cell}>
+                        <RaceLinks
+                          race={{ date: e.date, venue: e.venue, jcd: e.jcd, raceNo: e.raceNo, startTime: e.startTime }}
+                          compact
+                          showLabel={false}
+                          showMeta={false}
+                        />
                       </td>
                       <td style={{ ...cell, fontFamily: "monospace", opacity: 0.6 }}>{b.hash?.slice(0, 6) || "—"}</td>
                     </tr>
@@ -591,6 +601,14 @@ export default function PublicLogPage() {
                       )}
                     </div>
                   )}
+                  <div style={{ marginTop: 6 }}>
+                    <RaceLinks
+                      race={{ date: e.date, venue: e.venue, jcd: e.jcd, raceNo: e.raceNo, startTime: e.startTime }}
+                      compact
+                      showResult
+                      showMeta={false}
+                    />
+                  </div>
                   <div style={{ fontSize: 9, opacity: 0.5, marginTop: 3, fontFamily: "monospace" }}>
                     hash: {b.hash}
                   </div>
