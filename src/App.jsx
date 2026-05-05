@@ -1203,14 +1203,10 @@ export default function App() {
         </div>
       )}
 
-      {/* Round 72: 現在モード常時表示バー (画面下部固定) ===
-          ・「今 エア か リアル か」 「スタイル」 「次の対象レース まで何分」 を一目で
-          ・スクロールしても見えるように bottom: 0 で固定
-          ・タップでモード/スタイル切替 (Header と同じアクション) */}
+      {/* Round 105: 現在モード常時表示バー (画面下部固定) — premium polish */}
       {settings.onboardingDone && (() => {
         const isVirtual = !!settings.virtualMode;
         const styleLabel = { steady: "🛡️ 安定", balanced: "⚖️ バランス", aggressive: "🎯 攻め" }[settings.riskProfile] || settings.riskProfile;
-        // 次の直前判定対象レース (締切まで 5-15 分以内) の最近接を抽出
         const now = Date.now();
         let nextTarget = null, minDiff = Infinity;
         for (const r of races || []) {
@@ -1220,37 +1216,41 @@ export default function App() {
           const [Y, M, D] = r.date.split("-").map((s) => parseInt(s, 10));
           const startMs = new Date(Y, M - 1, D, +m[1], +m[2]).getTime();
           const diffMin = (startMs - now) / 60000;
-          if (diffMin >= 5 && diffMin <= 15) {
-            // 既に対象内
+          if (diffMin >= 3 && diffMin <= 25) {
             if (diffMin < minDiff) { minDiff = diffMin; nextTarget = { race: r, minutesToTarget: 0, kind: "in-window" }; }
-          } else if (diffMin > 15 && diffMin - 15 < minDiff) {
-            minDiff = diffMin - 15;
-            nextTarget = { race: r, minutesToTarget: Math.ceil(diffMin - 15), kind: "wait" };
+          } else if (diffMin > 25 && diffMin - 25 < minDiff) {
+            minDiff = diffMin - 25;
+            nextTarget = { race: r, minutesToTarget: Math.ceil(diffMin - 25), kind: "wait" };
           }
         }
         return (
           <div style={{
             position: "fixed", left: 0, right: 0, bottom: 0,
             zIndex: 90,
-            background: "linear-gradient(180deg, rgba(15,24,48,0.78) 0%, rgba(10,17,36,0.96) 100%)",
-            borderTop: "1px solid rgba(56,189,248,0.25)",
-            padding: "6px 10px calc(6px + env(safe-area-inset-bottom, 0px))",
-            backdropFilter: "blur(8px)",
-            display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
+            background: "linear-gradient(180deg, rgba(14, 20, 36, 0.85) 0%, rgba(6, 10, 24, 0.96) 100%)",
+            borderTop: "1px solid var(--border-soft)",
+            padding: "8px 12px calc(8px + env(safe-area-inset-bottom, 0px))",
+            backdropFilter: "blur(14px) saturate(140%)",
+            WebkitBackdropFilter: "blur(14px) saturate(140%)",
+            display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
             fontSize: 11,
+            boxShadow: "0 -1px 0 rgba(255, 255, 255, 0.04) inset, 0 -8px 24px rgba(0, 0, 0, 0.30)",
           }}>
-            {/* 左: モード + スタイル (タップで切替可) */}
-            <div className="flex items-center gap-2 flex-wrap">
+            {/* === 左: モード + スタイル === */}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
               <button
                 type="button"
                 onClick={() => switchVirtualMode()}
                 style={{
-                  minHeight: 32, padding: "4px 10px", borderRadius: 999,
-                  background: isVirtual ? "rgba(34,211,238,0.18)" : "rgba(251,191,36,0.18)",
-                  border: `1.5px solid ${isVirtual ? "#22d3ee" : "#fbbf24"}`,
-                  color: isVirtual ? "#67e8f9" : "#fcd34d",
-                  fontWeight: 800, fontSize: 11, cursor: "pointer",
-                  transition: "transform 0.06s ease",
+                  minHeight: 36, padding: "6px 12px", borderRadius: 999,
+                  background: isVirtual ? "rgba(34, 211, 238, 0.14)" : "rgba(245, 158, 11, 0.14)",
+                  border: `1.5px solid ${isVirtual ? "rgba(34, 211, 238, 0.55)" : "rgba(245, 158, 11, 0.55)"}`,
+                  color: isVirtual ? "#67E8F9" : "#FCD34D",
+                  fontWeight: 700, fontSize: 11.5, cursor: "pointer",
+                  transition: "transform 0.06s ease, background 0.18s ease",
+                  letterSpacing: "0.02em",
+                  WebkitTapHighlightColor: "transparent",
+                  touchAction: "manipulation",
                 }}
                 onTouchStart={(e) => { e.currentTarget.style.transform = "scale(0.94)"; }}
                 onTouchEnd={(e) => { e.currentTarget.style.transform = "scale(1)"; }}
@@ -1267,30 +1267,41 @@ export default function App() {
                   switchProfile(next);
                 }}
                 style={{
-                  minHeight: 32, padding: "4px 10px", borderRadius: 999,
-                  background: "rgba(56,189,248,0.12)",
-                  border: "1.5px solid rgba(56,189,248,0.45)",
-                  color: "#bae6fd",
-                  fontWeight: 700, fontSize: 11, cursor: "pointer",
+                  minHeight: 36, padding: "6px 12px", borderRadius: 999,
+                  background: "rgba(34, 211, 238, 0.10)",
+                  border: "1.5px solid rgba(34, 211, 238, 0.40)",
+                  color: "#67E8F9",
+                  fontWeight: 700, fontSize: 11.5, cursor: "pointer",
+                  letterSpacing: "0.02em",
+                  WebkitTapHighlightColor: "transparent",
+                  touchAction: "manipulation",
+                  transition: "transform 0.06s ease, background 0.18s ease",
                 }}
+                onTouchStart={(e) => { e.currentTarget.style.transform = "scale(0.94)"; }}
+                onTouchEnd={(e) => { e.currentTarget.style.transform = "scale(1)"; }}
                 aria-label={`現在スタイル: ${styleLabel} (タップで切替)`}
               >
                 {styleLabel}
               </button>
             </div>
-            {/* 右: 次の対象レース */}
-            <div style={{ color: "#cbd5e1", textAlign: "right", lineHeight: 1.3, fontSize: 10 }}>
+
+            {/* === 右: 次の対象レース === */}
+            <div style={{ color: "var(--text-secondary)", textAlign: "right", lineHeight: 1.4, fontSize: 10.5, fontWeight: 500 }}>
               {nextTarget ? (
                 nextTarget.kind === "in-window" ? (
-                  <span style={{ color: "#34d399", fontWeight: 800 }}>
-                    🟢 直前判定対象あり<br/>
-                    <span style={{ opacity: 0.85, fontSize: 9 }}>{nextTarget.race.venue} {nextTarget.race.raceNo}R ({nextTarget.race.startTime})</span>
-                  </span>
+                  <div style={{ color: "#34D399", fontWeight: 700 }}>
+                    🟢 直前判定対象あり
+                    <div style={{ opacity: 0.85, fontSize: 9.5, fontWeight: 500, marginTop: 1 }}>
+                      {nextTarget.race.venue} <span className="num">{nextTarget.race.raceNo}R</span> ({nextTarget.race.startTime})
+                    </div>
+                  </div>
                 ) : (
-                  <span>
-                    ⏰ 次の対象まで <b style={{ color: "#fde68a" }}>{nextTarget.minutesToTarget}分</b><br/>
-                    <span style={{ opacity: 0.7, fontSize: 9 }}>{nextTarget.race.venue} {nextTarget.race.raceNo}R ({nextTarget.race.startTime})</span>
-                  </span>
+                  <div>
+                    ⏰ 次の対象まで <b className="num" style={{ color: "#FCD34D" }}>{nextTarget.minutesToTarget}</b>分
+                    <div style={{ opacity: 0.7, fontSize: 9.5, fontWeight: 500, marginTop: 1 }}>
+                      {nextTarget.race.venue} <span className="num">{nextTarget.race.raceNo}R</span> ({nextTarget.race.startTime})
+                    </div>
+                  </div>
                 )
               ) : (
                 <span style={{ opacity: 0.6 }}>本日対象レースなし</span>
