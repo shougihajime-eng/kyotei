@@ -94,43 +94,80 @@ export default function PublicLogPage() {
   return (
     <div style={{
       minHeight: "100vh",
-      background: "#0a1124",
-      color: "#e2e8f0",
-      padding: "12px",
+      background: `
+        radial-gradient(1400px 800px at 75% -200px, rgba(34, 211, 238, 0.06), transparent 60%),
+        radial-gradient(1100px 700px at -15% 35%, rgba(99, 102, 241, 0.07), transparent 60%),
+        linear-gradient(180deg, #060A18 0%, #03060E 100%)
+      `,
+      backgroundAttachment: "fixed",
+      color: "var(--text-primary)",
+      padding: "16px 12px",
       fontSize: 13,
     }}>
       <div style={{ maxWidth: 960, margin: "0 auto" }}>
-        {/* ヘッダ */}
-        <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+        {/* === ヘッダ === */}
+        <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
           <div>
-            <h1 style={{ fontSize: 22, fontWeight: 800 }}>📊 公開検証ログ</h1>
-            <div style={{ fontSize: 11, opacity: 0.7, marginTop: 2 }}>
-              改ざん検知付き append-only ログ / 全予想を結果と共に公開 / 第三者検証可能
+            <h1 style={{
+              fontSize: 24,
+              fontWeight: 800,
+              letterSpacing: "-0.02em",
+              lineHeight: 1.15,
+            }}>
+              📊 公開検証ログ
+            </h1>
+            <div style={{
+              fontSize: 11,
+              color: "var(--text-tertiary)",
+              marginTop: 4,
+              letterSpacing: "0.02em",
+              lineHeight: 1.5,
+            }}>
+              改ざん検知付き append-only ログ · 全予想を結果と共に公開 · 第三者検証可能
             </div>
           </div>
           <button onClick={handleClose} style={ghostBtn}>← アプリへ戻る</button>
         </div>
 
-        {/* 信用バナー (赤) — 勝てる保証なし */}
+        {/* === 信用バナー (勝てる保証なし) === */}
         <div style={{
-          marginBottom: 12, padding: "10px 12px", borderRadius: 8,
-          background: "rgba(239,68,68,0.10)",
-          border: "1px solid rgba(239,68,68,0.4)",
-          color: "#fca5a5", fontSize: 12, lineHeight: 1.55,
+          marginBottom: 16,
+          padding: "12px 14px",
+          borderRadius: 10,
+          background: "rgba(239, 68, 68, 0.08)",
+          border: "1px solid rgba(239, 68, 68, 0.32)",
+          color: "var(--c-danger-text)",
+          fontSize: 12,
+          lineHeight: 1.6,
+          letterSpacing: "0.005em",
         }}>
           ⚠️ <b>勝てる保証はありません</b>。 良い結果も悪い結果もすべて表示しています。
           競艇の舟券購入は <b>20 歳以上のみ</b>、 自己責任でご利用ください。
         </div>
 
-        {/* === ヒーローセクション: 全体 ROI / 的中率 / 最大連敗 === */}
+        {/* === ヒーローセクション === */}
         {o && o.count > 0 ? (
           <section style={{
-            marginBottom: 16, padding: 16, borderRadius: 12,
-            background: "linear-gradient(135deg, rgba(56,189,248,0.06), rgba(99,102,241,0.06))",
-            border: "1px solid rgba(56,189,248,0.25)",
+            marginBottom: 18,
+            padding: 18,
+            borderRadius: 16,
+            background: `
+              linear-gradient(135deg, rgba(34, 211, 238, 0.06) 0%, rgba(99, 102, 241, 0.06) 100%),
+              linear-gradient(180deg, rgba(19, 27, 48, 0.85) 0%, rgba(14, 20, 36, 0.85) 100%)
+            `,
+            border: "1px solid rgba(34, 211, 238, 0.28)",
+            boxShadow: "0 1px 0 rgba(255,255,255,0.04) inset, 0 8px 24px rgba(0,0,0,0.28)",
           }}>
-            <div style={{ fontSize: 11, opacity: 0.75, marginBottom: 6, textAlign: "center" }}>
-              📈 全期間集計 ({o.count} 戦 — {o.hits} 勝 / {o.count - o.hits} 敗)
+            <div style={{
+              fontSize: 10.5,
+              color: "var(--text-tertiary)",
+              marginBottom: 10,
+              textAlign: "center",
+              letterSpacing: "0.08em",
+              fontWeight: 600,
+              textTransform: "uppercase",
+            }}>
+              📈 全期間集計 · <span className="num">{o.count}</span> 戦 — <span className="num">{o.hits}</span> 勝 / <span className="num">{o.count - o.hits}</span> 敗
             </div>
             <div style={{
               display: "grid",
@@ -611,34 +648,71 @@ export default function PublicLogPage() {
   );
 }
 
-/* === 巨大数値カード (ヒーローセクション用) === */
+/* === 巨大数値カード (ヒーロー用 — premium) === */
 function HeroNumber({ label, value, color, sub }) {
   return (
     <div style={{
-      padding: "12px 8px", borderRadius: 8,
-      background: "rgba(0,0,0,0.22)",
-      border: "1px solid rgba(255,255,255,0.06)",
+      padding: "14px 10px",
+      borderRadius: 12,
+      background: "rgba(0, 0, 0, 0.28)",
+      border: "1px solid var(--border-subtle)",
       textAlign: "center",
+      boxShadow: "inset 0 1px 0 rgba(255,255,255,0.04)",
     }}>
-      <div style={{ fontSize: 10, opacity: 0.7, marginBottom: 2 }}>{label}</div>
-      <div style={{ fontSize: 30, fontWeight: 800, color, lineHeight: 1.1, fontVariantNumeric: "tabular-nums" }}>
+      <div style={{
+        fontSize: 9.5,
+        color: "var(--text-tertiary)",
+        marginBottom: 4,
+        letterSpacing: "0.08em",
+        fontWeight: 600,
+        textTransform: "uppercase",
+      }}>
+        {label}
+      </div>
+      <div className="num kpi-num" style={{
+        fontSize: 32,
+        color,
+        lineHeight: 1.05,
+        letterSpacing: "-0.025em",
+      }}>
         {value}
       </div>
-      {sub && <div style={{ fontSize: 9, opacity: 0.6, marginTop: 2 }}>{sub}</div>}
+      {sub && (
+        <div style={{
+          fontSize: 9.5,
+          color: "var(--text-quaternary)",
+          marginTop: 4,
+          letterSpacing: "0.02em",
+          fontWeight: 500,
+        }}>
+          {sub}
+        </div>
+      )}
     </div>
   );
 }
 
 const ghostBtn = {
-  padding: "5px 10px", fontSize: 11, fontWeight: 600,
-  borderRadius: 6, border: "1px solid rgba(255,255,255,0.15)",
-  background: "rgba(255,255,255,0.03)",
-  color: "#cbd5e1", cursor: "pointer",
+  padding: "8px 14px",
+  fontSize: 11.5,
+  fontWeight: 600,
+  borderRadius: 10,
+  border: "1px solid var(--border-soft)",
+  background: "rgba(255, 255, 255, 0.03)",
+  color: "var(--text-secondary)",
+  cursor: "pointer",
+  letterSpacing: "0.01em",
+  transition: "all 0.18s ease",
+  minHeight: 36,
 };
 const cellH = {
-  padding: "6px 8px", textAlign: "left",
-  fontSize: 10, fontWeight: 700,
-  color: "#bae6fd", whiteSpace: "nowrap",
+  padding: "8px 10px",
+  textAlign: "left",
+  fontSize: 10,
+  fontWeight: 700,
+  color: "var(--brand-text)",
+  whiteSpace: "nowrap",
+  letterSpacing: "0.04em",
 };
 const cell = {
   padding: "6px 8px", whiteSpace: "nowrap",
