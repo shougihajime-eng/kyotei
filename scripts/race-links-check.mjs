@@ -1,0 +1,120 @@
+/**
+ * Race Links URL 生成 サニティテスト (Round 108)
+ *
+ * - jcd / 場名 / 日付フォーマット (YYYY-MM-DD / YYYYMMDD / Date) の正規化
+ * - 出走表 / リプレイ / 結果 URL が公式仕様を満たすか
+ * - リプレイ未公開判定 (未来日 / 当日でレース前) が機能するか
+ *
+ * 実行: node scripts/race-links-check.mjs
+ */
+import {
+  buildRaceCardUrl,
+  buildReplayUrl,
+  buildRaceResultUrl,
+  buildRaceLinks,
+  resolveVenueCode,
+  normalizeHd,
+  isReplayLikelyAvailable,
+} from "../src/lib/raceLinks.js";
+
+let pass = 0, fail = 0;
+function ok(cond, label) {
+  if (cond) { pass++; console.log("  ✓ " + label); }
+  else      { fail++; console.error("  ✗ " + label); }
+}
+function eq(actual, expected, label) {
+  ok(actual === expected, `${label} → ${JSON.stringify(actual)} == ${JSON.stringify(expected)}`);
+}
+
+console.log("\n========== Race Links URL 生成チェック ==========\n");
+
+console.log("[1] resolveVenueCode (場コード解決)");
+eq(resolveVenueCode("01", null), "01", "数値 jcd そのまま");
+eq(resolveVenueCode(1, null), "01", "1 桁 → 2 桁ゼロ埋め");
+eq(resolveVenueCode(null, "桐生"), "01", "場名 → jcd 逆引き (桐生)");
+eq(resolveVenueCode(null, "大村"), "24", "場名 → jcd 逆引き (大村)");
+eq(resolveVenueCode(null, "存在しない場"), null, "未知の場名は null");
+eq(resolveVenueCode("99", null), null, "未知の jcd は null");
+eq(resolveVenueCode(null, null), null, "両方 null は null");
+
+console.log("\n[2] normalizeHd (日付正規化)");
+eq(normalizeHd("2026-05-06"), "20260506", "YYYY-MM-DD");
+eq(normalizeHd("2026/05/06"), "20260506", "YYYY/MM/DD");
+eq(normalizeHd("20260506"), "20260506", "YYYYMMDD そのまま");
+eq(normalizeHd("2026-5-6"), "20260506", "1 桁月日もゼロ埋め");
+eq(normalizeHd(new Date("2026-05-06T10:00:00Z")), "20260506", "Date オブジェクト (UTC)");
+eq(normalizeHd(""), null, "空文字は null");
+eq(normalizeHd(null), null, "null は null");
+eq(normalizeHd("2026-05-06T10:00:00Z"), "20260506", "ISO datetime");
+
+console.log("\n[3] buildRaceCardUrl (出走表)");
+const card = buildRaceCardUrl("12", "2026-05-06", 7);
+ok(card?.startsWith("https://www.boatrace.jp/owpc/pc/race/racelist?"), "出走表 URL ベース");
+ok(card?.includes("rno=7"), "rno クエリ");
+ok(card?.includes("jcd=12"), "jcd クエリ");
+ok(card?.includes("hd=20260506"), "hd クエリ");
+eq(buildRaceCardUrl(null, "2026-05-06", 7), null, "場コード無しは null");
+eq(buildRaceCardUrl("12", null, 7), null, "日付無しは null");
+eq(buildRaceCardUrl("12", "2026-05-06", null), null, "R番号無しは null");
+eq(buildRaceCardUrl("12", "2026-05-06", 13), null, "R番号 13 (範囲外) は null");
+eq(buildRaceCardUrl("12", "2026-05-06", 0), null, "R番号 0 は null");
+
+console.log("\n[4] buildRaceResultUrl (結果)");
+const result = buildRaceResultUrl("01", "2026-04-01", 12);
+ok(result?.startsWith("https://www.boatrace.jp/owpc/pc/race/raceresult?"), "結果 URL ベース");
+ok(result?.includes("rno=12&jcd=01&hd=20260401"), "クエリ並び");
+
+console.log("\n[5] isReplayLikelyAvailable (リプレイ公開判定)");
+const fixedNow = new Date("2026-05-06T15:00:00+09:00");
+ok(isReplayLikelyAvailable("2026-05-05", null, fixedNow) === true, "昨日のレース → 公開済み");
+ok(isReplayLikelyAvailable("2026-05-07", null, fixedNow) === false, "明日のレース → 未公開");
+ok(isReplayLikelyAvailable("2026-05-06", "10:00", fixedNow) === true, "当日 10:00 発走 + 15:00 → 公開済み (≥30 分経過)");
+ok(isReplayLikelyAvailable("2026-05-06", "14:45", fixedNow) === false, "当日 14:45 発走 + 15:00 → 未公開 (15 分しか経過してない)");
+ok(isReplayLikelyAvailable("2026-05-06", null, fixedNow) === false, "当日 + startTime 不明 → 控えめに未公開");
+ok(isReplayLikelyAvailable("2026-05-06", "broken", fixedNow) === false, "壊れた startTime → false");
+ok(isReplayLikelyAvailable(null, "10:00", fixedNow) === false, "日付無しは false");
+
+console.log("\n[6] buildReplayUrl (リプレイ — 公開判定込み)");
+const replayPast = buildReplayUrl("12", "2026-05-05", 7, { now: fixedNow });
+ok(replayPast?.includes("/extra/video/index.html"), "過去レース → URL あり");
+const replayFuture = buildReplayUrl("12", "2026-05-07", 7, { now: fixedNow });
+eq(replayFuture, null, "未来レース → null");
+const replayBeforeStart = buildReplayUrl("12", "2026-05-06", 7, { startTime: "20:00", now: fixedNow });
+eq(replayBeforeStart, null, "当日レース前 → null");
+
+console.log("\n[7] buildRaceLinks (1 レース まとめ取得)");
+const links = buildRaceLinks({ date: "2026-05-05", venue: "桐生", raceNo: 1, startTime: "10:00" }, fixedNow);
+ok(links.raceCardUrl?.includes("jcd=01"), "場名 → jcd 解決して 出走表 URL");
+ok(links.replayUrl?.includes("jcd=01"), "場名 → jcd 解決して リプレイ URL");
+ok(links.resultUrl?.includes("jcd=01"), "場名 → jcd 解決して 結果 URL");
+ok(links.replayPending === false, "過去レース → replayPending=false");
+
+const linksFuture = buildRaceLinks({ date: "2026-05-07", venue: "桐生", raceNo: 1 }, fixedNow);
+eq(linksFuture.replayUrl, null, "未来 → replayUrl=null");
+ok(linksFuture.replayPending === true, "未来 → replayPending=true");
+ok(linksFuture.raceCardUrl != null, "未来でも 出走表 URL は生成可");
+
+const linksMissing = buildRaceLinks({ venue: "桐生", raceNo: 1 }, fixedNow);
+eq(linksMissing.raceCardUrl, null, "日付無し → raceCardUrl=null");
+ok(typeof linksMissing.reason === "string", "reason 文字列で返す");
+
+const linksUnknownVenue = buildRaceLinks({ date: "2026-05-05", venue: "未知会場", raceNo: 1 }, fixedNow);
+eq(linksUnknownVenue.raceCardUrl, null, "未知の場名 → raceCardUrl=null");
+ok(linksUnknownVenue.reason === "場コード不明", "reason=場コード不明");
+
+const linksNull = buildRaceLinks(null, fixedNow);
+eq(linksNull.raceCardUrl, null, "race=null → raceCardUrl=null");
+
+console.log("\n[8] 既存データ構造との互換性 (jcd 優先 / venue fallback)");
+const rWithJcd = { date: "2026-05-05", venue: "適当な名前", jcd: "12", raceNo: 7 };
+const linksWithJcd = buildRaceLinks(rWithJcd, fixedNow);
+ok(linksWithJcd.raceCardUrl?.includes("jcd=12"), "jcd が優先される (venue 名は無視)");
+
+const rOnlyVenue = { date: "2026-05-05", venue: "住之江", raceNo: 7 };
+const linksOnlyVenue = buildRaceLinks(rOnlyVenue, fixedNow);
+ok(linksOnlyVenue.raceCardUrl?.includes("jcd=12"), "venue 名 (住之江) → jcd=12 解決");
+
+console.log("\n========== 結果 ==========");
+console.log(`成功: ${pass} / 失敗: ${fail}`);
+if (fail > 0) process.exit(1);
+console.log("✅ Race Links URL 生成テスト全件 OK");
