@@ -74,18 +74,27 @@ ok(isReplayLikelyAvailable("2026-05-06", null, fixedNow) === false, "当日 + st
 ok(isReplayLikelyAvailable("2026-05-06", "broken", fixedNow) === false, "壊れた startTime → false");
 ok(isReplayLikelyAvailable(null, "10:00", fixedNow) === false, "日付無しは false");
 
-console.log("\n[6] buildReplayUrl (リプレイ — 公開判定込み)");
+console.log("\n[6] buildReplayUrl (リプレイ — 公開判定 + 会場/日付 URL)");
 const replayPast = buildReplayUrl("12", "2026-05-05", 7, { now: fixedNow });
-ok(replayPast?.includes("/extra/video/index.html"), "過去レース → URL あり");
+ok(replayPast?.startsWith("https://race.boatcast.jp/?"), "過去レース → race.boatcast.jp ベース URL");
+ok(replayPast?.includes("jo=12"), "リプレイ URL は jo (場コード)");
+ok(replayPast?.includes("hd=20260505"), "リプレイ URL は hd (日付)");
+ok(!replayPast?.includes("rno="), "公式が rno を受けないため URL に含めない");
 const replayFuture = buildReplayUrl("12", "2026-05-07", 7, { now: fixedNow });
 eq(replayFuture, null, "未来レース → null");
 const replayBeforeStart = buildReplayUrl("12", "2026-05-06", 7, { startTime: "20:00", now: fixedNow });
 eq(replayBeforeStart, null, "当日レース前 → null");
+const replayDifferentVenue = buildReplayUrl("24", "2026-05-05", 12, { now: fixedNow });
+ok(replayDifferentVenue?.includes("jo=24"), "別会場 (大村=24) で正しい jo を出力");
+ok(replayDifferentVenue !== replayPast, "場違いで違う URL");
+const replayDifferentDate = buildReplayUrl("12", "2026-04-30", 7, { now: fixedNow });
+ok(replayDifferentDate?.includes("hd=20260430"), "日付違いで正しい hd を出力");
+ok(replayDifferentDate !== replayPast, "日付違いで違う URL");
 
 console.log("\n[7] buildRaceLinks (1 レース まとめ取得)");
 const links = buildRaceLinks({ date: "2026-05-05", venue: "桐生", raceNo: 1, startTime: "10:00" }, fixedNow);
 ok(links.raceCardUrl?.includes("jcd=01"), "場名 → jcd 解決して 出走表 URL");
-ok(links.replayUrl?.includes("jcd=01"), "場名 → jcd 解決して リプレイ URL");
+ok(links.replayUrl?.includes("jo=01"), "場名 → jo 解決して リプレイ URL (boatcast 仕様)");
 ok(links.resultUrl?.includes("jcd=01"), "場名 → jcd 解決して 結果 URL");
 ok(links.replayPending === false, "過去レース → replayPending=false");
 
@@ -113,6 +122,87 @@ ok(linksWithJcd.raceCardUrl?.includes("jcd=12"), "jcd が優先される (venue 
 const rOnlyVenue = { date: "2026-05-05", venue: "住之江", raceNo: 7 };
 const linksOnlyVenue = buildRaceLinks(rOnlyVenue, fixedNow);
 ok(linksOnlyVenue.raceCardUrl?.includes("jcd=12"), "venue 名 (住之江) → jcd=12 解決");
+
+/* ============================================================
+ * Round 109: 実機シナリオ 6 件 (ユーザーの厳しめチェックを反映)
+ * ============================================================ */
+console.log("\n[9] 実機シナリオ 6 件 (ユーザー指定)");
+const NOW = new Date("2026-05-06T15:00:00+09:00");
+
+// Scenario 1: 予想済みレース (昨日の桐生 1R) → 出走表ボタン
+{
+  const r = { date: "2026-05-05", venue: "桐生", raceNo: 1, startTime: "10:30" };
+  const l = buildRaceLinks(r, NOW);
+  ok(l.raceCardUrl === "https://www.boatrace.jp/owpc/pc/race/racelist?rno=1&jcd=01&hd=20260505",
+    "S1: 桐生 5/5 1R → 出走表 URL が一意 (rno=1 jcd=01 hd=20260505)");
+}
+
+// Scenario 2: 予想済みレース → リプレイボタン (昨日 → 公開済み)
+{
+  const r = { date: "2026-05-05", venue: "桐生", raceNo: 1, startTime: "10:30" };
+  const l = buildRaceLinks(r, NOW);
+  ok(l.replayUrl === "https://race.boatcast.jp/?jo=01&hd=20260505",
+    "S2: 桐生 5/5 1R → リプレイ URL が会場+日付指定 (jo=01 hd=20260505)");
+  ok(l.replayPending === false, "S2: replayPending=false");
+}
+
+// Scenario 3: 終了前でリプレイ未公開 (発走 30 分以内)
+{
+  const r = { date: "2026-05-06", venue: "住之江", raceNo: 12, startTime: "14:50" }; // NOW=15:00 なので 10 分しか経ってない
+  const l = buildRaceLinks(r, NOW);
+  eq(l.replayUrl, null, "S3: 当日 14:50 発走 + 15:00 → リプレイ null");
+  ok(l.replayPending === true, "S3: replayPending=true");
+  ok(l.raceCardUrl?.includes("hd=20260506"), "S3: 出走表は当日でも開ける");
+}
+
+// Scenario 4: 日付違いを正しく区別
+{
+  const r1 = { date: "2026-05-05", venue: "桐生", raceNo: 7 };
+  const r2 = { date: "2026-05-04", venue: "桐生", raceNo: 7 };
+  const l1 = buildRaceLinks(r1, NOW);
+  const l2 = buildRaceLinks(r2, NOW);
+  ok(l1.raceCardUrl !== l2.raceCardUrl, "S4: 日付違い → 出走表 URL が違う");
+  ok(l1.replayUrl !== l2.replayUrl, "S4: 日付違い → リプレイ URL が違う");
+  ok(l1.raceCardUrl?.includes("hd=20260505"), "S4: 5/5 → hd=20260505");
+  ok(l2.raceCardUrl?.includes("hd=20260504"), "S4: 5/4 → hd=20260504");
+}
+
+// Scenario 5: 場違いを正しく区別
+{
+  const r1 = { date: "2026-05-05", venue: "桐生", raceNo: 7 };  // jcd=01
+  const r2 = { date: "2026-05-05", venue: "大村", raceNo: 7 };  // jcd=24
+  const l1 = buildRaceLinks(r1, NOW);
+  const l2 = buildRaceLinks(r2, NOW);
+  ok(l1.raceCardUrl?.includes("jcd=01"), "S5: 桐生 → jcd=01");
+  ok(l2.raceCardUrl?.includes("jcd=24"), "S5: 大村 → jcd=24");
+  ok(l1.replayUrl?.includes("jo=01"), "S5: 桐生リプレイ → jo=01");
+  ok(l2.replayUrl?.includes("jo=24"), "S5: 大村リプレイ → jo=24");
+  ok(l1.raceCardUrl !== l2.raceCardUrl, "S5: 場違い → 出走表 URL が違う");
+  ok(l1.replayUrl !== l2.replayUrl, "S5: 場違い → リプレイ URL が違う");
+}
+
+// Scenario 6: 既存データ (jcd 無し / venue 名のみ) でも正しい URL
+{
+  const r = { date: "2026-05-05", venue: "住之江", raceNo: 7 };
+  const l = buildRaceLinks(r, NOW);
+  ok(l.raceCardUrl?.includes("jcd=12"), "S6: jcd 欠損 + venue 名 → jcd=12 解決");
+  ok(l.replayUrl?.includes("jo=12"), "S6: リプレイも jo=12 で正しく解決");
+}
+
+// 追加: 全 24 場 ✕ が正しく解決すること
+console.log("\n[10] 全 24 場の URL 生成 (会場名→jcd 解決)");
+const VENUES = [
+  ["桐生", "01"], ["戸田", "02"], ["江戸川", "03"], ["平和島", "04"],
+  ["多摩川", "05"], ["浜名湖", "06"], ["蒲郡", "07"], ["常滑", "08"],
+  ["津", "09"],   ["三国", "10"], ["びわこ", "11"], ["住之江", "12"],
+  ["尼崎", "13"], ["鳴門", "14"], ["丸亀", "15"], ["児島", "16"],
+  ["宮島", "17"], ["徳山", "18"], ["下関", "19"], ["若松", "20"],
+  ["芦屋", "21"], ["福岡", "22"], ["唐津", "23"], ["大村", "24"],
+];
+for (const [name, code] of VENUES) {
+  const l = buildRaceLinks({ date: "2026-05-05", venue: name, raceNo: 1 }, NOW);
+  ok(l.raceCardUrl?.includes(`jcd=${code}`), `${name} → jcd=${code}`);
+}
 
 console.log("\n========== 結果 ==========");
 console.log(`成功: ${pass} / 失敗: ${fail}`);

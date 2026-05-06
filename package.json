@@ -28,6 +28,7 @@
     "test:separation": "node scripts/style-separation-check.mjs",
     "test:cloudstyle": "node scripts/cloud-style-roundtrip-check.mjs",
     "test:racelinks": "node scripts/race-links-check.mjs",
+    "test:racelinks-http": "node scripts/race-links-http-check.mjs",
     "test:all": "npm run tdz && npm run test:sanity && npm run test:pnl && npm run test:storage && npm run test:cloud && npm run test:jst && npm run test:label && npm run test:save && npm run test:preclose && npm run test:styles && npm run test:verify && npm run test:immutable && npm run test:detail && npm run test:separation && npm run test:cloudstyle && npm run test:racelinks",
     "check": "npm run test:all && npm run build"
   },

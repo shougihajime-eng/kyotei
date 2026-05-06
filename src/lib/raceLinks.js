@@ -9,16 +9,25 @@
  *     null を返してボタン側で disable する
  *   ・新しい URL を保存するのではなく、 取り出すたびに生成するステートレス設計
  *
- * 公式ボートレース.jp の URL 仕様 (2024 時点):
+ * 公式ボートレース.jp の URL 仕様 (実機検証済 / 2026):
  *   出走表:   https://www.boatrace.jp/owpc/pc/race/racelist?rno={rno}&jcd={jcd}&hd={YYYYMMDD}
  *   オッズ:   https://www.boatrace.jp/owpc/pc/race/oddstf?rno={rno}&jcd={jcd}&hd={YYYYMMDD}
  *   結果:     https://www.boatrace.jp/owpc/pc/race/raceresult?rno={rno}&jcd={jcd}&hd={YYYYMMDD}
- *   リプレイ: https://www.boatrace.jp/owpc/pc/extra/video/index.html?jcd={jcd}&hd={YYYYMMDD}&rno={rno}
+ *   リプレイ: https://race.boatcast.jp/?jo={jcd}&hd={YYYYMMDD}
+ *
+ * リプレイ URL について重要 (Round 109 で修正):
+ *   ・公式は per-race deep link を提供しない (公式 boatrace.jp 側の結果ページから 飛ぶ先が
+ *     race.boatcast.jp の SPA で、 そこから手動でレース選択する仕様)
+ *   ・前バージョンで使用していた boatrace.jp/owpc/pc/extra/video/index.html は
+ *     現在「システムエラー」 を返すため使用禁止
+ *   ・正規の遷移先は race.boatcast.jp で、 jo (場コード) + hd (日付) を渡すと
+ *     その会場 / その日 のリプレイ一覧が出る (R 番号は SPA 内で選択)
  */
 
 import { VENUE_PROFILE, resolveJcd } from "./venueBias.js";
 
 const BOATRACE_BASE = "https://www.boatrace.jp/owpc/pc";
+const BOATCAST_BASE = "https://race.boatcast.jp";
 
 /**
  * jcd を導出 (jcd 優先 / fallback で venue 名から検索)
@@ -94,6 +103,13 @@ export function buildRaceCardUrl(venueCode, date, raceNo) {
  * リプレイ URL を生成。 過去のレースでないと公開されないため、
  * 「未開催 / 公開待ち」 と判定できる場合は null を返す。
  *
+ * 仕様 (Round 109):
+ *   公式は per-race deep link を持たないため、 会場 + 日付 で
+ *   race.boatcast.jp/?jo={jcd}&hd={YYYYMMDD} を返す。
+ *   ボタン側の title / tooltip で 「{venue} {raceNo}R を選択してください」 と案内する想定。
+ *   raceNo はクエリに含まれないが、 引数に rno を取るのは
+ *   「将来 deep link 対応された場合に互換」 + 「呼び出し側コードの統一」 のため。
+ *
  * @param {string|number} venueCode
  * @param {string|Date} date
  * @param {number} raceNo
@@ -109,7 +125,7 @@ export function buildReplayUrl(venueCode, date, raceNo, opts = {}) {
   // 「公開待ち」 判定: 開催日が未来 / 当日でレース時刻前
   if (!isReplayLikelyAvailable(date, opts.startTime, opts.now)) return null;
 
-  return `${BOATRACE_BASE}/extra/video/index.html?jcd=${jcd}&hd=${hd}&rno=${rno}`;
+  return `${BOATCAST_BASE}/?jo=${jcd}&hd=${hd}`;
 }
 
 /**
@@ -194,7 +210,7 @@ export function buildRaceLinks(race, now) {
   const resultUrl   = `${BOATRACE_BASE}/race/raceresult?rno=${rno}&jcd=${code}&hd=${hd}`;
   const available   = isReplayLikelyAvailable(date, startTime, now);
   const replayUrl   = available
-    ? `${BOATRACE_BASE}/extra/video/index.html?jcd=${code}&hd=${hd}&rno=${rno}`
+    ? `${BOATCAST_BASE}/?jo=${code}&hd=${hd}`
     : null;
 
   return {
@@ -202,6 +218,7 @@ export function buildRaceLinks(race, now) {
     replayUrl,
     resultUrl,
     replayPending: !available,
+    replayDeepLink: false, // 注意: per-race deep link 不可 / 会場 + 日付までしか飛べない
     reason: null,
   };
 }

@@ -84,15 +84,17 @@ export default function RaceLinks({
         accentRgba="rgba(34, 211, 238,"
       />
 
-      {/* === リプレイ === */}
+      {/* === リプレイ ===
+          公式は per-race deep link を出さないため、 race.boatcast.jp の
+          会場 + 日付ページへ遷移して、 ユーザーが SPA 内で R 番号選択する想定 */}
       <LinkPill
         href={links.replayUrl}
         disabled={!links.replayUrl}
         icon="🎬"
         label={links.replayPending ? "リプレイ準備中" : "リプレイ"}
         title={links.replayUrl
-          ? `${race.venue || ""} ${race.raceNo || "?"}R のリプレイを別タブで開く`
-          : "レース終了後 / 公開後にご利用いただけます"}
+          ? `${race.venue || ""} ${formatDate(race.date)} のリプレイ一覧を別タブで開く (${race.raceNo || "?"}R を選択してください)`
+          : (links.replayPending ? "レース終了後 30 分目安でご利用可能になります" : "URL を生成できません")}
         fontSize={fontSize}
         minHeight={minHeight}
         padding={padding}
