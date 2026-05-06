@@ -10,7 +10,7 @@ import RaceLinks from "./RaceLinks.jsx";
  *  ・各カードに 買い目 / 結果 / 着順 / 払戻 / 収支 を全部表示 (クリック不要)
  *  ・最低 1 週間分を時系列降順
  */
-export default function Verify({ predictions, onManualBet, onDeleteRecord, currentProfile, virtualMode }) {
+export default function Verify({ predictions, onManualBet, onDeleteRecord, currentProfile, virtualMode, onBackfill, backfillStatus }) {
   const [tab, setTab] = useState(virtualMode === false ? "real" : "air"); // air | real
   const [styleFilter, setStyleFilter] = useState("all"); // all | steady | balanced | aggressive
   const [periodFilter, setPeriodFilter] = useState("week"); // today | week | month | all
@@ -93,6 +93,13 @@ export default function Verify({ predictions, onManualBet, onDeleteRecord, curre
           + 手動記録
         </button>
       </div>
+
+      {/* === Round 110: 結果バックフィル ボタン + ステータス === */}
+      {onBackfill && (
+        <BackfillBar status={backfillStatus} onBackfill={onBackfill} unresolvedCount={
+          all.filter((p) => !p.result?.first && p.date && p.virtual !== false).length
+        } />
+      )}
 
       {/* === 期間フィルタ === */}
       <FilterRow label="期間">
@@ -335,5 +342,96 @@ function FilterChip({ active, onClick, children }) {
       }}>
       {children}
     </button>
+  );
+}
+
+/* === Round 110: 結果バックフィル バー + ステータス ===
+   ・未確定が残っているときに目立つ「結果を取得」 ボタン
+   ・進行中: プログレス + 件数
+   ・成功: 「✅ N 件確定」 / 失敗: 「⚠️ 通信失敗」
+   ・無言で古い情報を出さない */
+function BackfillBar({ status, onBackfill, unresolvedCount }) {
+  const running = status?.state === "running";
+  const isError = status?.state === "error";
+  const done = status?.state === "done";
+  const hasUnresolved = unresolvedCount > 0;
+
+  // 何も未確定が無く、 ステータスも idle ならバー非表示 (UI ノイズ削減)
+  if (!hasUnresolved && status?.state === "idle") return null;
+
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      style={{
+        padding: "10px 14px",
+        borderRadius: 12,
+        background: running
+          ? "linear-gradient(180deg, rgba(34, 211, 238, 0.10), rgba(34, 211, 238, 0.04))"
+          : isError
+            ? "linear-gradient(180deg, rgba(239, 68, 68, 0.10), rgba(239, 68, 68, 0.04))"
+            : done
+              ? "linear-gradient(180deg, rgba(16, 185, 129, 0.10), rgba(16, 185, 129, 0.04))"
+              : "linear-gradient(180deg, rgba(251, 191, 36, 0.10), rgba(251, 191, 36, 0.04))",
+        border: "1px solid " + (
+          running ? "rgba(34, 211, 238, 0.40)"
+          : isError ? "rgba(239, 68, 68, 0.40)"
+          : done ? "rgba(16, 185, 129, 0.40)"
+          : "rgba(251, 191, 36, 0.40)"
+        ),
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        flexWrap: "wrap",
+      }}
+    >
+      <div style={{ flex: "1 1 220px", minWidth: 0 }}>
+        <div style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: "0.01em", color: "var(--text-primary)" }}>
+          {running
+            ? `🔄 結果取得中 ${status.progress}/${status.total}`
+            : isError
+              ? "❌ 結果取得に失敗しました"
+              : done
+                ? `✅ ${status.updated} 件確定 (試行 ${status.total} / 失敗 ${status.failed || 0})`
+                : `📥 未確定の予想が ${unresolvedCount} 件 残っています`}
+        </div>
+        <div style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 2, lineHeight: 1.5 }}>
+          {running
+            ? (status.label || "公式結果を取得しています…")
+            : isError
+              ? `エラー: ${status.error || "通信失敗"} — もう一度お試しください`
+              : done
+                ? "公式結果ページから確定着順 + 払戻を取得しました"
+                : "「結果を取得」 を押すと公式から最新の確定結果を取得します"}
+        </div>
+        {/* プログレスバー */}
+        {running && status.total > 0 && (
+          <div style={{
+            marginTop: 6,
+            height: 4,
+            borderRadius: 2,
+            background: "rgba(255, 255, 255, 0.06)",
+            overflow: "hidden",
+          }}>
+            <div style={{
+              width: `${Math.round((status.progress / status.total) * 100)}%`,
+              height: "100%",
+              background: "linear-gradient(90deg, var(--brand) 0%, var(--brand-hover) 100%)",
+              transition: "width 0.2s ease",
+            }} />
+          </div>
+        )}
+      </div>
+      <button
+        onClick={onBackfill}
+        disabled={running}
+        className={running ? "btn btn-ghost" : "btn btn-primary"}
+        style={{ minHeight: 40, minWidth: 130, fontSize: 13, fontWeight: 700 }}
+        title={running ? "取得中です" : "公式の結果ページから 過去予想の結果を取得します"}
+        aria-busy={running}
+      >
+        {running ? "⏳ 取得中…" : isError ? "🔁 もう一度" : "📥 結果を取得"}
+      </button>
+    </div>
   );
 }

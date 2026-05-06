@@ -100,17 +100,28 @@ function sleep(ms) {
 export async function fetchJSON(url, opts = {}) {
   const now = Date.now();
 
+  // nocache オプション: result cache + lastSuccess を無視して必ず fetch する
+  // (Round 110: 結果バックフィルのように 「絶対に最新を取りたい」 用途)
+  const nocache = !!opts.nocache;
+
   // Layer 1: in-flight dedup (1 秒以内の同一 URL は同じ Promise を共有)
-  const inflight = _inflight.get(url);
-  if (inflight && now - inflight.ts < INFLIGHT_TTL_MS) {
-    return inflight.promise;
+  if (!nocache) {
+    const inflight = _inflight.get(url);
+    if (inflight && now - inflight.ts < INFLIGHT_TTL_MS) {
+      return inflight.promise;
+    }
   }
 
   // Layer 2: result cache hit (エンドポイント別 TTL)
-  const cached = _resultCache.get(url);
-  const ttl = getTtlForUrl(url);
-  if (cached && now - cached.ts < ttl) {
-    return Promise.resolve(cached.data);
+  if (!nocache) {
+    const cached = _resultCache.get(url);
+    const ttl = getTtlForUrl(url);
+    if (cached && now - cached.ts < ttl) {
+      return Promise.resolve(cached.data);
+    }
+  } else {
+    // nocache 時は cache を消して次回以降にも影響しないように
+    _resultCache.delete(url);
   }
 
   // Layer 3: throttled fetch (同時 3 + 間隔 300ms 以上)
@@ -195,9 +206,9 @@ export async function fetchRaceOdds(jcd, rno, dateStr) {
   return j?.ok !== false ? j : null;
 }
 
-export async function fetchRaceResult(jcd, rno, dateStr) {
+export async function fetchRaceResult(jcd, rno, dateStr, opts = {}) {
   if (!jcd || !rno || !dateStr) return null;
-  const j = await fetchJSON(`/api/result?jcd=${jcd}&rno=${rno}&date=${dateStr}`);
+  const j = await fetchJSON(`/api/result?jcd=${jcd}&rno=${rno}&date=${dateStr}`, opts);
   return j?.ok !== false ? j : null;
 }
 

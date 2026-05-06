@@ -31,6 +31,7 @@ import { fullSync, lightSync, deleteCloudData } from "./lib/cloudSync.js";
 import { setRateLimitListener, clearApiCaches } from "./lib/api.js";
 import LoginModal from "./components/LoginModal.jsx";
 import { fetchTodaySchedule, fetchRaceProgram, fetchRaceOdds, fetchRaceResult, fetchBeforeInfo } from "./lib/api.js";
+import { backfillResults, applyResultToPrediction } from "./lib/finalizeResult.js";
 import { evaluateRace, buildBuyRecommendation, computeOverallGrade } from "./lib/predict.js";
 import { suggestStyle } from "./components/StyleSelector.jsx";
 import { computeStrategyRanking } from "./lib/strategyRanking.js";
@@ -834,6 +835,40 @@ export default function App() {
       return out;
     });
 
+    /* ③-B Round 110: 過去レースの結果バックフィル
+       refreshAll は今までは「当日のレースの結果」 しか反映しなかった。
+       昨日以前の予想で結果が未確定なものを取りに行き、 finalize する。
+       これにより 「終わっているのに未確定」 状態が再発しないようにする。 */
+    try {
+      setRefreshMsg("🔄 過去予想の結果を取得中…");
+      const todayK = todayKey();
+      let lastReport = null;
+      const backfillResult = await backfillResults(predictions, {
+        todayKey: todayK,
+        nocache: true, // 過去結果は確実に最新を取りに行く
+        maxFetch: 60,
+        onProgress: (done, total, label) => {
+          if (total > 0) {
+            setRefreshMsg(`🔄 過去予想 ${done}/${total} (${label})`);
+          }
+        },
+      });
+      if (backfillResult.updated > 0 || backfillResult.attempted > 0) {
+        setPredictions(backfillResult.nextPredictions);
+        lastReport = backfillResult;
+      }
+      if (lastReport) {
+        if (lastReport.updated > 0) {
+          setRefreshMsg(`✅ 過去予想 ${lastReport.updated} 件を確定`);
+        } else if (lastReport.attempted > 0 && lastReport.failed === lastReport.attempted) {
+          setRefreshMsg(`⚠️ 過去予想 ${lastReport.attempted} 件: 結果未公開 / API 失敗`);
+        }
+      }
+    } catch (e) {
+      console.error("[refreshAll] backfill failed:", e);
+      // バックフィル失敗してもメインのフローは継続
+    }
+
     /* ④ 高速 2 段階追加取得 — オッズだけ 5秒間隔で 2 回追い更新
        (発走直前のオッズ変動を捉えやすくする / 連打防止のため最大 2 回まで) */
     const fastTargets = candidates.filter((r) => {
@@ -885,6 +920,59 @@ export default function App() {
       setRefreshing(false);
     }
   }, [refreshing, lastRefreshAt]);
+
+  /* === Round 110: Verify 画面から呼ぶ「結果を取得」 ハンドラ ===
+     refreshAll 全体ではなく、 過去予想の結果バックフィルだけを回したい場合の専用入口。
+     ステータスは独立して持ち、 「結果取得中 / 失敗 / 中身なし」 を Verify 側で表示する。 */
+  const [backfillStatus, setBackfillStatus] = useState({
+    state: "idle", // idle | running | done | error
+    progress: 0,
+    total: 0,
+    label: "",
+    updated: 0,
+    failed: 0,
+    error: null,
+    finishedAt: null,
+  });
+  const backfillPastResults = useCallback(async () => {
+    if (backfillStatus.state === "running") return;
+    setBackfillStatus({ state: "running", progress: 0, total: 0, label: "", updated: 0, failed: 0, error: null, finishedAt: null });
+    try {
+      const res = await backfillResults(predictions, {
+        todayKey: todayKey(),
+        nocache: true,
+        maxFetch: 80,
+        onProgress: (done, total, label) => {
+          setBackfillStatus((s) => ({ ...s, progress: done, total, label }));
+        },
+      });
+      if (res.updated > 0) setPredictions(res.nextPredictions);
+      setBackfillStatus({
+        state: "done",
+        progress: res.attempted, total: res.attempted,
+        label: "",
+        updated: res.updated, failed: res.failed,
+        error: null,
+        finishedAt: Date.now(),
+      });
+      if (res.attempted === 0) {
+        showToast("📭 結果取得対象なし (全件確定済み)", "info");
+      } else if (res.updated > 0) {
+        showToast(`✅ ${res.updated} 件を確定 (試行 ${res.attempted} / 失敗 ${res.failed})`, "ok");
+      } else {
+        showToast(`⚠️ ${res.attempted} 件試行 / 結果未公開のため確定 0 件`, "info");
+      }
+    } catch (e) {
+      console.error("[backfillPastResults] error:", e);
+      setBackfillStatus((s) => ({
+        ...s,
+        state: "error",
+        error: String(e?.message || e),
+        finishedAt: Date.now(),
+      }));
+      showToast("❌ 結果取得に失敗しました — 通信状況を確認してください", "err");
+    }
+  }, [predictions, backfillStatus.state, showToast]);
 
   /* === 起動時に 1 回だけ取得 (cooldown bypass) === */
   useEffect(() => {
@@ -1359,7 +1447,9 @@ export default function App() {
             currentProfile={settings.riskProfile}
             virtualMode={settings.virtualMode}
             onManualBet={handleManualBet}
-            onDeleteRecord={handleDeleteRecord} />
+            onDeleteRecord={handleDeleteRecord}
+            onBackfill={backfillPastResults}
+            backfillStatus={backfillStatus} />
           </Suspense>
         )}
         {tab === "stats" && (
