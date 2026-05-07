@@ -2,6 +2,7 @@ import BuyDecisionCard from "./BuyDecisionCard.jsx";
 import { pct } from "../lib/format.js";
 import { dataAvailability, getScoreBreakdown } from "../lib/predict.js";
 import RaceLinks from "./RaceLinks.jsx";
+import { computeDataConfidence } from "../lib/dataConfidence.js";
 
 /**
  * レース詳細 — 結論カード + 6艇の確率/スコア + 直前情報サマリ + 関連記事
@@ -36,6 +37,9 @@ export default function RaceDetail({ race, evalRes, recommendation, allStyleRecs
 
       {/* Round 127: 3 スタイル比較カード — 同じレースでスタイル別の違いを一目で見る */}
       <StyleComparisonCard allStyleRecs={allStyleRecs} currentStyle={currentStyle} />
+
+      {/* Round 144: データの厚さバッジ — 予想根拠のメタ信頼度 */}
+      <DataConfidenceCard race={race} />
 
       {/* Round 134: 予想推移カード — 同じレース・スタイルで予想がどう変わったか */}
       <PredictionHistoryCard currentPrediction={currentPrediction} />
@@ -578,6 +582,54 @@ function PredictionHistoryCard({ currentPrediction }) {
       </div>
       <div style={{ fontSize: 10.5, color: "var(--text-tertiary)", marginTop: 10, lineHeight: 1.5 }}>
         💡 「決定 / 買い目 / EV」 が変わったタイミングだけ記録 (最大 10 件)。 予想の安定性が見えます。
+      </div>
+    </section>
+  );
+}
+
+/* === Round 144: データの厚さバッジ ===
+   買い判定の予想ロジック自信度 (confidence) とは別に、
+   「どれだけ多くの情報源から予想したか」 のメタ信頼度を ★1〜5 で表示。 */
+function DataConfidenceCard({ race }) {
+  const dc = computeDataConfidence(race);
+  if (!dc) return null;
+
+  const colorByStars = {
+    5: { bg: "rgba(16,185,129,0.18)", border: "rgba(16,185,129,0.55)", text: "#a7f3d0" },
+    4: { bg: "rgba(16,185,129,0.10)", border: "rgba(16,185,129,0.40)", text: "#86efac" },
+    3: { bg: "rgba(34,211,238,0.10)", border: "rgba(34,211,238,0.40)", text: "#67E8F9" },
+    2: { bg: "rgba(245,158,11,0.10)", border: "rgba(245,158,11,0.40)", text: "#fcd34d" },
+    1: { bg: "rgba(239,68,68,0.10)", border: "rgba(239,68,68,0.40)", text: "#fca5a5" },
+    0: { bg: "rgba(148,163,184,0.10)", border: "rgba(148,163,184,0.30)", text: "#94a3b8" },
+  };
+  const c = colorByStars[dc.stars] || colorByStars[0];
+  const stars = "★".repeat(dc.stars) + "☆".repeat(5 - dc.stars);
+
+  return (
+    <section className="card p-4" style={{
+      borderColor: c.border, background: `linear-gradient(180deg, ${c.bg} 0%, transparent 100%)`,
+    }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
+        <h3 className="font-bold text-sm">📊 予想データの厚さ</h3>
+        <div style={{ fontSize: 18, fontWeight: 800, color: c.text, letterSpacing: "0.05em" }}>
+          {stars}
+        </div>
+      </div>
+      <div style={{ fontSize: 12, color: c.text, fontWeight: 700, marginBottom: 6 }}>
+        {dc.label}
+      </div>
+      {dc.sources.length > 0 && (
+        <div style={{ fontSize: 11, color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: 6 }}>
+          ✅ 取得済 ({dc.sources.length}): {dc.sources.join(" / ")}
+        </div>
+      )}
+      {dc.missing.length > 0 && (
+        <div style={{ fontSize: 11, color: "var(--c-warning-text)", lineHeight: 1.6 }}>
+          ⚠️ 未取得: {dc.missing.join(" / ")}
+        </div>
+      )}
+      <div style={{ fontSize: 10.5, color: "var(--text-tertiary)", marginTop: 10, lineHeight: 1.5 }}>
+        💡 同じ買い判定でも、 ★ が多いほど 「複数情報で裏付け済」。 ★が少ないと判断材料が薄いので慎重に。
       </div>
     </section>
   );
