@@ -274,12 +274,13 @@ a:hover { color: var(--brand); }
   line-height: 1.4;
   -webkit-tap-highlight-color: transparent;
 }
-.badge-buy   { background: var(--c-success-bg); color: var(--c-success-text); border: 1px solid var(--c-success-border); }
-.badge-skip  { background: var(--c-danger-bg);  color: var(--c-danger-text);  border: 1px solid var(--c-danger-border); }
-.badge-warn  { background: var(--c-warning-bg); color: var(--c-warning-text); border: 1px solid var(--c-warning-border); }
-.badge-hole  { background: var(--c-purple-bg);  color: var(--c-purple-text);  border: 1px solid var(--c-purple-border); }
+/* Round 134: バッジに淡いグロウを追加 — 「買い」 / 「見送り」 が一瞬で目に入る */
+.badge-buy   { background: var(--c-success-bg); color: var(--c-success-text); border: 1px solid var(--c-success-border); box-shadow: 0 0 12px rgba(16, 185, 129, 0.28); }
+.badge-skip  { background: var(--c-danger-bg);  color: var(--c-danger-text);  border: 1px solid var(--c-danger-border);  box-shadow: 0 0 12px rgba(239, 68, 68, 0.28); }
+.badge-warn  { background: var(--c-warning-bg); color: var(--c-warning-text); border: 1px solid var(--c-warning-border); box-shadow: 0 0 12px rgba(245, 158, 11, 0.24); }
+.badge-hole  { background: var(--c-purple-bg);  color: var(--c-purple-text);  border: 1px solid var(--c-purple-border);  box-shadow: 0 0 14px rgba(168, 85, 247, 0.32); }
 .badge-mute  { background: var(--c-mute-bg);    color: var(--c-mute-text);    border: 1px solid var(--c-mute-border); }
-.badge-brand { background: var(--brand-bg);     color: var(--brand-text);     border: 1px solid var(--brand-border); }
+.badge-brand { background: var(--brand-bg);     color: var(--brand-text);     border: 1px solid var(--brand-border);     box-shadow: 0 0 14px rgba(34, 211, 238, 0.30); }
 
 /* グレード S/A/B/C */
 .badge-grade-S {
@@ -433,11 +434,22 @@ a:hover { color: var(--brand); }
 .scrollbar::-webkit-scrollbar-thumb:hover { background: var(--border-strong); }
 
 /* =====================================================================
- * 状態色テキスト
+ * 状態色テキスト (Round 134: ビビッド + ネオングロウ)
  * ===================================================================== */
-.text-pos { color: #34D399; font-weight: 700; }
-.text-neg { color: #F87171; font-weight: 700; }
-.text-brand { color: var(--brand-text); }
+.text-pos {
+  color: #22F5A8;            /* 一段階ビビッドな緑 */
+  font-weight: 700;
+  text-shadow: 0 0 10px rgba(34, 245, 168, 0.42);
+}
+.text-neg {
+  color: #FF6B6B;            /* 一段階ビビッドな赤 */
+  font-weight: 700;
+  text-shadow: 0 0 10px rgba(255, 107, 107, 0.42);
+}
+.text-brand {
+  color: var(--brand-text);
+  text-shadow: 0 0 8px rgba(34, 211, 238, 0.32);
+}
 .text-mute { color: var(--text-tertiary); }
 .text-soft { color: var(--text-secondary); }
 
@@ -623,7 +635,7 @@ a {
   padding-top: env(safe-area-inset-top, 0);
 }
 
-/* ブランドロゴ (gradient text) */
+/* ブランドロゴ (gradient text + Round 134 グロウ) */
 .brand-logo {
   background: linear-gradient(135deg, #22D3EE 0%, #3B82F6 100%);
   -webkit-background-clip: text;
@@ -631,10 +643,12 @@ a {
   -webkit-text-fill-color: transparent;
   font-weight: 800;
   letter-spacing: -0.01em;
+  filter: drop-shadow(0 0 12px rgba(34, 211, 238, 0.45))
+          drop-shadow(0 0 24px rgba(59, 130, 246, 0.22));
 }
 
 /* =====================================================================
- * KPI 数値 (大きめ + 洗練)
+ * KPI 数値 (大きめ + 洗練 + Round 134 ネオングロウ)
  * ===================================================================== */
 .kpi-num {
   font-variant-numeric: tabular-nums;
@@ -642,6 +656,10 @@ a {
   font-weight: 800;
   letter-spacing: -0.025em;
   line-height: 1.05;
+  /* ネオン風グロウ — 文字色そのまま、影だけ淡く光る */
+  text-shadow:
+    0 0 8px  currentColor,
+    0 0 18px rgba(34, 211, 238, 0.18);
 }
 
 /* =====================================================================
