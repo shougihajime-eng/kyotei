@@ -13,6 +13,7 @@ import TopVerdictBanner from "./TopVerdictBanner.jsx";
 import KpiPanel from "./KpiPanel.jsx";
 import TodayVerificationPanel from "./TodayVerificationPanel.jsx";
 import { analyzePatterns, classifyRaceByPattern } from "../lib/patternAnalysis.js";
+import DataProgressCard from "./DataProgressCard.jsx";
 import CloudSyncCheckPanel from "./CloudSyncCheckPanel.jsx";
 import { yen } from "../lib/format.js";
 
@@ -113,6 +114,9 @@ export default function Dashboard({
 
       {/* Round 73 Phase 1②: 検証 KPI パネル (ROI / 的中率 / 平均オッズ / 最大連敗 / 連敗確率) */}
       <KpiPanel predictions={visibleData?.predictions} />
+
+      {/* Round 139: データ蓄積進捗 — 「あと何件で機能解禁か」 を進捗バーで見える化 */}
+      <DataProgressCard predictions={visibleData?.predictions} />
 
       {/* Round 136: 得意/苦手パターン自動抽出 — 過去の確定済データから 「あなたが得意なレース条件」 を見える化 */}
       <WinningPatternsCard predictions={visibleData?.predictions} />
