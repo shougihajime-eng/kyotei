@@ -258,9 +258,9 @@ function ImminentRaces({ races, recommendations, onPickRace }) {
                   onClick={() => onPickRace?.(race.id)}
                   className="btn btn-ghost"
                   style={{
-                    fontSize: 11.5,
-                    padding: "6px 10px",
-                    minHeight: 32,
+                    fontSize: 12.5,
+                    padding: "8px 12px",
+                    minHeight: 40,
                     color: "#ddd6fe",
                     border: "1px solid rgba(167,139,250,0.40)",
                   }}>
