@@ -231,6 +231,13 @@ export async function fetchRacerCourse(toban) {
   return j?.ok !== false ? j : null;
 }
 
+/* Round 123: 選手の直近 3 節成績 (着順羅列 + 統計) を取得 */
+export async function fetchRacerRecent(toban) {
+  if (!toban) return null;
+  const j = await fetchJSON(`/api/racer-recent?toban=${toban}`);
+  return j?.ok !== false ? j : null;
+}
+
 /* === 手動キャッシュクリア (Settings リセット時に呼ぶ) === */
 export function clearApiCaches() {
   _inflight.clear();

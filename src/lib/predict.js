@@ -112,6 +112,48 @@ export function venueAptitudeMod(boat) {
 }
 
 /**
+ * Round 123: 直近の好調/不調補正
+ *
+ * 選手の直近 3 節 (~30-40 走) の平均着順から好調・不調を判定して補正する。
+ *   ・平均着順 ≤ 2.5 → 好調 +5%
+ *   ・平均着順 ≤ 3.0 → やや好調 +3%
+ *   ・平均着順 ≥ 4.5 → 不調 -5%
+ *   ・平均着順 ≥ 4.0 → やや不調 -3%
+ *   ・F (フライング) 直近にあれば -2% (節中の慎重スタート)
+ *
+ * boat.recentForm が無ければ補正なし (フォールスルー)。
+ * 返り値: { mod, reason }
+ */
+export function recentFormMod(boat) {
+  if (!boat?.recentForm) return { mod: 1.0, reason: null };
+  const rf = boat.recentForm;
+  if (!rf.count || rf.count < 5) return { mod: 1.0, reason: null }; // データ不足
+  let mod = 1.0;
+  const parts = [];
+  if (rf.avg != null) {
+    if (rf.avg <= 2.5) { mod *= 1.05; parts.push(`好調 (平均着順 ${rf.avg})`); }
+    else if (rf.avg <= 3.0) { mod *= 1.03; parts.push(`やや好調 (平均着順 ${rf.avg})`); }
+    else if (rf.avg >= 4.5) { mod *= 0.95; parts.push(`不調 (平均着順 ${rf.avg})`); }
+    else if (rf.avg >= 4.0) { mod *= 0.97; parts.push(`やや不調 (平均着順 ${rf.avg})`); }
+  }
+  // 直近 5 走に F (フライング) があれば慎重スタート傾向 → -2%
+  if (Array.isArray(rf.last5) && rf.last5.includes("F")) {
+    mod *= 0.98;
+    parts.push("直近 F あり (慎重スタート)");
+  }
+  if (parts.length === 0) return { mod: 1.0, reason: null };
+  const sign = mod >= 1 ? "+" : "-";
+  const pct = Math.abs(Math.round((mod - 1) * 100));
+  return {
+    mod: Math.max(0.92, Math.min(1.08, mod)),
+    reason: {
+      kind: mod >= 1 ? "pos" : "neg",
+      text: `${parts.join(" / ")} → ${sign}${pct}%`,
+    },
+  };
+}
+
+/**
  * Round 121: コース別実績補正
  *
  * その選手が進入予定コースで過去にどれだけ 3 連対しているかを見て、
@@ -193,10 +235,12 @@ function scoreBoat(boat, race) {
   const cond = computeConditionMod(boat);
   const wd = windDirectionMod(boat, race?.windDir, race?.wind);
   const ca = courseAptitudeMod(boat); // Round 121: コース別実績補正
-  const totalMod = cond.mod * wd.mod * ca.mod;
+  const rf = recentFormMod(boat);     // Round 123: 直近の好調/不調補正
+  const totalMod = cond.mod * wd.mod * ca.mod * rf.mod;
   const reasons = [...cond.reasons];
   if (wd.reason) reasons.push(wd.reason);
   if (ca.reason) reasons.push(ca.reason);
+  if (rf.reason) reasons.push(rf.reason);
   return {
     boatNo: boat.boatNo,
     score: baseScore * totalMod,

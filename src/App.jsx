@@ -30,7 +30,7 @@ import { getCurrentUser, onAuthChange, signOut as authSignOut } from "./lib/auth
 import { fullSync, lightSync, deleteCloudData } from "./lib/cloudSync.js";
 import { setRateLimitListener, clearApiCaches } from "./lib/api.js";
 import LoginModal from "./components/LoginModal.jsx";
-import { fetchTodaySchedule, fetchRaceProgram, fetchRaceOdds, fetchRaceResult, fetchBeforeInfo, fetchRacerCourse } from "./lib/api.js";
+import { fetchTodaySchedule, fetchRaceProgram, fetchRaceOdds, fetchRaceResult, fetchBeforeInfo, fetchRacerCourse, fetchRacerRecent } from "./lib/api.js";
 import { backfillResults, applyResultToPrediction } from "./lib/finalizeResult.js";
 import { evaluateRace, buildBuyRecommendation, computeOverallGrade } from "./lib/predict.js";
 import { suggestStyle } from "./components/StyleSelector.jsx";
@@ -1358,12 +1358,19 @@ export default function App() {
     if (tobansToFetch.length === 0) return;
     (async () => {
       try {
+        // Round 121 + Round 123: コース別実績 + 直近 3 節成績を 1 リクエストずつ並列取得
+        // 同じ toban で 2 つのページを叩くが、 s-maxage=24h で重複しないので OK
         const courseDataByToban = {};
+        const recentByToban = {};
         await withConcurrency(tobansToFetch, async (toban) => {
-          const data = await fetchRacerCourse(toban);
-          if (data?.courses) courseDataByToban[toban] = data.courses;
+          const [course, recent] = await Promise.all([
+            fetchRacerCourse(toban),
+            fetchRacerRecent(toban),
+          ]);
+          if (course?.courses) courseDataByToban[toban] = course.courses;
+          if (recent?.recent) recentByToban[toban] = recent.recent;
         }, 4);
-        if (Object.keys(courseDataByToban).length === 0) return;
+        if (Object.keys(courseDataByToban).length === 0 && Object.keys(recentByToban).length === 0) return;
         setRaces((prev) => {
           if (!prev || prev.length === 0) return prev;
           let anyChanged = false;
@@ -1373,10 +1380,15 @@ export default function App() {
             const newBoats = r.boats.map((b) => {
               if (!b?.toban) return b;
               const cs = courseDataByToban[b.toban];
-              if (!cs) return b;
-              if (b.courseStats) return b;
+              const rf = recentByToban[b.toban];
+              const needsCourse = cs && !b.courseStats;
+              const needsRecent = rf && !b.recentForm;
+              if (!needsCourse && !needsRecent) return b;
               changedBoats = true;
-              return { ...b, courseStats: cs };
+              const next = { ...b };
+              if (needsCourse) next.courseStats = cs;
+              if (needsRecent) next.recentForm = rf;
+              return next;
             });
             if (!changedBoats) return r;
             anyChanged = true;
@@ -1385,7 +1397,7 @@ export default function App() {
           return anyChanged ? nextRaces : prev;
         });
       } catch (e) {
-        console.error("[r121 racer-course fetch] failed:", e);
+        console.error("[r121+r123 racer fetch] failed:", e);
       }
     })();
   }, [nowTick, races]);
