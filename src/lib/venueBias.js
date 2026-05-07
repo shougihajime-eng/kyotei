@@ -132,24 +132,58 @@ export function timeAptitudeMod(boat, slot) {
  *  ・1号艇本命 vs 2号艇まくり型 → 刺されリスク → -3%
  *  ・1号艇本命 vs 3号艇まくり型 → まくられリスク → -3%
  *  返り値: 倍率 (0.94〜1.04)
+ *
+ *  Round 122: 選手のコース別 3 連対率 (boat.courseStats) があれば実データ判定に強化。
+ *  全国平均 (1コース 80% / 2コース 55% / 3コース 45% / 4コース 38% / 5コース 30% / 6コース 22%)
+ *  と比較して、 +5pt 以上 = 「そのコースが得意」 と判定。
  */
+const _COURSE_BASELINES_LOCAL = [80, 55, 45, 38, 30, 22];
+
 export function styleMatchupMod(boats) {
   if (!Array.isArray(boats) || boats.length !== 6) return [1, 1, 1, 1, 1, 1];
   const mods = [1, 1, 1, 1, 1, 1];
-  const styleOf = (b) => {
-    // ST が早い+winRate高 → まくり型 (簡易判定)
+
+  /** その選手がそのコース (boat.boatNo) で得意か (Round 122 強化) */
+  const isStrongAtCourse = (b) => {
+    if (!b) return false;
+    if (Array.isArray(b.courseStats)) {
+      const cs = b.courseStats.find((c) => c?.course === b.boatNo);
+      if (cs?.showRate != null) {
+        const baseline = _COURSE_BASELINES_LOCAL[b.boatNo - 1] ?? 50;
+        return cs.showRate >= baseline + 5;
+      }
+    }
+    // フォールバック: 既存の ST + 勝率 簡易判定
     const st = b.ST;
     const wr = b.winRate;
-    if (st != null && st <= 0.16 && wr != null && wr >= 6.0) return "まくり";
-    if (st != null && st <= 0.18 && wr != null && wr >= 5.0) return "差し";
-    return null;
+    return st != null && st <= 0.16 && wr != null && wr >= 6.0;
   };
+
+  /** 2-3 コース選手のまくり力評価 (得意 + 高い ST) */
+  const isMakuriType = (b) => {
+    if (!b) return false;
+    // 第1優先: コース別 3連対率 (実データ)
+    if (isStrongAtCourse(b)) return true;
+    // フォールバック: ST + 勝率
+    const st = b.ST;
+    const wr = b.winRate;
+    return st != null && st <= 0.16 && wr != null && wr >= 6.0;
+  };
+  /** 2 コース選手の差し力評価 */
+  const isSashiType = (b) => {
+    if (!b) return false;
+    if (isStrongAtCourse(b)) return true;
+    const st = b.ST;
+    const wr = b.winRate;
+    return st != null && st <= 0.18 && wr != null && wr >= 5.0;
+  };
+
   // 2/3コースに「まくり型」 がいれば 1号艇に -3%
   for (let i = 1; i <= 2; i++) {
-    if (styleOf(boats[i]) === "まくり") mods[0] *= 0.97;
+    if (isMakuriType(boats[i])) mods[0] *= 0.97;
   }
   // 2コースに「差し型」 がいれば 1号艇に -2% (刺されリスク)
-  if (styleOf(boats[1]) === "差し") mods[0] *= 0.98;
+  if (isSashiType(boats[1])) mods[0] *= 0.98;
   return mods;
 }
 

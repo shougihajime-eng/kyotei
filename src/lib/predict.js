@@ -414,11 +414,29 @@ function buildPickReason(ticket, score, ev, inDominant, inFavored, inProb) {
   return r;
 }
 
-/* === Phase D: 前付け検知 === */
+/* === Phase D: 前付け検知 ===
+   Round 122: 選手のコース別進入率 (boat.courseStats[i].entryRate) があれば
+              「最も進入率が高いコース」 を想定進入として採用 (進入履歴より精度高)。
+              無ければ entryHistory にフォールバック (元ロジック)。
+*/
 export function predictMaeBuke(race) {
   const boats = race.boats || [];
-  // 各艇の進入コース最頻値 (entryHistory が無ければ枠番)
   const lanes = boats.map((b) => {
+    // 第1優先: Round 121 で取得した選手のコース別進入率
+    if (Array.isArray(b.courseStats)) {
+      let topCourse = b.boatNo, topRate = 0;
+      for (const c of b.courseStats) {
+        if (c?.entryRate != null && c.entryRate > topRate) {
+          topRate = c.entryRate;
+          topCourse = c.course;
+        }
+      }
+      if (topRate >= 25) {
+        // 主進入コースが明確 (25% 以上) → そのコースを採用
+        return { boat: b.boatNo, lane: topCourse, conf: topRate / 100 };
+      }
+    }
+    // フォールバック: entryHistory (旧ロジック)
     const hist = Array.isArray(b.entryHistory) ? b.entryHistory : [];
     if (hist.length === 0) return { boat: b.boatNo, lane: b.boatNo, conf: 0 };
     const counts = {};
@@ -429,17 +447,18 @@ export function predictMaeBuke(race) {
     }
     return { boat: b.boatNo, lane: topLane, conf: topCount / hist.length };
   });
-  // 1コースに 1号艇以外が入る確率 (前付け可能性)
+  // 1 コースに 1 号艇以外が入る確率 (前付け可能性)
   const inner = lanes.find((l) => l.lane === 1);
   const isMaebuke = inner && inner.boat !== 1;
   const likelihood = isMaebuke ? Math.round(60 + (inner.conf || 0) * 40) : 0;
-  // 想定進入文字列 (例: "125/346" のような形式)
   const expectedLane = lanes.sort((a, b) => a.lane - b.lane).map((l) => l.boat).join("");
   return {
     isMaebuke,
     likelihood,
     expectedLane,
     suspectBoats: isMaebuke ? [{ boat: inner.boat, fromLane: inner.boat, toLane: 1 }] : [],
+    /* Round 122: データソース */
+    source: lanes.some((l) => l.conf > 0.25) ? "courseStats" : "entryHistory",
   };
 }
 

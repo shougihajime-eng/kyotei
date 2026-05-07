@@ -4,9 +4,9 @@
 
 ## 🎯 進捗（いまここ）
 
-- ✅ 直近で済んだこと: **Round 120-121 完了**。Round 120 で取得範囲を当日全レース (約 144) に拡張。Round 121 で選手のコース別実績 (進入率 + 3連対率) を取得して予想に反映 (`/api/racer-course`、`courseAptitudeMod`)。展開予想に逃げ/まくり/差し/荒れの確率 % を追加。 30 日計画書は `docs/ROADMAP-WORLD-CHAMPION.md`。
+- ✅ 直近で済んだこと: **Round 120-122 完了**。Round 120 で全レース取得範囲拡張、 Round 121 で選手のコース別実績 (進入率/3連対率) を取得・補正反映 (`courseAptitudeMod`)、 Round 122 で進入予想 (`predictMaeBuke`) と戦法相性 (`styleMatchupMod`) を courseStats で強化。 計画書は `docs/ROADMAP-WORLD-CHAMPION.md`。
 - 🟡 進行中: なし
-- 🔜 次の一歩: 1 週間運用してデータ蓄積を観察 (確定済 30+ 件で学習機能が動き出す) → Round 122 (ピット離れ取得) → Round 123 (学習機能拡張)。 詳細は `docs/ROADMAP-WORLD-CHAMPION.md`。
+- 🔜 次の一歩: 1 週間運用してデータ蓄積観察 (確定済 30+ 件で学習機能が動き始める) → Round 123 (学習機能の 5 因子全部への拡張) → Round 124 (機械学習化)。
 
 ## 🌐 本番URL
 
