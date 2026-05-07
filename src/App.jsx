@@ -51,7 +51,7 @@ import { defaultSettings, summarizeToday, perRaceCap } from "./lib/money.js";
 import { todayDate, todayKey, startEpoch } from "./lib/format.js";
 import { generateSampleRaces, buildRacesFromSchedule, mergeProgram, mergeOdds, mergeBeforeInfo } from "./lib/sample.js";
 
-const REFRESH_COOLDOWN_MS = 60 * 1000;
+const REFRESH_COOLDOWN_MS = 15 * 1000; // Round 112: 60→15 秒に短縮 (連打したい時のストレスを除去)
 
 export default function App() {
   /* === Round 75: 公開検証ログページ — URL に ?log=public があれば専用ページを表示 === */
@@ -718,6 +718,12 @@ export default function App() {
       baseRaces = generateSampleRaces();
       setIsSampleMode(true);   // Round 74: 仮データ動作中フラグ
     }
+    /* Round 112: ここで即 races を画面に出す → ユーザーは "更新が反応した" と感じられる
+       詳細 (program/odds/before/result) は ② 以降で並列に追記される */
+    setRaces(baseRaces);
+    if (sched?.ok) {
+      setRefreshMsg(`🔄 ${sched.total_venues}会場 / ${sched.total_races}レース確認中…`);
+    }
 
     /* ② 勝負候補 (発走±60分) を絞る → program/odds/result を並列取得 */
     const now = Date.now();
@@ -835,42 +841,6 @@ export default function App() {
       return out;
     });
 
-    /* ③-B Round 110: 過去レースの結果バックフィル (Round 111: 並列化で高速化)
-       refreshAll は今までは「当日のレースの結果」 しか反映しなかった。
-       昨日以前の予想で結果が未確定なものを取りに行き、 finalize する。
-       これにより 「終わっているのに未確定」 状態が再発しないようにする。
-       Round 111: 直列ループ → 6 並列ワーカープール + サーバキャッシュ活用で大幅短縮。 */
-    try {
-      setRefreshMsg("🔄 過去予想の結果を取得中…");
-      const todayK = todayKey();
-      let lastReport = null;
-      const backfillResult = await backfillResults(predictions, {
-        todayKey: todayK,
-        // Round 111: 確定済結果は不変なので s-maxage=600 のキャッシュを活かす (nocache=false)
-        maxFetch: 60,
-        concurrency: 6,
-        onProgress: (done, total, label) => {
-          if (total > 0) {
-            setRefreshMsg(`🔄 過去予想 ${done}/${total} (${label})`);
-          }
-        },
-      });
-      if (backfillResult.updated > 0 || backfillResult.attempted > 0) {
-        setPredictions(backfillResult.nextPredictions);
-        lastReport = backfillResult;
-      }
-      if (lastReport) {
-        if (lastReport.updated > 0) {
-          setRefreshMsg(`✅ 過去予想 ${lastReport.updated} 件を確定`);
-        } else if (lastReport.attempted > 0 && lastReport.failed === lastReport.attempted) {
-          setRefreshMsg(`⚠️ 過去予想 ${lastReport.attempted} 件: 結果未公開 / API 失敗`);
-        }
-      }
-    } catch (e) {
-      console.error("[refreshAll] backfill failed:", e);
-      // バックフィル失敗してもメインのフローは継続
-    }
-
     /* ④ 直前オッズの追い更新候補を選定 (実行は ⑤ の後に裏で) */
     const fastTargets = candidates.filter((r) => {
       const e = startEpoch(r.date, r.startTime);
@@ -878,24 +848,60 @@ export default function App() {
       return m != null && m >= -5 && m <= 30; // 発走前 30 分〜発走後 5 分のみ
     }).slice(0, 8); // 最大 8 レース
 
-    /* ⑤ メイン処理完了 — Round 111: ここでボタン解放 (オッズ追い更新は裏で続行)
-       元コードでは ④ の 5秒×2 待機が完了するまでボタンが押せなかった。
-       過去予想 + 今日のオッズは既に取れているので、 直前オッズの再取得は
-       「裏でこっそり」 で十分。 ユーザーは即座に次の操作に移れる。 */
+    /* ⑤ メイン処理完了 — Round 112: バックフィル (③-B) も裏に回し、 ここで即ボタン解放
+       過去予想の結果反映 / 直前オッズの追い更新は両方 fire-and-forget で背景実行。
+       ユーザーが見えている画面 (今日のレース一覧 + 候補の最新情報) は既にこの時点で完成。 */
     const ts = new Date().toISOString();
     setLastRefreshAt(ts);
     if (sched?.ok) {
-      const tail = fastTargets.length > 0 ? ` / 直前オッズ ${fastTargets.length}件は裏で追い更新` : "";
+      const extras = [];
+      if (fastTargets.length > 0) extras.push(`直前オッズ ${fastTargets.length}件`);
+      extras.push("過去予想の結果");
+      const tail = extras.length > 0 ? ` / ${extras.join(" + ")}は裏で追い更新` : "";
       setRefreshMsg(`✅ 更新しました (${sched.total_venues}会場 / ${sched.total_races}レース / 詳細 ${candidates.length}件${tail})`);
     } else {
       setRefreshMsg(`⚠️ 一時的に取得できません。少し時間を空けて再実行してください — サンプル動作中`);
     }
-    setRefreshing(false); // ← Round 111: ボタンを早期解放
+    setRefreshing(false); // ← Round 111: ボタンを早期解放 (Round 112: backfill も裏化したのでさらに早く)
     setTimeout(() => setRefreshMsg(""), 5000);
 
-    /* ⑥ 直前オッズの追い更新を裏で実行 (fire-and-forget)
-       5秒間隔で 2 回。 ユーザー操作はブロックしない。
-       完了メッセージは出さない (静かに最新化)。 */
+    /* ⑥-A 過去レースの結果バックフィル (Round 112: 完全に裏に回す)
+       refreshAll のメイン処理は終わっているので、 ユーザー操作をブロックしない。
+       完了したら functional setPredictions で安全にマージ (新規追加された予想を上書きしない)。 */
+    {
+      const todayK = todayKey();
+      const predictionsSnapshot = predictions;
+      (async () => {
+        try {
+          const backfillResult = await backfillResults(predictionsSnapshot, {
+            todayKey: todayK,
+            // 確定済結果は不変なので s-maxage=600 のキャッシュを活かす
+            maxFetch: 60,
+            concurrency: 8,
+          });
+          if (backfillResult.updated > 0) {
+            // functional update: バックフィル中にユーザーが追加した予想を保持しつつ、
+            // バックフィルで finalize された予想だけをマージ
+            setPredictions((prev) => {
+              const next = { ...prev };
+              let changed = false;
+              for (const [key, p] of Object.entries(backfillResult.nextPredictions)) {
+                if (p?.finalized && p?.result?.first && prev[key] && !prev[key].result?.first) {
+                  next[key] = p;
+                  changed = true;
+                }
+              }
+              return changed ? next : prev;
+            });
+          }
+        } catch (e) {
+          console.error("[refreshAll] backfill failed:", e);
+        }
+      })();
+    }
+
+    /* ⑥-B 直前オッズの追い更新を裏で実行 (fire-and-forget)
+       5秒間隔で 2 回。 ユーザー操作はブロックしない。 */
     if (fastTargets.length > 0) {
       (async () => {
         try {

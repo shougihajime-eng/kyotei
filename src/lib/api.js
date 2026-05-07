@@ -11,9 +11,15 @@
  *   ・stale fallback で UI を絶対に空にしない
  */
 
-/* === グローバル スロットル === */
-const MAX_CONCURRENT = 3;       // 同時実行上限
-const MIN_INTERVAL_MS = 300;     // 連続リクエスト最小間隔 (ms)
+/* === グローバル スロットル ===
+ * Round 112: 同時 3→8、 間隔 300→80ms に緩和 (世界一の体感速度を目指す)
+ *   ・boatrace.jp 直叩きではなく Vercel エッジ経由 (s-maxage キャッシュあり) なので
+ *     上流負荷はほぼキャッシュで吸収される。
+ *   ・ブラウザ標準の同時 fetch 上限 (HTTP/2 で 100+) と比べて 8 は十分控えめ。
+ *   ・429 が来たら従来通り指数バックオフでリトライするので破綻しない。
+ */
+const MAX_CONCURRENT = 8;       // 同時実行上限 (旧 3)
+const MIN_INTERVAL_MS = 80;      // 連続リクエスト最小間隔 ms (旧 300)
 const MAX_BACKOFF_MS = 30 * 1000; // バックオフ上限 30 秒
 const MAX_RETRIES = 5;
 

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
  * 「最新にする」ボタン + クールダウン (60秒) + 状態表示。
  * ユーザーが押した時だけデータ取得。
  */
-export default function RefreshBar({ onRefresh, refreshing, refreshMsg, lastRefreshAt, cooldownSec = 60 }) {
+export default function RefreshBar({ onRefresh, refreshing, refreshMsg, lastRefreshAt, cooldownSec = 15 }) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     // クールダウン中は 1 秒ごと (カウントダウン表示)、それ以外は 30 秒
