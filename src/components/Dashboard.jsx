@@ -12,7 +12,7 @@ import TopDecisionBar from "./TopDecisionBar.jsx";
 import TopVerdictBanner from "./TopVerdictBanner.jsx";
 import KpiPanel from "./KpiPanel.jsx";
 import TodayVerificationPanel from "./TodayVerificationPanel.jsx";
-import { analyzePatterns } from "../lib/patternAnalysis.js";
+import { analyzePatterns, classifyRaceByPattern } from "../lib/patternAnalysis.js";
 import CloudSyncCheckPanel from "./CloudSyncCheckPanel.jsx";
 import { yen } from "../lib/format.js";
 
@@ -108,6 +108,15 @@ export default function Dashboard({
 
       {/* Round 136: 得意/苦手パターン自動抽出 — 過去の確定済データから 「あなたが得意なレース条件」 を見える化 */}
       <WinningPatternsCard predictions={visibleData?.predictions} />
+
+      {/* Round 137: 今日のレースから 「自分の得意パターン」 に合致するものを強調 */}
+      <PatternMatchedRacesCard
+        races={races}
+        evals={evals}
+        profile={settings.riskProfile}
+        predictions={visibleData?.predictions}
+        onPickRace={onPickRace}
+      />
 
       {/* Round 87: クラウド同期チェック (折りたたみ式) — DevTools 不要で復元状態確認 */}
       <CloudSyncCheckPanel
@@ -657,6 +666,99 @@ function WinningPatternsCard({ predictions }) {
 
       <div style={{ fontSize: 10.5, color: "var(--text-tertiary)", marginTop: 10, lineHeight: 1.5 }}>
         💡 「会場類型 × 1号艇1着確率 × 風 × スタイル」 で 3 戦以上のクロス集計を ROI 順に表示。
+      </div>
+    </section>
+  );
+}
+
+/* === Round 138: 得意パターンに合致する今日のレースを強調 === */
+function PatternMatchedRacesCard({ races, evals, profile, predictions, onPickRace }) {
+  const result = useMemo(() => analyzePatterns(predictions), [predictions]);
+
+  const matched = useMemo(() => {
+    if (!result.hasEnough || !races || races.length === 0) return { best: [], worst: [] };
+    const best = [], worst = [];
+    const now = Date.now();
+    for (const r of races) {
+      const e = startEpoch(r.date, r.startTime);
+      if (e == null || e < now) continue; // 未来のレースのみ
+      const ev = evals?.[r.id];
+      const cls = classifyRaceByPattern(r, ev, profile, result);
+      if (!cls) continue;
+      if (cls.kind === "best") best.push({ race: r, cls });
+      else if (cls.kind === "worst") worst.push({ race: r, cls });
+    }
+    // 発走時刻順
+    best.sort((a, b) => (startEpoch(a.race.date, a.race.startTime) || 0) - (startEpoch(b.race.date, b.race.startTime) || 0));
+    worst.sort((a, b) => (startEpoch(a.race.date, a.race.startTime) || 0) - (startEpoch(b.race.date, b.race.startTime) || 0));
+    return { best: best.slice(0, 6), worst: worst.slice(0, 6) };
+  }, [result, races, evals, profile]);
+
+  if (!result.hasEnough) return null;
+  if (matched.best.length === 0 && matched.worst.length === 0) return null;
+
+  return (
+    <section className="card p-4">
+      <h3 className="font-bold text-sm mb-3">💎 今日のレース × あなたのパターン</h3>
+
+      {matched.best.length > 0 && (
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 11, color: "var(--c-success-text)", letterSpacing: "0.06em", fontWeight: 700, marginBottom: 6 }}>
+            🏆 得意パターン該当 ({matched.best.length} レース)
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {matched.best.map(({ race, cls }) => (
+              <button key={race.id} onClick={() => onPickRace?.(race.id)} className="btn btn-ghost"
+                style={{
+                  padding: "8px 12px", minHeight: 40, fontSize: 12,
+                  borderRadius: 10,
+                  border: "1.5px solid var(--c-success-border)",
+                  background: "var(--c-success-bg)",
+                  color: "var(--text-primary)",
+                  textAlign: "left",
+                  flexDirection: "column",
+                  alignItems: "flex-start",
+                }}>
+                <span style={{ fontWeight: 700 }}>{race.venue} {race.raceNo}R · {race.startTime}</span>
+                <span style={{ fontSize: 10, color: "var(--c-success-text)", marginTop: 2 }} className="num">
+                  ROI {Math.round(cls.roi * 100)}% / 過去 {cls.count}戦
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {matched.worst.length > 0 && (
+        <div>
+          <div style={{ fontSize: 11, color: "var(--c-danger-text)", letterSpacing: "0.06em", fontWeight: 700, marginBottom: 6 }}>
+            ⚠️ 苦手パターン該当 ({matched.worst.length} レース) — 慎重に
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {matched.worst.map(({ race, cls }) => (
+              <button key={race.id} onClick={() => onPickRace?.(race.id)} className="btn btn-ghost"
+                style={{
+                  padding: "8px 12px", minHeight: 40, fontSize: 12,
+                  borderRadius: 10,
+                  border: "1.5px solid var(--c-danger-border)",
+                  background: "var(--c-danger-bg)",
+                  color: "var(--text-primary)",
+                  textAlign: "left",
+                  flexDirection: "column",
+                  alignItems: "flex-start",
+                }}>
+                <span style={{ fontWeight: 700 }}>{race.venue} {race.raceNo}R · {race.startTime}</span>
+                <span style={{ fontSize: 10, color: "var(--c-danger-text)", marginTop: 2 }} className="num">
+                  ROI {Math.round(cls.roi * 100)}% / 過去 {cls.count}戦
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div style={{ fontSize: 10.5, color: "var(--text-tertiary)", marginTop: 10, lineHeight: 1.5 }}>
+        💡 過去の確定データに基づいて 「自分が勝てる/負けるパターン」 に該当するレースを自動判定。
       </div>
     </section>
   );

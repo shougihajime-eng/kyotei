@@ -106,3 +106,32 @@ export function analyzePatterns(predictions) {
     allPatterns: summarized,
   };
 }
+
+/* === Round 137: レースを今のスタイル・状況でパターンキー化 ===
+   patternAnalysis の結果と照合して 「これは得意/苦手パターンか」 を判定する。 */
+export function getPatternKeyForRace(race, ev, profile) {
+  if (!race || !profile) return null;
+  const inProb = Array.isArray(ev?.probs) && ev.probs.length > 0 ? ev.probs[0] : null;
+  const venue = venueType(race.jcd);
+  const inB = inProbBucket(inProb);
+  const wB = windBucket(race.wind);
+  const style = STYLE_LABELS[profile] || profile;
+  if (!inB || !wB || !venue || !style) return null;
+  return `${venue} × ${inB} × ${wB} × ${style}`;
+}
+
+/**
+ * レースを得意/苦手パターンに照合する。
+ * @returns { kind: "best" | "worst" | "neutral" | null, pattern, roi, count, hitRate }
+ */
+export function classifyRaceByPattern(race, ev, profile, analyzeResult) {
+  if (!analyzeResult?.hasEnough) return null;
+  const key = getPatternKeyForRace(race, ev, profile);
+  if (!key) return null;
+  const found = analyzeResult.allPatterns.find((p) => p.pattern === key);
+  if (!found) return { kind: "neutral", pattern: key, roi: null, count: 0, hitRate: null };
+  let kind = "neutral";
+  if (found.roi >= 1.0) kind = "best";
+  else if (found.roi < 0.85) kind = "worst";
+  return { kind, ...found };
+}
