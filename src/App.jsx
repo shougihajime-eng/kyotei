@@ -1467,7 +1467,9 @@ export default function App() {
 
   useEffect(() => {
     if (!settings.onboardingDone) return;
-    const BG_INTERVAL_MS = 12 * 60 * 1000; // 12 分
+    // Round 145: 12 → 5 分に短縮 (直前のオッズ変動をもっと拾う)。
+    // Vercel エッジキャッシュ (s-maxage) で同一 URL は上流に届かないので boatrace.jp 負荷は限定的。
+    const BG_INTERVAL_MS = 5 * 60 * 1000; // 5 分
     function isRaceWindow() {
       const h = new Date().getHours();
       return h >= 8 && h < 22;
