@@ -30,7 +30,7 @@ import { getCurrentUser, onAuthChange, signOut as authSignOut } from "./lib/auth
 import { fullSync, lightSync, deleteCloudData } from "./lib/cloudSync.js";
 import { setRateLimitListener, clearApiCaches } from "./lib/api.js";
 import LoginModal from "./components/LoginModal.jsx";
-import { fetchTodaySchedule, fetchRaceProgram, fetchRaceOdds, fetchRaceResult, fetchBeforeInfo } from "./lib/api.js";
+import { fetchTodaySchedule, fetchRaceProgram, fetchRaceOdds, fetchRaceResult, fetchBeforeInfo, fetchRacerCourse } from "./lib/api.js";
 import { backfillResults, applyResultToPrediction } from "./lib/finalizeResult.js";
 import { evaluateRace, buildBuyRecommendation, computeOverallGrade } from "./lib/predict.js";
 import { suggestStyle } from "./components/StyleSelector.jsx";
@@ -1331,6 +1331,65 @@ export default function App() {
       }
     })();
   }, [nowTick, races]);
+
+  /* Round 121: 直前判定対象レース (5-30 分前) の各艇選手のコース別実績を取得
+     ・boatrace.jp 選手プロフィール → コース別ページ (/api/racer-course)
+     ・取得後 boat.courseStats に統合 → predict.js の courseAptitudeMod が補正に使う
+     ・選手単位でキャッシュ (s-maxage=24h)、 取得済 toban は再 fetch しない
+     ・並列度 4 で boatrace.jp に過度な負荷をかけない */
+  const fetchedTobanRef = useRef(new Set());
+  useEffect(() => {
+    if (!races || races.length === 0) return;
+    const now = nowTick;
+    const tobansToFetch = [];
+    for (const r of races) {
+      const e = startEpoch(r.date, r.startTime);
+      if (e == null) continue;
+      const minutesToStart = (e - now) / 60000;
+      if (minutesToStart < 5 || minutesToStart > 30) continue;
+      for (const b of (r.boats || [])) {
+        if (!b?.toban) continue;
+        if (b.courseStats) continue;
+        if (fetchedTobanRef.current.has(b.toban)) continue;
+        tobansToFetch.push(b.toban);
+        fetchedTobanRef.current.add(b.toban);
+      }
+    }
+    if (tobansToFetch.length === 0) return;
+    (async () => {
+      try {
+        const courseDataByToban = {};
+        await withConcurrency(tobansToFetch, async (toban) => {
+          const data = await fetchRacerCourse(toban);
+          if (data?.courses) courseDataByToban[toban] = data.courses;
+        }, 4);
+        if (Object.keys(courseDataByToban).length === 0) return;
+        setRaces((prev) => {
+          if (!prev || prev.length === 0) return prev;
+          let anyChanged = false;
+          const nextRaces = prev.map((r) => {
+            if (!r.boats) return r;
+            let changedBoats = false;
+            const newBoats = r.boats.map((b) => {
+              if (!b?.toban) return b;
+              const cs = courseDataByToban[b.toban];
+              if (!cs) return b;
+              if (b.courseStats) return b;
+              changedBoats = true;
+              return { ...b, courseStats: cs };
+            });
+            if (!changedBoats) return r;
+            anyChanged = true;
+            return { ...r, boats: newBoats };
+          });
+          return anyChanged ? nextRaces : prev;
+        });
+      } catch (e) {
+        console.error("[r121 racer-course fetch] failed:", e);
+      }
+    })();
+  }, [nowTick, races]);
+
   useEffect(() => {
     if (!settings.onboardingDone) return;
     const BG_INTERVAL_MS = 12 * 60 * 1000; // 12 分

@@ -4,9 +4,9 @@
 
 ## 🎯 進捗（いまここ）
 
-- ✅ 直近で済んだこと: **Round 120 (A 取得範囲拡張)** 完了 — refreshAll で当日全レース (約 144) の出走表取得に拡張。並列度 4 で順次取得。オッズは発走 3 時間前以内、直前情報は 30 分前以内、結果は終了レース。 30 日計画書 `docs/ROADMAP-WORLD-CHAMPION.md` を新設。
-- 🟡 進行中: Round 121 (記者予想取得) — boatrace.jp 公式予想の取得 API 追加と予想ロジック統合
-- 🔜 次の一歩: Round 121 (記者予想) → Round 122 (選手のコース別実績) → Round 123 (ピット離れ) → Round 124 (学習機能拡張)。 詳細は `docs/ROADMAP-WORLD-CHAMPION.md` 参照。
+- ✅ 直近で済んだこと: **Round 120-121 完了**。Round 120 で取得範囲を当日全レース (約 144) に拡張。Round 121 で選手のコース別実績 (進入率 + 3連対率) を取得して予想に反映 (`/api/racer-course`、`courseAptitudeMod`)。展開予想に逃げ/まくり/差し/荒れの確率 % を追加。 30 日計画書は `docs/ROADMAP-WORLD-CHAMPION.md`。
+- 🟡 進行中: なし
+- 🔜 次の一歩: 1 週間運用してデータ蓄積を観察 (確定済 30+ 件で学習機能が動き出す) → Round 122 (ピット離れ取得) → Round 123 (学習機能拡張)。 詳細は `docs/ROADMAP-WORLD-CHAMPION.md`。
 
 ## 🌐 本番URL
 

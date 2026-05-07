@@ -111,6 +111,48 @@ export function venueAptitudeMod(boat) {
   return { mod: 1.0, reason: null };
 }
 
+/**
+ * Round 121: コース別実績補正
+ *
+ * その選手が進入予定コースで過去にどれだけ 3 連対しているかを見て、
+ * 全国平均と比較して加減点する補正係数。
+ *
+ *   ・1 コースは皆強いので補正控えめ (k=0.003)
+ *   ・2-5 コースは中程度 (k=0.004)
+ *   ・6 コースは差が極端に出るので強め (k=0.005)
+ *
+ * boat.courseStats が無ければ補正なし (フォールスルー、 Round 121 デプロイ後に
+ * App.jsx 側で各艇のコース別実績を取得・付与する)。
+ *
+ * 返り値: { mod, reason }
+ *   mod: 0.92 〜 1.08 の倍率
+ *   reason: { kind, text } UI 表示用
+ */
+const COURSE_SHOW_BASELINES = [80, 55, 45, 38, 30, 22]; // 全国平均 3連対率 (各コース)
+
+export function courseAptitudeMod(boat) {
+  if (!boat?.courseStats || !Array.isArray(boat.courseStats)) return { mod: 1.0, reason: null };
+  const courseNo = boat.boatNo;
+  if (!courseNo || courseNo < 1 || courseNo > 6) return { mod: 1.0, reason: null };
+  const stat = boat.courseStats.find((c) => c?.course === courseNo);
+  if (!stat || stat.showRate == null) return { mod: 1.0, reason: null };
+  const sr = stat.showRate;
+  const baseline = COURSE_SHOW_BASELINES[courseNo - 1];
+  const diff = sr - baseline;
+  if (Math.abs(diff) < 5) return { mod: 1.0, reason: null }; // 5pt 未満の差は誤差扱い
+  const k = courseNo === 1 ? 0.003 : courseNo === 6 ? 0.005 : 0.004;
+  const mod = Math.max(0.92, Math.min(1.08, 1 + diff * k));
+  const sign = diff >= 0 ? "+" : "-";
+  const pct = Math.round((mod - 1) * 100);
+  return {
+    mod,
+    reason: {
+      kind: diff >= 0 ? "pos" : "neg",
+      text: `${courseNo}コース 3連対率 ${sr.toFixed(1)}% (基準比 ${sign}${Math.abs(diff).toFixed(1)}pt) → ${sign}${Math.abs(pct)}%`,
+    },
+  };
+}
+
 function windDirectionMod(boat, windDir, wind) {
   if (!windDir || wind == null || wind < 3) return { mod: 1.0, reason: null };
   if (windDir === "向かい風") {
@@ -150,9 +192,11 @@ function scoreBoat(boat, race) {
   else if (boat.boatNo === 5) baseScore -= 0.04;
   const cond = computeConditionMod(boat);
   const wd = windDirectionMod(boat, race?.windDir, race?.wind);
-  const totalMod = cond.mod * wd.mod;
+  const ca = courseAptitudeMod(boat); // Round 121: コース別実績補正
+  const totalMod = cond.mod * wd.mod * ca.mod;
   const reasons = [...cond.reasons];
   if (wd.reason) reasons.push(wd.reason);
+  if (ca.reason) reasons.push(ca.reason);
   return {
     boatNo: boat.boatNo,
     score: baseScore * totalMod,
@@ -192,20 +236,38 @@ export function judgeInTrust(race, scores, probs) {
   return { level, message, color, score: Math.round(p1 * 100) };
 }
 
-/* 展開予想 */
+/* 展開予想
+   Round 121 強化: 各シナリオの確率 (逃げ/まくり/差し/荒れ) を 0-100% で算出 */
 export function predictDevelopment(race, scores, probs) {
   const top = scores.map((s, i) => ({ ...s, prob: probs[i] })).sort((a, b) => b.prob - a.prob);
   const top1 = top[0]; const top2 = top[1];
   const inProb = top.find((s) => s.boatNo === 1)?.prob || 0;
   const wave = race.wave ?? 0; const wind = race.wind ?? 0;
   const isRough = wave > 8 || wind > 6;
+
+  // === Round 121: 各シナリオの確率を細かく出す ===
+  const probByBoat = new Map();
+  for (let i = 0; i < scores.length; i++) probByBoat.set(scores[i].boatNo, probs[i]);
+  const p1 = probByBoat.get(1) || 0;
+  const p2 = probByBoat.get(2) || 0;
+  const p3 = probByBoat.get(3) || 0;
+  const p4 = probByBoat.get(4) || 0;
+  const p5 = probByBoat.get(5) || 0;
+  const p6 = probByBoat.get(6) || 0;
+  const rates = {
+    escape: +(p1 * 100).toFixed(1),                          // 逃げ濃厚率 (1号艇 1着率)
+    makuri: +((p2 + p3) * 100).toFixed(1),                   // まくり率 (2-3 コース 1着率)
+    sashi:  +(p2 * 40).toFixed(1),                           // 差し率近似 (2号艇 1着の 4 割が差し)
+    arere:  +((p4 + p5 + p6) * 100).toFixed(1),              // 荒れ率 (4-6 号艇 1着率)
+  };
+
   let scenario, comment;
-  if (inProb > 0.45 && !isRough) { scenario = "逃げ"; comment = `1号艇逃げ濃厚 (${(inProb*100).toFixed(0)}%)`; }
-  else if (top1.boatNo !== 1 && top1.prob > 0.30) { scenario = top1.boatNo === 2 ? "まくり" : "まくり差し"; comment = `${top1.boatNo}号艇本線`; }
-  else if (isRough) { scenario = "荒れ"; comment = `荒水面 (風${wind}m / 波${wave}cm)`; }
+  if (inProb > 0.45 && !isRough) { scenario = "逃げ"; comment = `1号艇逃げ濃厚 (${rates.escape}%)`; }
+  else if (top1.boatNo !== 1 && top1.prob > 0.30) { scenario = top1.boatNo === 2 ? "まくり" : "まくり差し"; comment = `${top1.boatNo}号艇本線 (まくり ${rates.makuri}%)`; }
+  else if (isRough) { scenario = "荒れ"; comment = `荒水面 (風${wind}m / 波${wave}cm / 荒れ率 ${rates.arere}%)`; }
   else if (top1.prob - top2.prob < 0.05) { scenario = "混戦"; comment = `${top1.boatNo}号艇と${top2.boatNo}号艇わずか`; }
-  else { scenario = "標準"; comment = `${top1.boatNo}号艇中心`; }
-  return { scenario, comment, inProbability: inProb, isRough, top: top.slice(0, 3) };
+  else { scenario = "標準"; comment = `${top1.boatNo}号艇中心 (逃げ${rates.escape}% / まくり${rates.makuri}%)`; }
+  return { scenario, comment, inProbability: inProb, isRough, top: top.slice(0, 3), rates };
 }
 
 /* Plackett-Luce で順位確率 */

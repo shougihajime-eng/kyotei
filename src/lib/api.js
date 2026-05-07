@@ -224,6 +224,13 @@ export async function fetchBeforeInfo(jcd, rno, dateStr) {
   return j?.ok !== false ? j : null;
 }
 
+/* Round 121: 選手のコース別成績 (進入率 + 3連対率) を取得 */
+export async function fetchRacerCourse(toban) {
+  if (!toban) return null;
+  const j = await fetchJSON(`/api/racer-course?toban=${toban}`);
+  return j?.ok !== false ? j : null;
+}
+
 /* === 手動キャッシュクリア (Settings リセット時に呼ぶ) === */
 export function clearApiCaches() {
   _inflight.clear();

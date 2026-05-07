@@ -86,9 +86,19 @@ function parseBoats(html) {
     const nameMatch = text.match(/[一-龯々ヶ]{1,4}\s+[一-龯々ヶ]{1,4}/);
     if (nameMatch) racer = nameMatch[0];
 
+    // Round 121: 登録番号 (toban) 抽出 — 4-5 桁の整数で、 級別 (A1/A2/B1/B2) より前に現れる最初のもの
+    // 例: "１ 4075 / A1 中野 次郎" → 4075
+    let toban = null;
+    const beforeClass = text.split(/\b(A1|A2|B1|B2)\b/)[0] || "";
+    const tobanMatch = beforeClass.match(/\b(\d{4,5})\b/);
+    if (tobanMatch) {
+      const t = +tobanMatch[1];
+      if (t >= 1000 && t <= 99999) toban = t;
+    }
+
     seen.add(boatNo);
     boats.push({
-      boatNo, racer, class: cls,
+      boatNo, toban, racer, class: cls,
       winRate, placeRate, localWinRate, localPlaceRate, motor2, boat2,
     });
   });
