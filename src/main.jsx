@@ -3,17 +3,23 @@ import ReactDOM from "react-dom/client";
 import App from "./App.jsx";
 import "./index.css";
 
-/* === Round 116: 起動時 1 回だけ過去予想ログを自動削除 ===
-   背景: ユーザー判断で 「-15 分前に予想したものではない過去ログは意味がない」 と決まった。
-   ボタンを押すのも面倒という要望に応え、 React mount 前に自動で削除する。
-   設定 (予算 / リスク感覚) は保持。 1 回実行したらフラグを立てて二度と走らない。
-
+/* === Round 117: 起動時に過去予想ログを完全に強制削除 (フラグ刷新版) ===
+   背景:
+     ・Round 115 で導入したバナー表示の dismiss / Round 116 の自動削除が
+       同じフラグ (kyoteiRound115CleanupDone) を共有していたため、
+       銀バナーを 「今は削除しない」 で閉じた人は自動削除がスキップされていた。
+     ・ユーザーから 「グラフにまだ古いデータが残ってる」 と判明 → 全員強制再削除。
+   仕様:
+     ・新フラグ kyoteiR117CleanupDone を使う (旧フラグの状態に関わらず必ず 1 回実行)
+     ・対象: 全予想ログ + 公開検証ログ + 学習履歴 + 旧バージョンキー
+     ・設定 (予算 / リスク感覚) は保持
+     ・実行件数を sessionStorage に記録 → App 起動後トーストで通知 (毎回必ず出す)
    ※ クラウド (Supabase) 側の削除は App.jsx の useEffect で auth ロード後に実施。 */
-(function autoCleanupLegacyData() {
+(function autoCleanupLegacyDataR117() {
   if (typeof localStorage === "undefined") return;
-  const FLAG = "kyoteiRound115CleanupDone";
+  const FLAG = "kyoteiR117CleanupDone";
   try {
-    if (localStorage.getItem(FLAG) === "1") return; // 実行済
+    if (localStorage.getItem(FLAG) === "1") return; // R117 実行済
     const KEY = "kyoteiAssistantV2";
     const raw = localStorage.getItem(KEY);
     let savedSettings = null;
@@ -25,29 +31,25 @@ import "./index.css";
         predCount = obj?.predictions ? Object.keys(obj.predictions).length : 0;
       } catch {}
     }
-    // 何も入っていない (= 新規ユーザー / 既にクリア済) ならフラグだけ立てて終わり
-    if (predCount === 0 && !localStorage.getItem("kyoteiPublicLog") && !localStorage.getItem("kyoteiLearningLog")) {
-      localStorage.setItem(FLAG, "1");
-      return;
-    }
-    // 削除実行 (設定だけ保持)
+    // 必ず 1 回は削除を実行 (無条件) — predCount 0 でも検証 / 学習ログがあるかもしれない
     localStorage.removeItem(KEY);
     localStorage.removeItem("kyoteiPublicLog");
     localStorage.removeItem("kyoteiLearningLog");
     localStorage.removeItem("kyoteiAssistantStateV3");
     localStorage.removeItem("kyoteiAssistantStateV2");
+    // 旧 R115 フラグも消す (混乱防止)
+    localStorage.removeItem("kyoteiRound115CleanupDone");
     if (savedSettings) {
       localStorage.setItem(KEY, JSON.stringify({ settings: savedSettings, predictions: {} }));
     }
     localStorage.setItem(FLAG, "1");
-    // クラウド側は authUser がロードされた後 App 内で削除 (ここでは local のみ)
-    // ユーザーへ完了通知用フラグ (App 起動後にトーストを 1 回出すため)
-    sessionStorage.setItem("kyoteiCleanupJustDone", JSON.stringify({ predCount }));
+    // ユーザーへ完了通知用フラグ
+    sessionStorage.setItem("kyoteiCleanupJustDone", JSON.stringify({ predCount, round: 117 }));
     // eslint-disable-next-line no-console
-    console.log(`[auto-cleanup] cleared ${predCount} legacy predictions + public/learning logs`);
+    console.log(`[R117 auto-cleanup] cleared ${predCount} predictions + public/learning logs`);
   } catch (e) {
     // eslint-disable-next-line no-console
-    console.warn("[auto-cleanup] failed:", e);
+    console.warn("[R117 auto-cleanup] failed:", e);
   }
 })();
 

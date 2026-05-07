@@ -177,17 +177,16 @@ export default function App() {
     showToast("ログアウトしました — ローカル保存は継続", "info");
   }, [showToast]);
 
-  /* Round 116: クラウドクリーンアップ済フラグ
-     ・main.jsx で local は自動削除済 (kyoteiRound115CleanupDone)
-     ・cloud は authUser ロード後に削除する必要がある (削除前に fullSync が走ると古い cloud → local に戻ってしまう)
-     ・cloudCleanupDone=false の間は fullSync / lightSync を停止
-     ・1 度クリアしたら kyoteiR115CloudCleanupDone を立てて二度と走らない */
+  /* Round 117: クラウドクリーンアップ済フラグ (R115/R116 とは別フラグ — 全員強制再実行)
+     ・main.jsx で local は強制削除済
+     ・cloud は authUser ロード後に削除する必要がある (削除前に fullSync が走ると古い cloud → local に戻る)
+     ・cloudCleanupDone=false の間は fullSync / lightSync を停止 */
   const [cloudCleanupDone, setCloudCleanupDone] = useState(() => {
-    try { return localStorage.getItem("kyoteiR115CloudCleanupDone") === "1"; }
+    try { return localStorage.getItem("kyoteiR117CloudCleanupDone") === "1"; }
     catch { return true; }
   });
 
-  /* Round 116: 起動時 1 回だけ、 main.jsx でクリアした旨をトーストで知らせる */
+  /* Round 117: 起動時 1 回だけ、 main.jsx でクリアした旨をトーストで知らせる (R117 実行直後だけ) */
   useEffect(() => {
     try {
       const raw = sessionStorage.getItem("kyoteiCleanupJustDone");
@@ -196,32 +195,32 @@ export default function App() {
       const { predCount } = JSON.parse(raw) || {};
       const msg = predCount > 0
         ? `✅ 過去予想 ${predCount} 件 + 検証 / 学習ログを削除しました`
-        : `✅ 古いログを整理しました`;
-      // showToast は宣言後に呼ばれる必要があるので setTimeout でディフェ
-      setTimeout(() => showToast(msg, "ok"), 200);
+        : `✅ 過去ログを完全リセットしました`;
+      // showToast 関数は宣言済 (line ~141) なので即時呼べる
+      setTimeout(() => showToast(msg, "ok"), 300);
     } catch {}
   }, [showToast]);
 
-  /* Round 116: authUser がロードされたら 1 回だけクラウド側も削除 */
+  /* Round 117: authUser がロードされたら 1 回だけクラウド側も強制削除 */
   useEffect(() => {
     if (cloudCleanupDone) return;
-    if (!authUser) return; // 未ログインなら cloud 削除は不要 (フラグはそのまま — 次回ログイン時に削除)
+    if (!authUser) return; // 未ログインなら cloud 削除は不要 (次回ログイン時に削除)
     let cancelled = false;
     (async () => {
       try {
         const res = await deleteCloudData(authUser.id);
         if (cancelled) return;
         if (res.ok) {
-          try { localStorage.setItem("kyoteiR115CloudCleanupDone", "1"); } catch {}
+          try { localStorage.setItem("kyoteiR117CloudCleanupDone", "1"); } catch {}
+          // 旧 R115 cloud フラグも消す (混乱防止)
+          try { localStorage.removeItem("kyoteiR115CloudCleanupDone"); } catch {}
           showToast(`☁️ クラウド ${res.deleted} 件を削除しました`, "ok");
+          setCloudCleanupDone(true);
         } else {
-          showToast(`⚠️ クラウド削除失敗: ${res.error}`, "neg");
-          // fail open しない (次のリロードで再試行できるように)
-          return;
+          showToast(`⚠️ クラウド削除失敗: ${res.error} — 次回再試行します`, "neg");
         }
-        setCloudCleanupDone(true);
       } catch (e) {
-        console.error("[r116 cloud cleanup] failed:", e);
+        console.error("[r117 cloud cleanup] failed:", e);
       }
     })();
     return () => { cancelled = true; };
@@ -347,10 +346,20 @@ export default function App() {
       if (!ev) continue;
       const e = startEpoch(r.date, r.startTime);
       const minutesToStart = e != null ? (e - nowTick) / 60000 : null;
-      const oddsPending = minutesToStart != null && minutesToStart > ODDS_STABLE_MINUTES;
+      // Round 117: 締切後は強制 closed (ev.closedNow は races 取得時のスナップショットなので
+      //            時間経過で stale になり、 「終わったレースが買いのまま残る」 バグの原因。 ここで上書き)
+      const isClosed = minutesToStart != null && minutesToStart <= 0;
+      const oddsPending = !isClosed && minutesToStart != null && minutesToStart > ODDS_STABLE_MINUTES;
       for (const style of ["steady", "balanced", "aggressive"]) {
         let rec;
-        if (oddsPending) {
+        if (isClosed) {
+          rec = {
+            decision: "closed",
+            reason: "締切済み",
+            reasons: ["発走時刻を過ぎているため新規購入判定はしません"],
+            items: [], total: 0,
+          };
+        } else if (oddsPending) {
           const m = Math.ceil(minutesToStart);
           rec = {
             decision: "odds-pending",
