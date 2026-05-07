@@ -367,7 +367,8 @@ export default function App() {
     for (const r of races) {
       if (!r?.jcd || seen.has(r.jcd)) continue;
       seen.add(r.jcd);
-      const trend = computeDailyTrend(visiblePredictions, r.jcd, today);
+      // Round 136: 当日 3 件未満なら過去 3 日のデータでフォールバック (朝イチから補正効くように)
+      const trend = computeDailyTrend(visiblePredictions, r.jcd, today, 3);
       if (trend) map[r.jcd] = trend;
     }
     return map;
@@ -1399,7 +1400,9 @@ export default function App() {
       const e = startEpoch(r.date, r.startTime);
       if (e == null) continue;
       const minutesToStart = (e - now) / 60000;
-      if (minutesToStart < 5 || minutesToStart > 30) continue;
+      // Round 136: 「直前にしか取らない」 を改め、 発走 3 時間前から取得開始 (終了後 60 分まで対応)。
+      // 選手データは 24h キャッシュなので一度取れば翌日まで再ヒットしない → 直前処理が軽くなり精度↑
+      if (minutesToStart < -60 || minutesToStart > 180) continue;
       for (const b of (r.boats || [])) {
         if (!b?.toban) continue;
         if (b.courseStats) continue;

@@ -12,20 +12,44 @@
  */
 
 /**
- * 当日のその会場の傾向を計算する。
+ * 当日 (+ 過去日フォールバック) の その会場の傾向を計算する。
  *
- * @param {object} predictions  - localStorage の predictions
- * @param {string} jcd          - 会場コード ("01" 〜 "24")
- * @param {string} today        - "YYYY-MM-DD"
+ * Round 136: fallbackDays を追加。
+ *   ・当日 3 件未満なら過去 N 日 (デフォルト 3) のデータも合算してトレンドを出す
+ *   ・朝イチ・午前中でも 「ここ最近この会場は荒れてる」 が分かる
+ *   ・当日データが揃ったら自動的に当日優先 (混在せず)
+ *
+ * @param {object} predictions    - localStorage の predictions
+ * @param {string} jcd            - 会場コード ("01" 〜 "24")
+ * @param {string} today          - "YYYY-MM-DD"
+ * @param {number} fallbackDays   - 当日不足時に遡る日数 (0 で無効、 デフォルト 0)
  * @returns {{
- *   sampleSize, inWinRate, avgFirst, highPayoutRate, isRoughDay, isStableDay
+ *   sampleSize, inWinRate, avgFirst, highPayoutRate, isRoughDay, isStableDay,
+ *   isFromPast
  * } | null}
  */
-export function computeDailyTrend(predictions, jcd, today) {
+export function computeDailyTrend(predictions, jcd, today, fallbackDays = 0) {
   if (!predictions || !jcd || !today) return null;
-  const records = Object.values(predictions).filter((p) =>
-    p?.jcd === jcd && p?.date === today && p?.result?.first
+  const all = Object.values(predictions).filter((p) =>
+    p?.jcd === jcd && p?.result?.first
   );
+  const todayRecords = all.filter((p) => p?.date === today);
+
+  let records = todayRecords;
+  let isFromPast = false;
+
+  // 当日 3 件未満なら過去 fallbackDays 日のデータでフォールバック
+  if (records.length < 3 && fallbackDays > 0) {
+    const cutoff = new Date(today);
+    cutoff.setDate(cutoff.getDate() - fallbackDays);
+    const cutoffStr = cutoff.toISOString().slice(0, 10);
+    const pastRecords = all.filter((p) => p?.date >= cutoffStr && p?.date < today);
+    if (pastRecords.length >= 3) {
+      records = [...todayRecords, ...pastRecords];
+      isFromPast = todayRecords.length === 0;
+    }
+  }
+
   if (records.length < 3) return null;
 
   const inWins = records.filter((p) => +p.result.first === 1).length;
@@ -48,6 +72,7 @@ export function computeDailyTrend(predictions, jcd, today) {
     highPayoutRate: +highPayoutRate.toFixed(3),
     isRoughDay: inWinRate < 0.40 || highPayoutRate >= 0.50,
     isStableDay: inWinRate >= 0.65 && highPayoutRate < 0.20,
+    isFromPast,
   };
 }
 
