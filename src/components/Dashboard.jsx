@@ -82,7 +82,15 @@ export default function Dashboard({
       <RefreshBar onRefresh={onRefresh} refreshing={refreshing} refreshMsg={refreshMsg} lastRefreshAt={lastRefreshAt} />
 
       {/* Round 118: 「今、 これに賭けろ」 巨大表示モード — 最重要 (買い判定があれば最優先表示) */}
-      <BattleModeCard races={races} recommendations={recommendations} onPickRace={onPickRace} />
+      {/* Round 139: predictions / evals / profile を渡してパターンマッチを表示 */}
+      <BattleModeCard
+        races={races}
+        recommendations={recommendations}
+        onPickRace={onPickRace}
+        predictions={visibleData?.predictions}
+        evals={evals}
+        profile={settings.riskProfile}
+      />
 
       {/* Round 88: 最上部「今日の結論」 — どのスタイルが勝っているか 1 枚で */}
       <TopVerdictBanner predictions={visibleData?.predictions} />

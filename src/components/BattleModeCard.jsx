@@ -1,6 +1,7 @@
 import { memo, useEffect, useState, useMemo, useRef } from "react";
 import { yen, startEpoch } from "../lib/format.js";
 import { buildRaceCardUrl } from "../lib/raceLinks.js";
+import { analyzePatterns, classifyRaceByPattern } from "../lib/patternAnalysis.js";
 
 /* === Round 119: 買い判定が出た瞬間に音を鳴らす ===
    ・タブが見えている時こそ即気付ける (notifyBuy はタブ可視時は通知しない設計)
@@ -67,7 +68,7 @@ const ODDS_STABLE_MINUTES = 15;
 
 export default memo(BattleModeCard);
 
-function BattleModeCard({ races, recommendations, onPickRace }) {
+function BattleModeCard({ races, recommendations, onPickRace, predictions, evals, profile }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
@@ -107,6 +108,15 @@ function BattleModeCard({ races, recommendations, onPickRace }) {
     const t = setTimeout(() => playBuyBeep(), 120);
     return () => clearTimeout(t);
   }, [battle?.race?.id]);
+
+  /* Round 139: 得意/苦手パターンマッチ */
+  const patternResult = useMemo(() => {
+    if (!battle?.race || !predictions || !profile) return null;
+    const analyzed = analyzePatterns(predictions);
+    if (!analyzed.hasEnough) return null;
+    const ev = evals?.[battle.race.id];
+    return classifyRaceByPattern(battle.race, ev, profile, analyzed);
+  }, [battle?.race, predictions, evals, profile]);
 
   if (!battle) return null;
 
@@ -166,6 +176,34 @@ function BattleModeCard({ races, recommendations, onPickRace }) {
       }}>
         {isS ? "🔥 今、 勝負レース" : "🟢 今、 これに賭けろ"}
       </div>
+
+      {/* Round 139: 得意/苦手パターンバッジ — 過去データに基づく追加情報 */}
+      {patternResult?.kind === "best" && (
+        <div style={{
+          display: "inline-flex", alignItems: "center", gap: 6,
+          padding: "5px 12px", marginBottom: 10,
+          borderRadius: 999,
+          background: "linear-gradient(135deg, rgba(16,185,129,0.32) 0%, rgba(16,185,129,0.18) 100%)",
+          border: "1.5px solid rgba(16,185,129,0.55)",
+          color: "#a7f3d0", fontSize: 12, fontWeight: 800,
+          letterSpacing: "0.02em",
+        }}>
+          💎 あなたの得意パターン (過去 ROI {Math.round(patternResult.roi * 100)}% / {patternResult.count}戦)
+        </div>
+      )}
+      {patternResult?.kind === "worst" && (
+        <div style={{
+          display: "inline-flex", alignItems: "center", gap: 6,
+          padding: "5px 12px", marginBottom: 10,
+          borderRadius: 999,
+          background: "rgba(239,68,68,0.18)",
+          border: "1.5px solid rgba(239,68,68,0.45)",
+          color: "#fecaca", fontSize: 12, fontWeight: 700,
+          letterSpacing: "0.02em",
+        }}>
+          ⚠️ 過去苦手パターン (ROI {Math.round(patternResult.roi * 100)}% / {patternResult.count}戦) — 慎重に
+        </div>
+      )}
 
       {/* 会場 R 番号 + 締切 */}
       <div style={{ fontSize: 14, color: "var(--text-secondary)", marginBottom: 16, letterSpacing: "0.01em" }}>
