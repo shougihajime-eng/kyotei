@@ -2,6 +2,7 @@ import { useMemo, useState, memo } from "react";
 import BuyDecisionCard from "./BuyDecisionCard.jsx";
 import QuickJudgeCard from "./QuickJudgeCard.jsx";
 import ImminentRaces from "./ImminentRaces.jsx";
+import BattleModeCard from "./BattleModeCard.jsx";
 import LegacyDataBanner from "./LegacyDataBanner.jsx";
 import RefreshBar from "./RefreshBar.jsx";
 import NewsPanel from "./NewsPanel.jsx";
@@ -78,6 +79,9 @@ export default function Dashboard({
 
       {/* 更新バー (常時) */}
       <RefreshBar onRefresh={onRefresh} refreshing={refreshing} refreshMsg={refreshMsg} lastRefreshAt={lastRefreshAt} />
+
+      {/* Round 118: 「今、 これに賭けろ」 巨大表示モード — 最重要 (買い判定があれば最優先表示) */}
+      <BattleModeCard races={races} recommendations={recommendations} onPickRace={onPickRace} />
 
       {/* Round 88: 最上部「今日の結論」 — どのスタイルが勝っているか 1 枚で */}
       <TopVerdictBanner predictions={visibleData?.predictions} />

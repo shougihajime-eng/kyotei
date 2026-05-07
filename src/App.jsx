@@ -50,7 +50,7 @@ import { getLearnedWeights } from "./lib/learning.js";
 import { defaultSettings, summarizeToday, perRaceCap } from "./lib/money.js";
 import { todayDate, todayKey, startEpoch } from "./lib/format.js";
 import { generateSampleRaces, buildRacesFromSchedule, mergeProgram, mergeOdds, mergeBeforeInfo } from "./lib/sample.js";
-import { sendBuyNotification } from "./lib/notifyBuy.js";
+import { sendBuyNotification, sendResultNotification, primeSentResults } from "./lib/notifyBuy.js";
 
 const REFRESH_COOLDOWN_MS = 15 * 1000; // Round 112: 60→15 秒に短縮 (連打したい時のストレスを除去)
 
@@ -1158,6 +1158,80 @@ export default function App() {
       }
     }
   }, [recommendations, races, nowTick]);
+
+  /* Round 118 Task 2: 起動時に既存 finalize 済予想を 「通知済」 にしておく
+     (古い結果を起動の度に再通知しない) — 1 回だけ実行 */
+  const primedRef = useRef(false);
+  useEffect(() => {
+    if (primedRef.current) return;
+    if (!predictions || Object.keys(predictions).length === 0) return;
+    primeSentResults(predictions);
+    primedRef.current = true;
+  }, [predictions]);
+
+  /* predictions 最新値を ref で保持 (定期 backfill が closure に縛られないように) */
+  const predictionsRef = useRef(predictions);
+  useEffect(() => { predictionsRef.current = predictions; }, [predictions]);
+
+  /* Round 118 Task 2: 定期バックフィル (3 分間隔)
+     ・締切過ぎの未確定予想を裏で結果取得 → finalize
+     ・新たに finalize された買い予想は当選 / 外れ通知を発火
+     ・既存の refreshAll 内バックフィルとは別に、 バックグラウンドで自動進行 */
+  useEffect(() => {
+    if (!cloudCleanupDone) return; // クリーンアップ完了待ち
+    let cancelled = false;
+    async function runAutoBackfill() {
+      if (cancelled) return;
+      try {
+        const todayK = todayKey();
+        // ref から最新 predictions を取得 (closure ではなく ref で常に最新)
+        const snapshot = predictionsRef.current;
+        const result = await backfillResults(snapshot, {
+          todayKey: todayK,
+          maxFetch: 24,
+          concurrency: 6,
+        });
+        if (cancelled) return;
+        if (result.updated > 0) {
+          // 新たに finalize された予想を React state に反映 (functional update)
+          setPredictions((prev) => {
+            const next = { ...prev };
+            let changed = false;
+            const newlyFinalized = [];
+            for (const [key, p] of Object.entries(result.nextPredictions)) {
+              if (p?.finalized && p?.result?.first && prev[key] && !prev[key].result?.first) {
+                next[key] = p;
+                changed = true;
+                if (p.decision === "buy") newlyFinalized.push(p);
+              }
+            }
+            if (!changed) return prev;
+            // 通知発火 (買い予想のみ)
+            for (const p of newlyFinalized) {
+              try {
+                sendResultNotification(p);
+                // タブが見えている時は画面用にトーストも出す (ユーザー体験 - 何が起きたか分かる)
+                if (typeof document !== "undefined" && document.visibilityState === "visible") {
+                  const headline = p.hit ? `🎯 当選 ${p.venue} ${p.raceNo}R` : `❌ 外れ ${p.venue} ${p.raceNo}R`;
+                  const pnlStr = (p.pnl ?? 0) >= 0 ? `+${(p.pnl ?? 0).toLocaleString()}` : `${(p.pnl ?? 0).toLocaleString()}`;
+                  showToast(`${headline} ¥${pnlStr}`, p.hit ? "ok" : "neg");
+                }
+              } catch {}
+            }
+            return next;
+          });
+        }
+      } catch (e) {
+        console.error("[auto-backfill] failed:", e);
+      }
+    }
+    // 起動 30 秒後に 1 回 + 3 分ごと
+    const initialId = setTimeout(runAutoBackfill, 30_000);
+    const intervalId = setInterval(runAutoBackfill, 3 * 60 * 1000);
+    return () => { cancelled = true; clearTimeout(initialId); clearInterval(intervalId); };
+    // 注: predictions を deps に入れると無限ループの恐れあり。 関数内で snapshot 取得する設計。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cloudCleanupDone, showToast]);
 
   /* Round 114: -15 分ゲートが開いた瞬間に裏でオッズ + 直前情報を再取得
      → ユーザーが手動で 🔄 を押さなくても、 ちょうど 15 分前の最新オッズで判定が確定する。

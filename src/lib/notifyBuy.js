@@ -108,3 +108,56 @@ export function sendBuyNotification(race, rec, minutesToStart) {
 export function resetSentRaces() {
   sentRaceIds.clear();
 }
+
+/* === Round 118: 結果通知 (当選 / 外れ) ===
+   レース終了 → 結果反映 (= prediction.result.first が新たに付いた)
+   タイミングで 1 回だけ通知。 当選なら +¥金額、 外れなら払戻情報。 */
+const sentResultIds = new Set();
+
+/** 結果通知を送る (重複防止 + 通知許可確認)
+ *  @param {object} prediction - finalize 済みの予想 (decision: "buy", result, hit, payout, pnl)
+ *  @returns {boolean} 通知を実際に送ったか
+ */
+export function sendResultNotification(prediction) {
+  if (!isNotificationEnabled()) return false;
+  if (!prediction?.key) return false;
+  if (prediction.decision !== "buy") return false; // 買いだけ通知 (見送り通知は不要)
+  if (!prediction.result?.first) return false;
+  if (sentResultIds.has(prediction.key)) return false;
+  // タブが見えている時も通知する (画面の他タブにいる可能性 / 通知の方が即気付ける)
+  try {
+    const venue = prediction.venue || "";
+    const rno = prediction.raceNo ? `${prediction.raceNo}R` : "";
+    const correct = `${prediction.result.first}-${prediction.result.second}-${prediction.result.third}`;
+    const headline = prediction.hit ? "🎯 当選！" : "❌ 外れ";
+    const pnl = prediction.pnl ?? 0;
+    const pnlStr = pnl >= 0 ? `+¥${pnl.toLocaleString()}` : `-¥${Math.abs(pnl).toLocaleString()}`;
+    const body = prediction.hit
+      ? `${venue} ${rno}\n配当 ${pnlStr} (正解 ${correct})`
+      : `${venue} ${rno}\n${pnlStr} (正解 ${correct})`;
+    const n = new Notification(headline, {
+      body,
+      tag: `kyotei-result-${prediction.key}`,
+      icon: "/favicon.ico",
+      badge: "/favicon.ico",
+      requireInteraction: false,
+    });
+    n.onclick = () => {
+      try { window.focus(); } catch {}
+      try { n.close(); } catch {}
+    };
+    sentResultIds.add(prediction.key);
+    return true;
+  } catch (e) {
+    console.error("[notifyResult] failed:", e);
+    return false;
+  }
+}
+
+/** 起動時に既存 finalize 済 prediction を 「通知済」 にしておく (古い分を再通知しない) */
+export function primeSentResults(predictions) {
+  if (!predictions) return;
+  for (const [key, p] of Object.entries(predictions)) {
+    if (p?.result?.first) sentResultIds.add(key);
+  }
+}

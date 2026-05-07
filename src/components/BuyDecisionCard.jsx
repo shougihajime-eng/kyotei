@@ -2,6 +2,7 @@ import { useState, memo, useMemo } from "react";
 import { yen, pct } from "../lib/format.js";
 import { explainExpectedReturn, explainProbOdds, toneColor } from "../lib/explain.js";
 import { buildReasoningSummary } from "../lib/reasoningSummary.js";
+import { buildRaceCardUrl } from "../lib/raceLinks.js";
 
 /**
  * 結論カード — 連勝系 4 券種 (2連単/2連複/3連単/3連複) のみ。
@@ -302,6 +303,20 @@ function BuyDecisionCard({ race, recommendation, onRecord, virtualMode, evalRes 
       </div>
 
       <div className="mt-4 flex flex-col gap-2 items-center">
+        {/* Round 118 Task 3: BOATRACE 公式で買う (リンクのみ・自動購入なし) */}
+        {(() => {
+          const voteUrl = buildRaceCardUrl(race.jcd, race.date, race.raceNo);
+          if (!voteUrl) return null;
+          return (
+            <a
+              href={voteUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={btnVote}>
+              💰 BOATRACE 公式で買う <span style={{ fontSize: 11, opacity: 0.7 }}>↗</span>
+            </a>
+          );
+        })()}
         <button onClick={() => record()} disabled={busy} style={btnPrimary}>
           {busy ? "✅ 記録中…" : (virtualMode ? "🧪 エア舟券として記録" : "✅ 記録する")}
         </button>
@@ -310,6 +325,9 @@ function BuyDecisionCard({ race, recommendation, onRecord, virtualMode, evalRes 
             💰 リアル購入として記録
           </button>
         )}
+        <div style={{ fontSize: 10.5, opacity: 0.65, textAlign: "center", marginTop: 4, lineHeight: 1.5 }}>
+          ※ BOATRACE 公式の出走表ページに飛びます。 投票には TELEBOAT 会員ログインが必要です。
+        </div>
       </div>
 
       {msg && <div className="mt-3 text-center font-bold" style={{ color: "#fff" }}>{msg}</div>}
@@ -440,6 +458,25 @@ const btnReal = {
   letterSpacing: "0.01em",
   boxShadow: "0 1px 0 rgba(255, 255, 255, 0.30) inset, 0 4px 12px rgba(245, 158, 11, 0.30)",
   transition: "transform 0.12s ease, filter 0.12s ease",
+};
+/* Round 118 Task 3: BOATRACE 公式へ飛ぶ投票導線ボタン */
+const btnVote = {
+  background: "linear-gradient(180deg, #34D399 0%, #10B981 100%)",
+  color: "#022C22",
+  padding: "14px 28px",
+  borderRadius: 12,
+  fontWeight: 800,
+  fontSize: 15,
+  border: "none",
+  cursor: "pointer",
+  minWidth: 240,
+  letterSpacing: "0.01em",
+  boxShadow: "0 1px 0 rgba(255, 255, 255, 0.40) inset, 0 4px 14px rgba(16, 185, 129, 0.35)",
+  textDecoration: "none",
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: 6,
 };
 
 function Skip({ race, reason, recommendation }) {
