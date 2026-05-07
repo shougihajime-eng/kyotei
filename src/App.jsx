@@ -734,6 +734,10 @@ export default function App() {
               exhibitionNote: b.exhibitionNote || null,    // 気配コメント
               age: b.age ?? null,
               weight: b.weight ?? null,
+              // Round 125 整合性: Round 121-123 で取得したデータも保存
+              toban: b.toban ?? null,
+              courseStats: b.courseStats || null,   // 進入率 + 3 連対率
+              recentForm: b.recentForm || null,     // 直近 3 節成績統計
             }));
             // 天候・水面スナップショット
             const weatherSnapshot = {
