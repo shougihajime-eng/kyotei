@@ -53,6 +53,11 @@ import { generateSampleRaces, buildRacesFromSchedule, mergeProgram, mergeOdds, m
 
 const REFRESH_COOLDOWN_MS = 15 * 1000; // Round 112: 60→15 秒に短縮 (連打したい時のストレスを除去)
 
+/* Round 113: 競艇のオッズは発走 15 分前にならないと安定しない。
+   それ以前は 「予想」 ロジックを動かさず、 確定待ち状態として表示する。
+   15 分を切ったら自動でゲートが開き、 通常の buy / skip 判定に切り替わる。 */
+const ODDS_STABLE_MINUTES = 15;
+
 export default function App() {
   /* === Round 75: 公開検証ログページ — URL に ?log=public があれば専用ページを表示 === */
   if (typeof window !== "undefined") {
@@ -128,6 +133,8 @@ export default function App() {
   const [refreshing, setRefreshing] = useState(false);
   const [refreshMsg, setRefreshMsg] = useState("");
   const [lastRefreshAt, setLastRefreshAt] = useState(null);
+  /* Round 113: 1 分ごとの時刻 tick — -15 分ゲートが時間経過で自動的に開く */
+  const [nowTick, setNowTick] = useState(() => Date.now());
   // Round 74: 仮データ動作中フラグ (実 API 失敗 → サンプル fallback の可視化)
   const [isSampleMode, setIsSampleMode] = useState(false);
   /* スタイル切替の即時フィードバック (トースト) — Auth handler より前に定義 */
@@ -271,14 +278,39 @@ export default function App() {
   /* === Round 30: 3 スタイル同時計算 (事前計算 + キャッシュ) ===
      ・races / evals / cap が変わったとき 1 回だけ全 3 スタイル分を計算
      ・スタイル切替は計算済みキャッシュから O(1) で取り出すだけ → 即時反応
-     ・予想スナップショット保存にも 3 スタイル分が利用可能になる */
+     ・予想スナップショット保存にも 3 スタイル分が利用可能になる
+     === Round 113: -15 分ゲート ===
+     競艇のオッズは発走 15 分前にならないと安定しない。
+     それより前のレースは buildBuyRecommendation を呼ばず、 odds-pending として
+     扱うことで 「不安定オッズで買い判定」 を避ける。
+     nowTick に依存させて 1 分ごとに自動でゲートが開く。 */
   const allStyleRecommendations = useMemo(() => {
     const out = { steady: {}, balanced: {}, aggressive: {} };
     for (const r of races) {
       const ev = evals[r.id];
       if (!ev) continue;
+      const e = startEpoch(r.date, r.startTime);
+      const minutesToStart = e != null ? (e - nowTick) / 60000 : null;
+      const oddsPending = minutesToStart != null && minutesToStart > ODDS_STABLE_MINUTES;
       for (const style of ["steady", "balanced", "aggressive"]) {
-        const rec = buildBuyRecommendation(ev, style, cap, false);
+        let rec;
+        if (oddsPending) {
+          const m = Math.ceil(minutesToStart);
+          rec = {
+            decision: "odds-pending",
+            reason: `発走 ${m} 分前 — オッズ確定待ち`,
+            reasons: [
+              `競艇のオッズは発走 ${ODDS_STABLE_MINUTES} 分前にならないと安定しません`,
+              `現在は発走 ${m} 分前 (あと ${Math.max(0, m - ODDS_STABLE_MINUTES)} 分で自動的に予想を開始)`,
+              `不安定なオッズでの判定はせず、 確定したオッズで勝負を決めます`,
+            ],
+            items: [], total: 0,
+            minutesToStart: m,
+            etaMinutes: Math.max(0, m - ODDS_STABLE_MINUTES),
+          };
+        } else {
+          rec = buildBuyRecommendation(ev, style, cap, false);
+        }
         rec.overall = computeOverallGrade(ev, rec, ev?.windWave);
         rec.warnings = ev?.warnings || [];
         rec.venueProfile = ev?.venueProfile || null;
@@ -290,7 +322,7 @@ export default function App() {
       }
     }
     return out;
-  }, [races, evals, cap]);
+  }, [races, evals, cap, nowTick]);
 
   /* 現在スタイルの recommendations は事前計算からピックするだけ */
   const recommendations = useMemo(() => {
@@ -399,7 +431,7 @@ export default function App() {
   const scanStats = useMemo(() => {
     const total = races.length;
     const map = recommendations || {};
-    let buy = 0, skip = 0, noOdds = 0, closed = 0, dataChecking = 0, lightSkipped = 0;
+    let buy = 0, skip = 0, noOdds = 0, closed = 0, dataChecking = 0, oddsPending = 0, lightSkipped = 0;
     for (const r of races) {
       const rec = map[r.id];
       if (!rec) continue;
@@ -407,9 +439,10 @@ export default function App() {
       else if (rec.decision === "no-odds") { noOdds++; lightSkipped++; }
       else if (rec.decision === "closed") closed++;
       else if (rec.decision === "data-checking") { dataChecking++; lightSkipped++; }
+      else if (rec.decision === "odds-pending") { oddsPending++; lightSkipped++; }
       else skip++;
     }
-    return { total, candidates: buy, skip, noOdds, closed, dataChecking, lightSkipped };
+    return { total, candidates: buy, skip, noOdds, closed, dataChecking, oddsPending, lightSkipped };
   }, [races, recommendations]);
 
   /* recommendations の最新値を ref にも反映 (switchProfile が安全に参照できるよう) */
@@ -538,6 +571,9 @@ export default function App() {
         for (const style of STYLES) {
           const rec = allStyleRecommendations[style]?.[r.id];
           if (!rec) continue;
+          // Round 113: odds-pending (-15 分前) は予想していない状態なので保存しない。
+          //   15 分前を切ってから初めて 「買い / 見送り」 を確定保存する。
+          if (rec.decision === "odds-pending") continue;
           const key = `${dateKey}_${r.id}_${style}`;
           const existing = next[key] || {};
           // 手動記録は触らない (manuallyRecorded=true)
@@ -1029,6 +1065,14 @@ export default function App() {
   const refreshAllRef = useRef(null);
   useEffect(() => { refreshingRef.current = refreshing; }, [refreshing]);
   useEffect(() => { refreshAllRef.current = refreshAll; }, [refreshAll]);
+
+  /* Round 113: 1 分ごとに nowTick を進める → -15 分ゲートが時間経過で自然に開く
+     例: ある会場のレースが 15:30 発走なら、 15:14 に切り替わったタイミングで
+         (再 fetch 不要で) 判定が "オッズ確定待ち" → "買い/見送り" に変わる */
+  useEffect(() => {
+    const id = setInterval(() => setNowTick(Date.now()), 60_000);
+    return () => clearInterval(id);
+  }, []);
   useEffect(() => {
     if (!settings.onboardingDone) return;
     const BG_INTERVAL_MS = 12 * 60 * 1000; // 12 分

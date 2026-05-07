@@ -27,6 +27,7 @@ export default function RaceList({ races, evals, recommendations, onPickRace }) 
   }, [races, evals, recommendations]);
 
   const goodOnly = rows.filter((row) => row.decision === "buy" && (row.grade === "S" || row.grade === "A"));
+  const oddsPending = rows.filter((row) => row.decision === "odds-pending");
   const noOdds = rows.filter((row) => row.decision === "no-odds");
   const others = rows.filter((row) => row.decision === "skip");
 
@@ -63,6 +64,48 @@ export default function RaceList({ races, evals, recommendations, onPickRace }) 
           </div>
         )}
       </section>
+
+      {/* Round 113: -15 分前まで予想しないレース群 (オッズ不安定のため) */}
+      {oddsPending.length > 0 && (
+        <section className="card" style={{
+          padding: 16,
+          minHeight: 100,
+          background: "linear-gradient(180deg, rgba(167, 139, 250, 0.08) 0%, rgba(91, 33, 182, 0.04) 100%), var(--bg-card)",
+          border: "1px solid rgba(167, 139, 250, 0.32)",
+        }}>
+          <SectionHeader
+            icon="⏳"
+            title="オッズ確定待ち (発走 15 分前から予想開始)"
+            count={oddsPending.length}
+            desc="競艇のオッズは発走 15 分前にならないと安定しません。 それまでは判定を保留します。"
+            small
+          />
+          <div className="mt-2 flex flex-wrap gap-2">
+            {oddsPending
+              .slice()
+              .sort((a, b) => (a.rec?.minutesToStart ?? 999) - (b.rec?.minutesToStart ?? 999))
+              .slice(0, 24)
+              .map((row) => (
+                <button key={row.race.id} className="btn btn-ghost"
+                  onClick={() => onPickRace(row.race.id)}
+                  style={{
+                    fontSize: 11.5,
+                    padding: "6px 10px",
+                    minHeight: 32,
+                    color: "#ddd6fe",
+                    border: "1px solid rgba(167,139,250,0.35)",
+                  }}>
+                  {row.race.venue} {row.race.raceNo}R · 発走 <span className="num">{row.rec?.minutesToStart ?? "—"}</span>分前
+                </button>
+              ))}
+            {oddsPending.length > 24 && (
+              <span style={{ fontSize: 11, color: "var(--text-tertiary)", alignSelf: "center", letterSpacing: "0.02em" }}>
+                ...他 {oddsPending.length - 24}件
+              </span>
+            )}
+          </div>
+        </section>
+      )}
 
       {noOdds.length > 0 && (
         <section className="card" style={{

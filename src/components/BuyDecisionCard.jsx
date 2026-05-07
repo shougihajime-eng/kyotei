@@ -30,6 +30,9 @@ function BuyDecisionCard({ race, recommendation, onRecord, virtualMode, evalRes 
 
   const dec = recommendation?.decision;
 
+  if (dec === "odds-pending") {
+    return <OddsPending race={race} recommendation={recommendation} />;
+  }
   if (dec === "no-odds") {
     return <NoOdds race={race} recommendation={recommendation} />;
   }
@@ -383,6 +386,19 @@ const cardStyle = {
     backdropFilter: "blur(10px)",
     WebkitBackdropFilter: "blur(10px)",
   },
+  /* Round 113: -15 分前まで 「予想を出さない」 確定待ち状態 */
+  pending: {
+    padding: "40px 24px",
+    borderRadius: 18,
+    textAlign: "center",
+    background: "linear-gradient(180deg, rgba(167, 139, 250, 0.12) 0%, rgba(91, 33, 182, 0.20) 100%), linear-gradient(180deg, rgba(19, 27, 48, 0.92) 0%, rgba(14, 20, 36, 0.92) 100%)",
+    border: "1px solid rgba(167, 139, 250, 0.55)",
+    color: "var(--text-primary)",
+    boxShadow: "0 1px 0 rgba(255,255,255,0.04) inset, 0 12px 32px rgba(0, 0, 0, 0.30), 0 0 32px -12px rgba(167, 139, 250, 0.45)",
+    minHeight: 280,
+    backdropFilter: "blur(10px)",
+    WebkitBackdropFilter: "blur(10px)",
+  },
   empty: {
     padding: "48px 24px",
     borderRadius: 18,
@@ -484,6 +500,42 @@ function DataChecking({ race, recommendation }) {
           {(recommendation.reasons || []).slice(1).map((r, i) => <li key={i} style={{ listStyle: "disc", marginTop: 2 }}>{r}</li>)}
         </ul>
       )}
+    </section>
+  );
+}
+
+/* Round 113: -15 分前まで 「予想を出さない」 確定待ち状態
+   競艇のオッズは発走 15 分前にならないと安定しないため、
+   それ以前は計算結果を表示しない (= 不安定オッズで誤誘導しない) */
+function OddsPending({ race, recommendation }) {
+  const m = recommendation?.minutesToStart;
+  const eta = recommendation?.etaMinutes;
+  return (
+    <section style={cardStyle.pending}>
+      <div style={{ fontSize: 56, marginBottom: 8 }}>⏳</div>
+      <div style={{ fontSize: "min(28px,7vw)", fontWeight: 900, color: "#ddd6fe" }}>
+        オッズ確定待ち
+      </div>
+      <div className="opacity-90 mt-2 text-sm">
+        {race.venue} {race.raceNo}R ({race.startTime}発走)
+      </div>
+      {m != null && (
+        <div className="mt-3 inline-block px-4 py-2 rounded-full text-sm font-bold" style={{ background: "rgba(0,0,0,0.30)", color: "#ddd6fe" }}>
+          発走 {m} 分前
+        </div>
+      )}
+      <div className="opacity-85 mt-4 text-xs px-4" style={{ lineHeight: 1.65, maxWidth: 420, marginLeft: "auto", marginRight: "auto" }}>
+        競艇のオッズは <b>発走 15 分前</b> にならないと安定しません。<br/>
+        確定したオッズで <b>正しく勝負を決めるため</b>、 それまでは予想を出しません。
+      </div>
+      {eta != null && eta > 0 && (
+        <div className="mt-4 px-4 py-2 inline-block rounded-lg text-sm font-bold" style={{ background: "rgba(251,191,36,0.16)", color: "#fde68a", border: "1px solid rgba(251,191,36,0.45)" }}>
+          ⏱ あと <span className="num">{eta}</span> 分で自動的に予想開始
+        </div>
+      )}
+      <div className="opacity-70 mt-4 text-xs">
+        15 分前を過ぎたら、 このカードが自動的に 「買い / 見送り」 に切り替わります。
+      </div>
     </section>
   );
 }

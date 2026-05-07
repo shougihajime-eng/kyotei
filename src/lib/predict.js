@@ -483,6 +483,8 @@ export function analyzeWindWave(race) {
 /* === Phase D: 総合評価 ★1〜5 + 推奨アクション === */
 export function computeOverallGrade(ev, recommendation, windWave) {
   if (!ev) return { stars: 0, action: "見送り", note: "未評価" };
+  // Round 113: オッズ確定待ち中は星評価も保留 (不安定オッズで本線判定しない)
+  if (recommendation?.decision === "odds-pending") return { stars: 0, action: "確定待ち", note: "オッズ確定待ち" };
   if (recommendation?.decision === "no-odds") return { stars: 0, action: "見送り", note: "オッズ取得不可" };
   if (!ev.ok) return { stars: 0, action: "見送り", note: ev.message || "データ不足" };
   let stars = 0;

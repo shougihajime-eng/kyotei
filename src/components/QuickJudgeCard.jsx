@@ -24,6 +24,12 @@ function QuickJudgeCardImpl({ headlineRace, recommendation, today, profile, head
     mode = "buy_strong"; color = "#10b981"; headline = "🟢 勝負レース";
   } else if (dec === "buy") {
     mode = "buy"; color = "#34d399"; headline = "🟢 買い";
+  } else if (dec === "odds-pending") {
+    // Round 113: 発走 15 分前まで判定しない (オッズ不安定のため)
+    mode = "pending"; color = "#a78bfa";
+    headline = recommendation?.etaMinutes != null
+      ? `⏳ あと ${recommendation.etaMinutes} 分で予想開始`
+      : "⏳ オッズ確定待ち";
   } else if (dec === "no-odds") {
     mode = "no-odds"; color = "#f59e0b"; headline = "⚠️ オッズ取得不可";
   } else if (dec === "data-checking") {
@@ -60,6 +66,8 @@ function QuickJudgeCardImpl({ headlineRace, recommendation, today, profile, head
         ? "linear-gradient(135deg, rgba(6,95,70,0.3), rgba(11,18,32,1))"
         : dec === "no-odds"
         ? "linear-gradient(135deg, rgba(245,158,11,0.2), rgba(11,18,32,1))"
+        : dec === "odds-pending"
+        ? "linear-gradient(135deg, rgba(91,33,182,0.28), rgba(11,18,32,1))"
         : "linear-gradient(135deg, rgba(127,29,29,0.3), rgba(11,18,32,1))",
     }}>
       {/* ヘッダ: 判定 + レース + 現在スタイル */}
@@ -116,6 +124,22 @@ function QuickJudgeCardImpl({ headlineRace, recommendation, today, profile, head
             </div>
           )}
         </>
+      ) : dec === "odds-pending" ? (
+        <div className="text-center py-3 opacity-95">
+          <div style={{ fontSize: 56, lineHeight: 1 }}>⏳</div>
+          <div className="mt-2" style={{ fontSize: 18, fontWeight: 800, color: "#ddd6fe" }}>
+            発走 {recommendation?.minutesToStart ?? "—"} 分前
+          </div>
+          <div className="text-xs mt-2 mx-3 px-3 py-2 rounded-lg" style={{ background: "rgba(0,0,0,0.30)", color: "#e9d5ff", lineHeight: 1.6 }}>
+            競艇のオッズは <b>発走 15 分前</b> にならないと安定しません。<br/>
+            それまでは予想を出さず、 <b>確定したオッズで勝負を決めます</b>。
+          </div>
+          {recommendation?.etaMinutes != null && recommendation.etaMinutes > 0 && (
+            <div className="text-xs opacity-90 mt-2" style={{ color: "#fde68a" }}>
+              ⏱ あと <b>{recommendation.etaMinutes}</b> 分で自動的に予想開始
+            </div>
+          )}
+        </div>
       ) : (
         <div className="text-center py-4 opacity-90">
           {dec === "skip" && (
