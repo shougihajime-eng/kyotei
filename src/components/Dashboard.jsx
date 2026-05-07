@@ -1,6 +1,7 @@
 import { useMemo, useState, memo } from "react";
 import BuyDecisionCard from "./BuyDecisionCard.jsx";
 import QuickJudgeCard from "./QuickJudgeCard.jsx";
+import ImminentRaces from "./ImminentRaces.jsx";
 import RefreshBar from "./RefreshBar.jsx";
 import NewsPanel from "./NewsPanel.jsx";
 import EVExplainer from "./EVExplainer.jsx";
@@ -119,6 +120,9 @@ export default function Dashboard({
       {strategyRanking && (
         <StrategyRankingCard ranking={strategyRanking} currentProfile={settings.riskProfile} switchProfile={switchProfile} />
       )}
+
+      {/* Round 114: 「もうすぐ判定」 専用ミニ一覧 — 1 秒ごとカウントダウン */}
+      <ImminentRaces races={races} recommendations={recommendations} onPickRace={onPickRace} />
 
       {/* 🚀 クイックジャッジ — 一目判定 (最重要) */}
       <QuickJudgeCard

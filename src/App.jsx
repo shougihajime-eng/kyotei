@@ -50,6 +50,7 @@ import { getLearnedWeights } from "./lib/learning.js";
 import { defaultSettings, summarizeToday, perRaceCap } from "./lib/money.js";
 import { todayDate, todayKey, startEpoch } from "./lib/format.js";
 import { generateSampleRaces, buildRacesFromSchedule, mergeProgram, mergeOdds, mergeBeforeInfo } from "./lib/sample.js";
+import { sendBuyNotification } from "./lib/notifyBuy.js";
 
 const REFRESH_COOLDOWN_MS = 15 * 1000; // Round 112: 60→15 秒に短縮 (連打したい時のストレスを除去)
 
@@ -1073,6 +1074,83 @@ export default function App() {
     const id = setInterval(() => setNowTick(Date.now()), 60_000);
     return () => clearInterval(id);
   }, []);
+
+  /* Round 114: 「買い判定が出たレース」 をブラウザ通知 (許可時のみ)
+     ・recommendations が更新されるたびに、 各レースの decision を確認
+     ・"buy" になっていて (まだ通知してない) なら 1 回だけ通知
+     ・タブが見えている時 / 通知 OFF / 締切後 は通知しない (notifyBuy.js 内で判定)
+     ・締切後 (minutesToStart ≤ 0) のレースは通知しない */
+  useEffect(() => {
+    if (!races || races.length === 0 || !recommendations) return;
+    const now = nowTick;
+    for (const r of races) {
+      const e = startEpoch(r.date, r.startTime);
+      if (e == null) continue;
+      const minutesToStart = (e - now) / 60000;
+      if (minutesToStart <= 0 || minutesToStart > ODDS_STABLE_MINUTES) continue;
+      const rec = recommendations[r.id];
+      if (rec?.decision === "buy") {
+        sendBuyNotification(r, rec, minutesToStart);
+      }
+    }
+  }, [recommendations, races, nowTick]);
+
+  /* Round 114: -15 分ゲートが開いた瞬間に裏でオッズ + 直前情報を再取得
+     → ユーザーが手動で 🔄 を押さなくても、 ちょうど 15 分前の最新オッズで判定が確定する。
+     autoFetchedRef は 「すでに自動取得済のレース ID」 を記録 (重複 fetch 防止)。 */
+  const autoFetchedRef = useRef(new Set());
+  useEffect(() => {
+    if (!races || races.length === 0) return;
+    const now = nowTick;
+    const newlyOpened = [];
+    for (const r of races) {
+      const e = startEpoch(r.date, r.startTime);
+      if (e == null || !r.jcd || !r.raceNo) continue;
+      const minutesToStart = (e - now) / 60000;
+      // ゲートが開いている (-15 〜 発走) かつ未 fetch なら queue
+      if (minutesToStart > 0 && minutesToStart <= ODDS_STABLE_MINUTES) {
+        if (!autoFetchedRef.current.has(r.id)) {
+          newlyOpened.push(r);
+          autoFetchedRef.current.add(r.id);
+        }
+      } else if (minutesToStart > ODDS_STABLE_MINUTES) {
+        // まだゲートが開いていない (= 次に開いた時に再 fetch すべき) → set から外す
+        autoFetchedRef.current.delete(r.id);
+      }
+      // 締切後 (minutesToStart <= 0) はそのまま (再 fetch 不要)
+    }
+    if (newlyOpened.length === 0) return;
+
+    // 裏で fetch (UI ブロックしない)
+    const dateK = todayKey();
+    (async () => {
+      try {
+        const results = await Promise.all(newlyOpened.map(async (r) => {
+          const [odds, before] = await Promise.all([
+            fetchRaceOdds(r.jcd, r.raceNo, dateK),
+            fetchBeforeInfo(r.jcd, r.raceNo, dateK),
+          ]);
+          return { id: r.id, odds, before };
+        }));
+        setRaces((prev) => {
+          if (!prev || prev.length === 0) return prev;
+          const idx = Object.fromEntries(results.map(x => [x.id, x]));
+          let changed = false;
+          const nextRaces = prev.map((r) => {
+            const x = idx[r.id];
+            if (!x) return r;
+            let next = r;
+            if (x.odds)   { next = mergeOdds(next, x.odds); changed = true; }
+            if (x.before) { next = mergeBeforeInfo(next, x.before); changed = true; }
+            return next;
+          });
+          return changed ? nextRaces : prev;
+        });
+      } catch (e) {
+        console.error("[auto-15min-fetch] failed:", e);
+      }
+    })();
+  }, [nowTick, races]);
   useEffect(() => {
     if (!settings.onboardingDone) return;
     const BG_INTERVAL_MS = 12 * 60 * 1000; // 12 分
