@@ -1558,6 +1558,7 @@ export default function App() {
             publicLogTick={publicLogTick}
             authUser={authUser}
             syncStatus={syncStatus}
+            onReset={handleReset}
             onPickRace={(t) => setTab(t)}
           />
         )}

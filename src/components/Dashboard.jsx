@@ -2,6 +2,7 @@ import { useMemo, useState, memo } from "react";
 import BuyDecisionCard from "./BuyDecisionCard.jsx";
 import QuickJudgeCard from "./QuickJudgeCard.jsx";
 import ImminentRaces from "./ImminentRaces.jsx";
+import LegacyDataBanner from "./LegacyDataBanner.jsx";
 import RefreshBar from "./RefreshBar.jsx";
 import NewsPanel from "./NewsPanel.jsx";
 import EVExplainer from "./EVExplainer.jsx";
@@ -34,6 +35,7 @@ export default function Dashboard({
   visibleData, evals,
   isSampleMode, storageStatus, publicLogTick,
   authUser, syncStatus,
+  onReset,
 }) {
   const [showDetails, setShowDetails] = useState(false);
 
@@ -69,6 +71,11 @@ export default function Dashboard({
 
   return (
     <div className="space-y-4 max-w-3xl mx-auto px-4 mt-4 pb-20">
+      {/* Round 115: -15 分前以前の旧予想ログ全削除バナー (1 度クリアすれば消える) */}
+      {onReset && (
+        <LegacyDataBanner predictions={predictions} onReset={onReset} authUser={authUser} />
+      )}
+
       {/* 更新バー (常時) */}
       <RefreshBar onRefresh={onRefresh} refreshing={refreshing} refreshMsg={refreshMsg} lastRefreshAt={lastRefreshAt} />
 
