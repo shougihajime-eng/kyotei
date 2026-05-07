@@ -151,6 +151,7 @@ export function findUnresolvedRaces(predictions, { todayKey }) {
  *   onProgress?: (done, total, label) => void,
  *   maxFetch?: number,            // 最大何件まで API を叩くか (default 80)
  *   nocache?: boolean,             // result API のキャッシュをバイパス
+ *   concurrency?: number,          // 並列フェッチ数 (default 6)
  *   fetchFn?: (jcd, rno, dateK, opts) => Promise<object|null>, // テスト注入用
  *   now?: () => Date,
  * }} opts
@@ -169,6 +170,7 @@ export async function backfillResults(predictions, opts = {}) {
     onProgress,
     maxFetch = 80,
     nocache = false,
+    concurrency = 6,
     fetchFn = fetchRaceResult,
     now = () => new Date(),
   } = opts;
@@ -180,40 +182,54 @@ export async function backfillResults(predictions, opts = {}) {
   const skipped = Math.max(0, groups.length - targets.length);
 
   const stamp = now().toISOString();
-  let updated = 0, failed = 0;
+  let updated = 0, failed = 0, done = 0;
   const errors = [];
   const next = { ...predictions };
 
-  for (let i = 0; i < targets.length; i++) {
-    const g = targets[i];
-    if (onProgress) {
-      try { onProgress(i, targets.length, `${g.date} jcd=${g.jcd} ${g.rno}R`); } catch {}
-    }
-    let apiResult = null;
-    try {
-      // dateK: API の hd は YYYYMMDD なので g.hd を渡す
-      apiResult = await fetchFn(g.jcd, g.rno, g.hd, { nocache });
-    } catch (e) {
-      errors.push({ key: g.keys.join(","), error: String(e?.message || e) });
-      failed++;
-      continue;
-    }
-    if (!apiResult?.first) {
-      // 結果未公開 (まだレース終わってない / API から取れない) → 失敗扱い (リトライ可能)
-      failed++;
-      continue;
-    }
-    let groupUpdated = false;
-    for (const key of g.keys) {
-      const before = next[key];
-      const after = applyResultToPrediction(before, apiResult, stamp);
-      if (after !== before) {
-        next[key] = after;
-        groupUpdated = true;
+  // 並列度制限ワーカープール: cursor を共有して 1 件ずつ取り出す。
+  // JS はシングルスレッドなので、 await を挟まない区間 (カウンタ / next 書き込み) は安全。
+  // 各グループはキー (jcd-rno-hd) で一意なので、 next への書き込みも互いに被らない。
+  let cursor = 0;
+  async function worker() {
+    while (true) {
+      const i = cursor++;
+      if (i >= targets.length) return;
+      const g = targets[i];
+      if (onProgress) {
+        try { onProgress(done, targets.length, `${g.date} jcd=${g.jcd} ${g.rno}R`); } catch {}
       }
+      let apiResult = null;
+      try {
+        apiResult = await fetchFn(g.jcd, g.rno, g.hd, { nocache });
+      } catch (e) {
+        errors.push({ key: g.keys.join(","), error: String(e?.message || e) });
+        failed++;
+        done++;
+        continue;
+      }
+      done++;
+      if (!apiResult?.first) {
+        failed++;
+        continue;
+      }
+      let groupUpdated = false;
+      for (const key of g.keys) {
+        const before = next[key];
+        const after = applyResultToPrediction(before, apiResult, stamp);
+        if (after !== before) {
+          next[key] = after;
+          groupUpdated = true;
+        }
+      }
+      if (groupUpdated) updated++;
     }
-    if (groupUpdated) updated++;
   }
+
+  const n = Math.min(Math.max(1, concurrency), targets.length);
+  if (n > 0) {
+    await Promise.all(Array.from({ length: n }, () => worker()));
+  }
+
   if (onProgress) {
     try { onProgress(targets.length, targets.length, "完了"); } catch {}
   }

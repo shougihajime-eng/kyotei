@@ -835,18 +835,20 @@ export default function App() {
       return out;
     });
 
-    /* ③-B Round 110: 過去レースの結果バックフィル
+    /* ③-B Round 110: 過去レースの結果バックフィル (Round 111: 並列化で高速化)
        refreshAll は今までは「当日のレースの結果」 しか反映しなかった。
        昨日以前の予想で結果が未確定なものを取りに行き、 finalize する。
-       これにより 「終わっているのに未確定」 状態が再発しないようにする。 */
+       これにより 「終わっているのに未確定」 状態が再発しないようにする。
+       Round 111: 直列ループ → 6 並列ワーカープール + サーバキャッシュ活用で大幅短縮。 */
     try {
       setRefreshMsg("🔄 過去予想の結果を取得中…");
       const todayK = todayKey();
       let lastReport = null;
       const backfillResult = await backfillResults(predictions, {
         todayKey: todayK,
-        nocache: true, // 過去結果は確実に最新を取りに行く
+        // Round 111: 確定済結果は不変なので s-maxage=600 のキャッシュを活かす (nocache=false)
         maxFetch: 60,
+        concurrency: 6,
         onProgress: (done, total, label) => {
           if (total > 0) {
             setRefreshMsg(`🔄 過去予想 ${done}/${total} (${label})`);
@@ -869,56 +871,65 @@ export default function App() {
       // バックフィル失敗してもメインのフローは継続
     }
 
-    /* ④ 高速 2 段階追加取得 — オッズだけ 5秒間隔で 2 回追い更新
-       (発走直前のオッズ変動を捉えやすくする / 連打防止のため最大 2 回まで) */
+    /* ④ 直前オッズの追い更新候補を選定 (実行は ⑤ の後に裏で) */
     const fastTargets = candidates.filter((r) => {
       const e = startEpoch(r.date, r.startTime);
       const m = e != null ? (e - Date.now()) / 60000 : null;
       return m != null && m >= -5 && m <= 30; // 発走前 30 分〜発走後 5 分のみ
     }).slice(0, 8); // 最大 8 レース
 
-    if (fastTargets.length > 0) {
-      for (let pass = 1; pass <= 2; pass++) {
-        await new Promise((r) => setTimeout(r, 5000)); // 5 秒間隔
-        setRefreshMsg(`🔄 オッズ追い更新 ${pass}/2 (${fastTargets.length}レース)…`);
-        const oddsResults = await Promise.all(fastTargets.map(async (r) => {
-          const odds = await fetchRaceOdds(r.jcd, r.raceNo, dateK);
-          return { id: r.id, odds };
-        }));
-        setRaces((prev) => {
-          if (!prev || prev.length === 0) return prev;
-          const idx = Object.fromEntries(oddsResults.filter(x => x.odds).map(x => [x.id, x.odds]));
-          let changed = false;
-          const next = prev.map((r) => {
-            if (!idx[r.id]) return r;
-            changed = true;
-            return mergeOdds(r, idx[r.id]);
-          });
-          return changed ? next : prev;
-        });
-      }
-    }
-
-    /* ⑤ 完了 (最低 400 ms 表示) */
-    const elapsed = Date.now() - startedAt;
-    if (elapsed < 400) await new Promise((r2) => setTimeout(r2, 400 - elapsed));
+    /* ⑤ メイン処理完了 — Round 111: ここでボタン解放 (オッズ追い更新は裏で続行)
+       元コードでは ④ の 5秒×2 待機が完了するまでボタンが押せなかった。
+       過去予想 + 今日のオッズは既に取れているので、 直前オッズの再取得は
+       「裏でこっそり」 で十分。 ユーザーは即座に次の操作に移れる。 */
     const ts = new Date().toISOString();
     setLastRefreshAt(ts);
     if (sched?.ok) {
-      setRefreshMsg(`✅ 更新しました (${sched.total_venues}会場 / ${sched.total_races}レース / 詳細 ${candidates.length}件 / オッズ ${fastTargets.length}件 ×3 段階)`);
+      const tail = fastTargets.length > 0 ? ` / 直前オッズ ${fastTargets.length}件は裏で追い更新` : "";
+      setRefreshMsg(`✅ 更新しました (${sched.total_venues}会場 / ${sched.total_races}レース / 詳細 ${candidates.length}件${tail})`);
     } else {
       setRefreshMsg(`⚠️ 一時的に取得できません。少し時間を空けて再実行してください — サンプル動作中`);
     }
+    setRefreshing(false); // ← Round 111: ボタンを早期解放
     setTimeout(() => setRefreshMsg(""), 5000);
+
+    /* ⑥ 直前オッズの追い更新を裏で実行 (fire-and-forget)
+       5秒間隔で 2 回。 ユーザー操作はブロックしない。
+       完了メッセージは出さない (静かに最新化)。 */
+    if (fastTargets.length > 0) {
+      (async () => {
+        try {
+          for (let pass = 1; pass <= 2; pass++) {
+            await new Promise((r) => setTimeout(r, 5000));
+            const oddsResults = await Promise.all(fastTargets.map(async (r) => {
+              const odds = await fetchRaceOdds(r.jcd, r.raceNo, dateK);
+              return { id: r.id, odds };
+            }));
+            setRaces((prev) => {
+              if (!prev || prev.length === 0) return prev;
+              const idx = Object.fromEntries(oddsResults.filter(x => x.odds).map(x => [x.id, x.odds]));
+              let changed = false;
+              const nextRaces = prev.map((r) => {
+                if (!idx[r.id]) return r;
+                changed = true;
+                return mergeOdds(r, idx[r.id]);
+              });
+              return changed ? nextRaces : prev;
+            });
+          }
+        } catch (e) {
+          console.error("[refreshAll] tail-odds failed:", e);
+        }
+      })();
+    }
     } catch (err) {
       // 例外時は前回データを保持し、UI を壊さない
       console.error("[refreshAll] error:", err);
       setRefreshMsg("⚠️ 一時的に混雑しています。少し時間を空けて再実行してください");
       setTimeout(() => setRefreshMsg(""), 5000);
-    } finally {
-      // finally で必ずフラグを下ろす (永続的にボタンが無効化されるのを防止)
       setRefreshing(false);
     }
+    // 注: 正常系は ⑤ で setRefreshing(false) 済。 finally は不要 (裏更新を継続させたいため)。
   }, [refreshing, lastRefreshAt]);
 
   /* === Round 110: Verify 画面から呼ぶ「結果を取得」 ハンドラ ===
