@@ -60,11 +60,14 @@ export function disableNotifications() {
   try { localStorage.removeItem(STORAGE_KEY); } catch {}
 }
 
-/** 買い判定通知を送る (重複防止 + visibility ガード付き)
+/** 買い判定通知を送る (重複防止 — Round 119 でタブ可視時も通知する)
  *  @param {object} race - { id, venue, raceNo, startTime }
  *  @param {object} rec  - { decision, main: { kind, combo, ev }, grade }
  *  @param {number} minutesToStart
  *  @returns {boolean} 通知を実際に送ったか
+ *
+ *  Round 119: 「絶対に気付ける」 が最優先。 タブが見えていても通知する
+ *  (BattleModeCard でビープ音 + ブラウザ通知 + 大バナーの三重)。
  */
 export function sendBuyNotification(race, rec, minutesToStart) {
   if (!isNotificationEnabled()) return false;
@@ -72,11 +75,6 @@ export function sendBuyNotification(race, rec, minutesToStart) {
   if (rec?.decision !== "buy") return false;
   // 同じレースで 1 回だけ
   if (sentRaceIds.has(race.id)) return false;
-  // タブが見えている (visible) なら通知不要 — 画面で見えるので
-  if (typeof document !== "undefined" && document.visibilityState === "visible") {
-    sentRaceIds.add(race.id); // 表示中も 「送った」 扱いで再送防止
-    return false;
-  }
   try {
     const grade = rec.grade ? `[${rec.grade}] ` : "";
     const headline = rec.grade === "S" ? "🔥 勝負レース" : "🟢 買い判定";

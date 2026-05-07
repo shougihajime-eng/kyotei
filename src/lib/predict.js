@@ -1397,6 +1397,57 @@ export function buildBuyRecommendation(ev, riskProfile, perRaceCap) {
 
   const failed = checks.filter((c) => !c.ok);
   if (failed.length > 0) {
+    /* === Round 119: 「あと何点で買えるか」 改善ヒントを生成 ===
+       ユーザーが「なぜ出ないか」 を判断できるように、 数値ギャップを返す。 */
+    const evMinForGap = EV_MIN_BY_PROFILE[riskProfile] || 1.20;
+    const improvementHints = [];
+    if (!profitOk) {
+      improvementHints.push({
+        label: "期待回収率",
+        current: Math.round(main.ev * 100),
+        required: Math.round(evMinForGap * 100),
+        gap: Math.max(0, Math.round((evMinForGap - main.ev) * 100)),
+        unit: "%",
+        hint: `EV があと ${Math.max(1, Math.ceil((evMinForGap - main.ev) * 100))}% 上がれば買い`,
+      });
+    }
+    if (!confOk) {
+      improvementHints.push({
+        label: "自信スコア",
+        current: confidence,
+        required: minConf,
+        gap: Math.max(0, minConf - confidence),
+        unit: "点",
+        hint: `自信スコアがあと ${Math.max(1, minConf - confidence)} 点足りない`,
+      });
+    }
+    if (!evidenceOk) {
+      improvementHints.push({
+        label: "根拠数",
+        current: evidenceCount,
+        required: minEvidence,
+        gap: Math.max(0, minEvidence - evidenceCount),
+        unit: "つ",
+        hint: `根拠が ${Math.max(1, minEvidence - evidenceCount)} つ足りない (展示・モーター・ST 等)`,
+      });
+    }
+    if (!probHighEnoughOk) {
+      const gapPct = Math.max(0, (minMainProb - main.prob) * 100);
+      improvementHints.push({
+        label: "的中確率",
+        current: +(main.prob * 100).toFixed(1),
+        required: +(minMainProb * 100).toFixed(1),
+        gap: +gapPct.toFixed(1),
+        unit: "%",
+        hint: `的中確率があと ${gapPct.toFixed(1)}% 高ければ`,
+      });
+    }
+    if (!oddsOk) {
+      improvementHints.push({ label: "オッズ", current: 0, required: 1, gap: 1, unit: "件", hint: "オッズが取得できていません — 締切が近づくと取得されます" });
+    }
+    if (!probOk) {
+      improvementHints.push({ label: "確率整合性", current: null, required: null, gap: null, unit: "", hint: "確率の合計が不自然 — データ取得後に再評価" });
+    }
     return {
       decision: "skip",
       reason: `${checks.length} 条件中 ${failed.length} 件未達 — 厳選見送り`,
@@ -1408,6 +1459,10 @@ export function buildBuyRecommendation(ev, riskProfile, perRaceCap) {
       items: [], total: 0,
       checks,
       confidence,
+      /* Round 119: ユーザー向け 「あと何が必要か」 ヒント */
+      improvementHints,
+      passedCount: checks.length - failed.length,
+      totalChecks: checks.length,
     };
   }
 

@@ -115,7 +115,7 @@ export function allocateRacesToStyles(races, evals) {
     const ev = evals?.[r.id];
     if (!ev) continue;
     const buyability = globalBuyabilityScore(r, ev);
-    if (buyability < 25) continue; // 「最低限買えそう」 ライン
+    if (buyability < 18) continue; // Round 119: 25 → 18 緩和 (3 スタイルのどれかは出るように)
     const fits = {
       steady: styleFit(r, ev, "steady"),
       balanced: styleFit(r, ev, "balanced"),
@@ -235,14 +235,22 @@ export function pickHeadlineForEachStyle(races, evals, allStyleRecommendations, 
    返り値:
      { isTarget, minutesToClose, dataReady, missing }
 */
-// Round 93: 厳しすぎ問題対応で緩和 (見送りばかりで 0 件にならないように)
-//   旧: 5-15 分 / EV 1.30 / conf 75 → 厳しすぎ (該当 0 件続出)
-//   新: 3-25 分 / EV 1.22 / conf 68 → moderate (現実的に候補が出る)
-export const PRE_CLOSE_WINDOW_MIN = 3;     // 締切前 3 分まで対象 (発走直前)
-export const PRE_CLOSE_WINDOW_MAX = 25;    // 締切前 25 分から対象開始 (10 分→25 分に拡大)
-export const PRE_CLOSE_MIN_EV = 1.22;      // 直前判定: EV 122% 以上 (通常 GO 1.20 より少し厳しい程度)
-export const PRE_CLOSE_MIN_CONFIDENCE = 68; // 直前判定: confidence 68 以上 (通常 65 とほぼ同等)
-export const PRE_CLOSE_DEGRADED_EV = 1.28; // 直近成績悪化時はさらに 128% に
+/* Round 119: 「15 分前ピンポイント」 + 緩和
+     ユーザー指示: 「15 分前のレースだけが本番判定。 他はほぼ意味ない」
+     ・本番判定ウィンドウ: 5〜18 分 (15±3 分のピンポイント中心)
+     ・5 分未満 → 投票締切ギリギリ過ぎ
+     ・18 分超 → オッズがまだ動く
+     ・ゴールデン (GOLDEN_WINDOW): 12〜18 分 (UI で⭐強調)
+     ・しきい値緩和: 「3 スタイルのどれかは出るはず」 のユーザー期待に近づける
+       EV 1.22→1.18 / confidence 68→60 (1 段下げ) */
+export const PRE_CLOSE_WINDOW_MIN = 5;     // 5 分未満は投票締切ギリギリ過ぎ
+export const PRE_CLOSE_WINDOW_MAX = 18;    // 15±3 分の本番判定タイムへ集中
+export const PRE_CLOSE_MIN_EV = 1.18;      // 直前判定 EV 下限 (1.22 → 1.18)
+export const PRE_CLOSE_MIN_CONFIDENCE = 60; // 直前判定 confidence 下限 (68 → 60)
+export const PRE_CLOSE_DEGRADED_EV = 1.25; // 直近成績悪化時 (1.28 → 1.25)
+/* === Round 119: ゴールデンタイム === — 真ん中の 15 分前 ±3 分 (UI 強調用) */
+export const GOLDEN_WINDOW_MIN = 12;
+export const GOLDEN_WINDOW_MAX = 18;
 
 export function isPreCloseTarget(race, now = new Date()) {
   if (!race || !race.startTime || !race.date) {
@@ -272,6 +280,20 @@ export function isPreCloseTarget(race, now = new Date()) {
   // 風波は無くても OK (海面によっては取れない) - missing には入れない
   const dataReady = missing.length === 0;
   return { isTarget, minutesToClose: Math.round(minutesToClose), dataReady, missing };
+}
+
+/* === Round 119: ゴールデンタイム判定 (15 ± 3 分のピンポイント) ===
+   UI で「⭐ 本番判定タイム」 として大きく光らせるためのフラグ。
+   isPreCloseTarget が true でも、 真ん中の golden に入っているかを別途判定。 */
+export function isGoldenWindow(race, now = new Date()) {
+  if (!race || !race.startTime || !race.date) return false;
+  const m = String(race.startTime).match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return false;
+  const [Y, M, D] = race.date.split("-").map((s) => parseInt(s, 10));
+  if (!Y || !M || !D) return false;
+  const startMs = new Date(Y, M - 1, D, parseInt(m[1], 10), parseInt(m[2], 10), 0).getTime();
+  const minutesToClose = (startMs - now.getTime()) / 60000;
+  return minutesToClose >= GOLDEN_WINDOW_MIN && minutesToClose <= GOLDEN_WINDOW_MAX;
 }
 
 /* === Round 57-58: Go モード — その日最も期待値の高いレースを top N に絞る ===

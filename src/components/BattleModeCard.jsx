@@ -1,6 +1,44 @@
-import { memo, useEffect, useState, useMemo } from "react";
+import { memo, useEffect, useState, useMemo, useRef } from "react";
 import { yen, startEpoch } from "../lib/format.js";
 import { buildRaceCardUrl } from "../lib/raceLinks.js";
+
+/* === Round 119: 買い判定が出た瞬間に音を鳴らす ===
+   ・タブが見えている時こそ即気付ける (notifyBuy はタブ可視時は通知しない設計)
+   ・1 レースにつき 1 回 (同じレースに対して連打しない)
+   ・Web Audio API で短いビープ (外部ファイル不要、 オフラインでも鳴る)
+   ・ユーザーが操作 (タップ/クリック) するまで AudioContext は鳴らない (ブラウザ仕様) */
+const beepedRaceIds = new Set();
+let _audioCtx = null;
+function getAudioCtx() {
+  try {
+    if (!_audioCtx) {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return null;
+      _audioCtx = new Ctx();
+    }
+    if (_audioCtx.state === "suspended") _audioCtx.resume?.();
+    return _audioCtx;
+  } catch { return null; }
+}
+function playBuyBeep() {
+  const ctx = getAudioCtx();
+  if (!ctx) return;
+  const now = ctx.currentTime;
+  // 上昇音 880 → 1320 Hz の 2 連打 (合計 0.45 秒)
+  [[880, now, 0.18], [1320, now + 0.20, 0.22]].forEach(([freq, start, dur]) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0.0001, start);
+    gain.gain.exponentialRampToValueAtTime(0.18, start + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(start);
+    osc.stop(start + dur + 0.05);
+  });
+}
 
 /**
  * Round 118: 「今、 これに賭けろ」 巨大表示モード
@@ -55,6 +93,20 @@ function BattleModeCard({ races, recommendations, onPickRace }) {
     }
     return best;
   }, [races, recommendations, now]);
+
+  // Round 119: battle 出現時 (= 買い判定が表示された瞬間) に 1 回ビープ音
+  const lastBeepRef = useRef(null);
+  useEffect(() => {
+    if (!battle?.race?.id) return;
+    const id = battle.race.id;
+    if (lastBeepRef.current === id) return;
+    if (beepedRaceIds.has(id)) return;
+    lastBeepRef.current = id;
+    beepedRaceIds.add(id);
+    // 少しだけ遅延して鳴らす (描画と同時の方が自然)
+    const t = setTimeout(() => playBuyBeep(), 120);
+    return () => clearTimeout(t);
+  }, [battle?.race?.id]);
 
   if (!battle) return null;
 

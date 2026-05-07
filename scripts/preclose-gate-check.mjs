@@ -71,10 +71,16 @@ console.log("▶ 1. isPreCloseTarget — 時間ウィンドウ判定");
   const pc4 = isPreCloseTarget(r4, now);
   expectTrue("締切 14 分前 → isTarget=true", pc4.isTarget === true);
 
-  // 14:24 → 締切まで 24 分 → 対象 (Round 93 で 25 分まで拡大)
+  // Round 119: ウィンドウ 5-18 分に縮小 (15 分前ピンポイント)
+  // 14:24 → 締切まで 24 分 → 対象外 (Round 119 で MAX 18 に縮小)
   const r5 = makeFullRace("14:24", "2026-05-02");
   const pc5 = isPreCloseTarget(r5, now);
-  expectTrue("締切 24 分前 → isTarget=true (Round 93 拡大窓)", pc5.isTarget === true);
+  expectTrue("締切 24 分前 → isTarget=false (Round 119 縮小窓 5-18)", pc5.isTarget === false);
+
+  // 14:16 → 締切まで 16 分 → 対象 (Round 119 ウィンドウ内)
+  const r6 = makeFullRace("14:16", "2026-05-02");
+  const pc6 = isPreCloseTarget(r6, now);
+  expectTrue("締切 16 分前 → isTarget=true (Round 119 ウィンドウ内)", pc6.isTarget === true);
 }
 
 /* === 2. データ不足検出 === */
@@ -110,12 +116,14 @@ console.log("\n▶ 2. isPreCloseTarget — データ不足検出");
   expectTrue("missing にスタート", pc4.missing.includes("スタート"));
 }
 
-/* === 3. 閾値定数の正当性 (Round 93 緩和反映) === */
-console.log("\n▶ 3. 閾値定数 — 直前判定は通常 (1.20/65) と同等以上");
+/* === 3. 閾値定数の正当性 (Round 119 緩和反映)
+       「3 スタイルのどれかは出るはず」 のユーザー期待に合わせ
+       EV 1.18 / confidence 60 / 5-18 分窓 (15 分前ピンポイント) === */
+console.log("\n▶ 3. 閾値定数 — Round 119 緩和: EV 1.15+ / 自信 55+ / 5-18 分窓");
 {
-  expectTrue(`PRE_CLOSE_MIN_EV (${PRE_CLOSE_MIN_EV}) >= 1.20`, PRE_CLOSE_MIN_EV >= 1.20);
-  expectTrue(`PRE_CLOSE_MIN_CONFIDENCE (${PRE_CLOSE_MIN_CONFIDENCE}) >= 65`, PRE_CLOSE_MIN_CONFIDENCE >= 65);
-  expectTrue(`PRE_CLOSE_WINDOW_MAX >= 15`, PRE_CLOSE_WINDOW_MAX >= 15);
+  expectTrue(`PRE_CLOSE_MIN_EV (${PRE_CLOSE_MIN_EV}) >= 1.15`, PRE_CLOSE_MIN_EV >= 1.15);
+  expectTrue(`PRE_CLOSE_MIN_CONFIDENCE (${PRE_CLOSE_MIN_CONFIDENCE}) >= 55`, PRE_CLOSE_MIN_CONFIDENCE >= 55);
+  expectTrue(`PRE_CLOSE_WINDOW_MAX (15 分前ピンポイント) — 18 まで`, PRE_CLOSE_WINDOW_MAX >= 15 && PRE_CLOSE_WINDOW_MAX <= 20);
   expectTrue(`PRE_CLOSE_WINDOW_MIN <= 5`, PRE_CLOSE_WINDOW_MIN <= 5);
   expectTrue(`window 幅 >= 10 分`, (PRE_CLOSE_WINDOW_MAX - PRE_CLOSE_WINDOW_MIN) >= 10);
 }

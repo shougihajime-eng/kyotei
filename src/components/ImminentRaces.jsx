@@ -1,6 +1,7 @@
 import { memo, useEffect, useState, useMemo } from "react";
 import { yen, startEpoch } from "../lib/format.js";
 import { isNotificationSupported, getPermissionState, isNotificationEnabled, enableNotifications } from "../lib/notifyBuy.js";
+import { GOLDEN_WINDOW_MIN, GOLDEN_WINDOW_MAX } from "../lib/styleAllocation.js";
 
 /**
  * Round 114: 「もうすぐ判定」 専用ミニ一覧
@@ -9,9 +10,13 @@ import { isNotificationSupported, getPermissionState, isNotificationEnabled, ena
  * 「-15 分の安定オッズで予想を出す」 ことを軸にしている。
  *
  * 本コンポーネントは:
+ *   ・「⭐ 本番判定タイム」 (発走 12〜18 分前 = 15 ± 3 分) を最大強調 (Round 119)
  *   ・「いま判定中」 (発走 0〜15 分前) の買い/見送り判定を強調表示
  *   ・「もうすぐ判定」 (発走 15〜20 分前) のレースをカウントダウン表示
  *   ・1 秒ごとに残り時間を更新 (見ているだけで時計が進む)
+ *
+ * Round 119: ユーザー指示 「15 分前のレースだけが本番判定。 他は意味ない」
+ *   → ゴールデンタイム (12-18 分) のレースを最も大きく光らせる。
  *
  * 画面冒頭に置くことで、 ユーザーは 50+ レース全体を見渡さなくても
  * 「次に何が判定されるか」 だけ集中して見られる。
@@ -48,24 +53,32 @@ function ImminentRaces({ races, recommendations, onPickRace }) {
     });
   };
 
-  const { active, soon } = useMemo(() => {
-    if (!races || races.length === 0) return { active: [], soon: [] };
+  const { active, soon, goldenCount } = useMemo(() => {
+    if (!races || races.length === 0) return { active: [], soon: [], goldenCount: 0 };
     const a = [];
     const s = [];
+    let golden = 0;
     for (const r of races) {
       const e = startEpoch(r.date, r.startTime);
       if (e == null) continue;
       const minutesToStart = (e - now) / 60000;
       if (minutesToStart <= 0) continue; // 締切後はスキップ
-      if (minutesToStart <= 15) {
-        a.push({ race: r, minutesToStart });
+      // Round 119: ゴールデン (12-18 分) 判定 → UI で強調
+      const isGolden = minutesToStart >= GOLDEN_WINDOW_MIN && minutesToStart <= GOLDEN_WINDOW_MAX;
+      if (isGolden) golden++;
+      if (minutesToStart <= 18) {
+        a.push({ race: r, minutesToStart, isGolden });
       } else if (minutesToStart <= SOON_WINDOW_MIN) {
         s.push({ race: r, minutesToStart });
       }
     }
-    a.sort((x, y) => x.minutesToStart - y.minutesToStart);
+    // ゴールデン優先で並び替え (15分前ピンポイントを最上部に)
+    a.sort((x, y) => {
+      if (x.isGolden !== y.isGolden) return x.isGolden ? -1 : 1;
+      return x.minutesToStart - y.minutesToStart;
+    });
     s.sort((x, y) => x.minutesToStart - y.minutesToStart);
-    return { active: a, soon: s };
+    return { active: a, soon: s, goldenCount: golden };
   }, [races, now]);
 
   if (active.length === 0 && soon.length === 0) return null;
@@ -86,6 +99,21 @@ function ImminentRaces({ races, recommendations, onPickRace }) {
       }}>
         <div style={{ fontSize: 13, fontWeight: 800, color: "#bae6fd", letterSpacing: "0.02em" }}>
           🎯 もうすぐ判定 — 発走 20 分前から始まる注目レース
+          {goldenCount > 0 && (
+            <span style={{
+              marginLeft: 8,
+              fontSize: 11.5,
+              padding: "2px 8px",
+              borderRadius: 999,
+              background: "linear-gradient(180deg, #FBBF24 0%, #F59E0B 100%)",
+              color: "#451A03",
+              fontWeight: 800,
+              letterSpacing: "0.04em",
+              boxShadow: "0 1px 0 rgba(255,255,255,0.30) inset, 0 2px 8px rgba(245,158,11,0.45)",
+            }}>
+              ⭐ 本番判定 {goldenCount}
+            </span>
+          )}
         </div>
         {/* Round 114: 通知 ON ボタン (許可状態に応じた表示) */}
         {notifyState.supported && !notifyState.enabled && notifyState.perm !== "denied" && (
@@ -119,7 +147,7 @@ function ImminentRaces({ races, recommendations, onPickRace }) {
         </div>
       )}
 
-      {/* === いま判定中 (-15 分以内) === */}
+      {/* === いま判定中 (-18 分以内、 ゴールデンタイム強調) === */}
       {active.length > 0 && (
         <div className="mb-3">
           <div style={{
@@ -131,11 +159,14 @@ function ImminentRaces({ races, recommendations, onPickRace }) {
             marginBottom: 6,
           }}>
             ⚡ いま判定中 ({active.length})
+            <span style={{ marginLeft: 8, opacity: 0.7, fontSize: 10, textTransform: "none", letterSpacing: 0 }}>
+              ⭐ = 15 分前ピンポイント (本番判定タイム)
+            </span>
           </div>
           <div className="grid grid-cols-1 gap-2">
-            {active.slice(0, 6).map(({ race, minutesToStart }) => (
+            {active.slice(0, 6).map(({ race, minutesToStart, isGolden }) => (
               <ActiveRow key={race.id} race={race} minutesToStart={minutesToStart}
-                rec={recommendations?.[race.id]} onPick={onPickRace} />
+                rec={recommendations?.[race.id]} onPick={onPickRace} isGolden={isGolden} />
             ))}
             {active.length > 6 && (
               <div className="text-xs opacity-70 text-center" style={{ paddingTop: 4 }}>
@@ -190,7 +221,7 @@ function ImminentRaces({ races, recommendations, onPickRace }) {
 }
 
 /* === いま判定中レースの 1 行カード === */
-function ActiveRow({ race, minutesToStart, rec, onPick }) {
+function ActiveRow({ race, minutesToStart, rec, onPick, isGolden }) {
   const dec = rec?.decision;
   const m = Math.max(0, Math.ceil(minutesToStart));
   const sec = Math.max(0, Math.floor(minutesToStart * 60) % 60);
@@ -227,6 +258,14 @@ function ActiveRow({ race, minutesToStart, rec, onPick }) {
     border = "1px solid rgba(239, 68, 68, 0.32)";
     labelText = rec?.reason || "見送り";
   }
+  // Round 119: ゴールデンタイム (15 分前ピンポイント) は外枠を金色強調
+  if (isGolden && dec !== "buy") {
+    border = "1.5px solid rgba(251, 191, 36, 0.55)";
+    bg = "linear-gradient(180deg, rgba(251, 191, 36, 0.08), rgba(0, 0, 0, 0.20))";
+  } else if (isGolden && dec === "buy") {
+    border = "2px solid #FBBF24";
+    bg = "linear-gradient(180deg, rgba(16, 185, 129, 0.18) 0%, rgba(251, 191, 36, 0.10) 100%)";
+  }
 
   return (
     <button
@@ -246,6 +285,17 @@ function ActiveRow({ race, minutesToStart, rec, onPick }) {
     >
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          {isGolden && (
+            <span style={{
+              fontSize: 11,
+              padding: "2px 7px",
+              borderRadius: 999,
+              background: "linear-gradient(180deg, #FBBF24 0%, #F59E0B 100%)",
+              color: "#451A03",
+              fontWeight: 800,
+              letterSpacing: "0.04em",
+            }}>⭐ 本番</span>
+          )}
           <span style={{ fontSize: 12, fontWeight: 800, color: labelColor }}>{chip}</span>
           <span style={{ fontSize: 13, fontWeight: 700 }}>
             {race.venue} <span className="num">{race.raceNo}R</span>

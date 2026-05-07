@@ -145,6 +145,9 @@ function QuickJudgeCardImpl({ headlineRace, recommendation, today, profile, head
           {dec === "skip" && (
             <div className="mb-2 px-2 py-1 rounded inline-block text-xs font-bold" style={{ background: "rgba(0,0,0,0.30)", color: "#fef9c3" }}>
               📊 賢い見送り
+              {recommendation?.passedCount != null && recommendation?.totalChecks != null && (
+                <span className="num ml-1 opacity-80">({recommendation.passedCount}/{recommendation.totalChecks})</span>
+              )}
             </div>
           )}
           <div style={{ fontSize: 14, color: "#fecaca" }}>
@@ -152,6 +155,32 @@ function QuickJudgeCardImpl({ headlineRace, recommendation, today, profile, head
           </div>
           {recommendation?.rationale && (
             <div className="text-xs opacity-70 mt-2">{recommendation.rationale}</div>
+          )}
+          {/* Round 119: 「あと何点で買えるか」 改善ヒント (skip 時のみ) */}
+          {dec === "skip" && Array.isArray(recommendation?.improvementHints) && recommendation.improvementHints.length > 0 && (
+            <div className="mt-3 mx-2 px-3 py-2 rounded-lg text-left" style={{
+              background: "linear-gradient(180deg, rgba(56, 189, 248, 0.10) 0%, rgba(0, 0, 0, 0.30) 100%)",
+              border: "1px solid rgba(56, 189, 248, 0.35)",
+              color: "#e0f2fe",
+              lineHeight: 1.6,
+            }}>
+              <div className="text-xs font-bold mb-1" style={{ color: "#bae6fd", letterSpacing: "0.02em" }}>
+                🔍 あと何が必要か (買い判定への距離)
+              </div>
+              <div className="grid grid-cols-1 gap-1">
+                {recommendation.improvementHints.slice(0, 4).map((h, i) => (
+                  <div key={i} className="text-xs" style={{ color: "#fef9c3" }}>
+                    • <b style={{ color: "#fde68a" }}>{h.label}</b>
+                    {h.current != null && h.required != null && (
+                      <span className="num opacity-80 ml-1">
+                        {" "}{h.current}{h.unit} → 下限 {h.required}{h.unit}
+                      </span>
+                    )}
+                    <span className="opacity-90"> · {h.hint}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
           )}
           {dec === "skip" && (
             <div className="text-xs opacity-80 mt-3 mx-2 px-3 py-2 rounded-lg" style={{ background: "rgba(0,0,0,0.30)", color: "#fef9c3", lineHeight: 1.55 }}>
