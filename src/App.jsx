@@ -47,6 +47,7 @@ import { buildReasoningSummary } from "./lib/reasoningSummary.js";
 const PublicLogPage = lazy(() => import("./components/PublicLogPage.jsx"));
 import { getJstDateString, getEffectiveRaceDate, validateDateConsistency, detectDateChange } from "./lib/dateGuard.js";
 import { getLearnedWeights } from "./lib/learning.js";
+import { computeDailyTrend } from "./lib/dailyTrend.js";
 import { defaultSettings, summarizeToday, perRaceCap } from "./lib/money.js";
 import { todayDate, todayKey, startEpoch } from "./lib/format.js";
 import { generateSampleRaces, buildRacesFromSchedule, mergeProgram, mergeOdds, mergeBeforeInfo } from "./lib/sample.js";
@@ -355,11 +356,32 @@ export default function App() {
   // Round 52: 学習も v2 のみ参照 (legacy データに引きずられない)
   const learnedWeights = useMemo(() => getLearnedWeights(visiblePredictions), [visiblePredictions]);
 
+  /* Round 130: 当日リアルタイム補正 — 会場別の今日の傾向を計算
+     ・visiblePredictions (= 当日確定済結果含む) から会場別に集計
+     ・3 件以上ないとデータ不足で null
+     ・荒れ気味/堅い 判定で 1 号艇/外艇に ±5% 補正 */
+  const dailyTrendByJcd = useMemo(() => {
+    const today = todayDate();
+    const seen = new Set();
+    const map = {};
+    for (const r of races) {
+      if (!r?.jcd || seen.has(r.jcd)) continue;
+      seen.add(r.jcd);
+      const trend = computeDailyTrend(visiblePredictions, r.jcd, today);
+      if (trend) map[r.jcd] = trend;
+    }
+    return map;
+  }, [races, visiblePredictions]);
+
   const evals = useMemo(() => {
     const map = {};
-    for (const r of races) map[r.id] = evaluateRace(r, news, learnedWeights.adjustments);
+    for (const r of races) {
+      const trend = dailyTrendByJcd[r.jcd];
+      const raceWithTrend = trend ? { ...r, dailyTrend: trend } : r;
+      map[r.id] = evaluateRace(raceWithTrend, news, learnedWeights.adjustments);
+    }
     return map;
-  }, [races, news, learnedWeights]);
+  }, [races, news, learnedWeights, dailyTrendByJcd]);
 
   /* === Round 30: 3 スタイル同時計算 (事前計算 + キャッシュ) ===
      ・races / evals / cap が変わったとき 1 回だけ全 3 スタイル分を計算

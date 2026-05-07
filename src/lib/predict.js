@@ -14,6 +14,7 @@
  *   ・3連複 (順序なし)
  */
 import { venueTimeMods, timeAptitudeMod, styleMatchupMod, buildWarnings } from "./venueBias.js";
+import { dailyTrendMod } from "./dailyTrend.js";
 
 /* コース別 1着率 (公営競艇 全国平均):
    1コースが圧倒的に有利。これを必ず予想に反映する。 */
@@ -236,11 +237,13 @@ function scoreBoat(boat, race) {
   const wd = windDirectionMod(boat, race?.windDir, race?.wind);
   const ca = courseAptitudeMod(boat); // Round 121: コース別実績補正
   const rf = recentFormMod(boat);     // Round 123: 直近の好調/不調補正
-  const totalMod = cond.mod * wd.mod * ca.mod * rf.mod;
+  const dt = dailyTrendMod(boat, race?.dailyTrend); // Round 130: 当日リアルタイム補正
+  const totalMod = cond.mod * wd.mod * ca.mod * rf.mod * dt.mod;
   const reasons = [...cond.reasons];
   if (wd.reason) reasons.push(wd.reason);
   if (ca.reason) reasons.push(ca.reason);
   if (rf.reason) reasons.push(rf.reason);
+  if (dt.reason) reasons.push(dt.reason);
   return {
     boatNo: boat.boatNo,
     score: baseScore * totalMod,
