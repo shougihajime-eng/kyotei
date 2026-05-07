@@ -30,7 +30,7 @@ import { getCurrentUser, onAuthChange, signOut as authSignOut } from "./lib/auth
 import { fullSync, lightSync, deleteCloudData } from "./lib/cloudSync.js";
 import { setRateLimitListener, clearApiCaches } from "./lib/api.js";
 import LoginModal from "./components/LoginModal.jsx";
-import { fetchTodaySchedule, fetchRaceProgram, fetchRaceOdds, fetchRaceResult, fetchBeforeInfo, fetchRacerCourse, fetchRacerRecent } from "./lib/api.js";
+import { fetchTodaySchedule, fetchRaceProgram, fetchRaceOdds, fetchRaceResult, fetchBeforeInfo, fetchRacerCourse, fetchRacerRecent, fetchRaceForecast } from "./lib/api.js";
 import { backfillResults, applyResultToPrediction } from "./lib/finalizeResult.js";
 import { evaluateRace, buildBuyRecommendation, computeOverallGrade } from "./lib/predict.js";
 import { suggestStyle } from "./components/StyleSelector.jsx";
@@ -935,13 +935,16 @@ export default function App() {
       const fetchOdds = minutesToStart != null && minutesToStart <= ODDS_FETCH_WINDOW_MIN;
       // 直前情報は発走前 30 分以内 + 発走後 10 分のみ取得 (それ以外は不要 / 未公開)
       const fetchBefore = e != null && now > e - 30 * 60 * 1000 && now < e + 10 * 60 * 1000;
-      const [prog, odds, before, result] = await Promise.all([
+      // Round 142: 公式予想印は発走 6 時間前以内 + 終了 5 分後まで (早期発表後にロード可能)
+      const fetchForecast = minutesToStart != null && minutesToStart <= 360 && minutesToStart >= -5;
+      const [prog, odds, before, result, forecast] = await Promise.all([
         fetchRaceProgram(r.jcd, r.raceNo, dateK),
         fetchOdds ? fetchRaceOdds(r.jcd, r.raceNo, dateK) : Promise.resolve(null),
         fetchBefore ? fetchBeforeInfo(r.jcd, r.raceNo, dateK) : Promise.resolve(null),
         finished ? fetchRaceResult(r.jcd, r.raceNo, dateK) : Promise.resolve(null),
+        fetchForecast ? fetchRaceForecast(r.jcd, r.raceNo, dateK) : Promise.resolve(null),
       ]);
-      return { id: r.id, prog, odds, before, result };
+      return { id: r.id, prog, odds, before, result, forecast };
     }, FULL_DAY_FETCH_CONCURRENCY);
 
     // Round 120: withConcurrency は失敗時に { error } を返すので除外
@@ -956,6 +959,10 @@ export default function App() {
       if (enr.odds)   next = mergeOdds(next, enr.odds);
       if (enr.before) next = mergeBeforeInfo(next, enr.before);
       if (enr.result?.first) next = { ...next, apiResult: enr.result };
+      // Round 142: 公式予想印を race.officialForecast に格納 (predict.js の forecastMod で使用)
+      if (enr.forecast?.marks && Object.keys(enr.forecast.marks).length >= 2) {
+        next = { ...next, officialForecast: enr.forecast };
+      }
       return next;
     });
     setRaces(merged);

@@ -76,6 +76,7 @@ function getTtlForUrl(url) {
   if (url.startsWith("/api/beforeinfo")) return 30 * 1000;       // 30 秒
   if (url.startsWith("/api/odds")) return 10 * 1000;             // 10 秒 (発走前は変動)
   if (url.startsWith("/api/racer")) return 24 * 60 * 60 * 1000;  // 24 時間 (選手情報は静的)
+  if (url.startsWith("/api/forecast")) return 5 * 60 * 1000;     // 5 分 (公式予想は早期発表後 ほぼ不変)
   return 1000;
 }
 
@@ -235,6 +236,13 @@ export async function fetchRacerCourse(toban) {
 export async function fetchRacerRecent(toban) {
   if (!toban) return null;
   const j = await fetchJSON(`/api/racer-recent?toban=${toban}`);
+  return j?.ok !== false ? j : null;
+}
+
+/* Round 142: 公式予想印 (◎○▲△×) を取得 */
+export async function fetchRaceForecast(jcd, rno, dateStr) {
+  if (!jcd || !rno || !dateStr) return null;
+  const j = await fetchJSON(`/api/forecast?jcd=${jcd}&rno=${rno}&date=${dateStr}`);
   return j?.ok !== false ? j : null;
 }
 

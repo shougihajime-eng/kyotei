@@ -206,6 +206,31 @@ export function recentFormMod(boat) {
 }
 
 /**
+ * Round 142: 公式予想印補正 (◎○▲△×)
+ *
+ * boatrace.jp の公式 PC 予想ページに記載される予想印を取り込み、 機械予想に乗せる。
+ *   ・◎ 本命:  +5%
+ *   ・○ 対抗:  +3%
+ *   ・▲ 単穴:  +1%
+ *   ・△ 連下:   0% (情報量小、 補正なし)
+ *   ・× ヒモ薄: -2%
+ *
+ * race.officialForecast.marks: { "1": "◎", "2": "○", ... } を期待。
+ * 取れていない場合 (印が無い艇) は補正なし。
+ */
+export function forecastMod(boat, marks) {
+  if (!marks || !boat?.boatNo) return { mod: 1.0, reason: null };
+  const mark = marks[String(boat.boatNo)] || marks[boat.boatNo];
+  if (!mark) return { mod: 1.0, reason: null };
+  if (mark === "◎") return { mod: 1.05, reason: { kind: "pos", text: `公式予想 ◎本命 +5%` } };
+  if (mark === "○") return { mod: 1.03, reason: { kind: "pos", text: `公式予想 ○対抗 +3%` } };
+  if (mark === "▲") return { mod: 1.01, reason: { kind: "pos", text: `公式予想 ▲単穴 +1%` } };
+  if (mark === "△") return { mod: 1.00, reason: null };
+  if (mark === "×") return { mod: 0.98, reason: { kind: "neg", text: `公式予想 ×ヒモ薄 −2%` } };
+  return { mod: 1.0, reason: null };
+}
+
+/**
  * Round 121: コース別実績補正
  *
  * その選手が進入予定コースで過去にどれだけ 3 連対しているかを見て、
@@ -289,12 +314,14 @@ function scoreBoat(boat, race) {
   const ca = courseAptitudeMod(boat); // Round 121: コース別実績補正
   const rf = recentFormMod(boat);     // Round 123: 直近の好調/不調補正
   const dt = dailyTrendMod(boat, race?.dailyTrend); // Round 130: 当日リアルタイム補正
-  const totalMod = cond.mod * wd.mod * ca.mod * rf.mod * dt.mod;
+  const fc = forecastMod(boat, race?.officialForecast?.marks); // Round 142: 公式予想印
+  const totalMod = cond.mod * wd.mod * ca.mod * rf.mod * dt.mod * fc.mod;
   const reasons = [...cond.reasons];
   if (wd.reason) reasons.push(wd.reason);
   if (ca.reason) reasons.push(ca.reason);
   if (rf.reason) reasons.push(rf.reason);
   if (dt.reason) reasons.push(dt.reason);
+  if (fc.reason) reasons.push(fc.reason);
   return {
     boatNo: boat.boatNo,
     score: baseScore * totalMod,
