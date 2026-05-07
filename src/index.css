@@ -175,10 +175,11 @@
 /* iOS 100vh バグ対応 */
 .min-h-screen { min-height: 100vh; min-height: 100dvh; }
 
-/* === Round 129: PC ベースフォント拡大 ===
-   Tailwind の rem ベース (text-xs/sm/base/lg/...) を一律 1.125 倍にして
-   PC で見やすい大きさに。モバイル (≤480px) は従来 16px を維持。 */
-html { font-size: 18px; }
+/* === Round 129/131: PC ベースフォント拡大 ===
+   Round 129 で 16→18px、 Round 131 で 18→20px (テンション上がる大きさへ)。
+   Tailwind の rem ベース (text-xs/sm/base/lg/...) が一律 1.25 倍に。
+   モバイル (≤480px) は従来 16px を維持してレイアウトを守る。 */
+html { font-size: 20px; }
 @media (max-width: 480px) {
   html { font-size: 16px; }
 }
