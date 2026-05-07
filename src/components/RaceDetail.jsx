@@ -462,6 +462,26 @@ function StyleComparisonCard({ allStyleRecs, currentStyle }) {
                   <div style={{ fontSize: 10.5, marginTop: 6, color: "var(--text-tertiary)" }}>
                     買い目 {rec.items?.length || 0} 点 / 投資 ¥{(rec.total || 0).toLocaleString()} / 自信 {rec.confidence ?? "—"}/100
                   </div>
+                  {/* Round 133: 券種別 confidence */}
+                  {rec.confidenceByKind && Object.keys(rec.confidenceByKind).length > 1 && (
+                    <div style={{ fontSize: 10, marginTop: 6, display: "flex", flexWrap: "wrap", gap: 4 }}>
+                      {Object.entries(rec.confidenceByKind).map(([kind, conf]) => (
+                        <span key={kind} style={{
+                          padding: "2px 6px",
+                          borderRadius: 6,
+                          background: conf >= 75 ? "rgba(16,185,129,0.18)"
+                                    : conf >= 60 ? "rgba(245,158,11,0.18)"
+                                    : "rgba(148,163,184,0.18)",
+                          color: conf >= 75 ? "#a7f3d0"
+                               : conf >= 60 ? "#fcd34d"
+                               : "#cbd5e1",
+                          fontWeight: 600,
+                        }}>
+                          {kind} {conf}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </>
               )}
               {!isBuy && (

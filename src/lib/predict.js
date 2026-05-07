@@ -1713,11 +1713,27 @@ export function buildBuyRecommendation(ev, riskProfile, perRaceCap) {
   const reason = oneLineReason(mainScore, main);
   const allocationStyle = describeAllocationStyle(riskProfile, items.length);
 
+  /* === Round 133: 券種別 confidence + 各 item に confidence 付与 ===
+     ・各 item の head ボートの score を使って computeConfidence を呼ぶ
+     ・confidenceByKind: 各券種の最高 confidence (買えそうな券種ランキング)
+     ・items[i].confidence: 各買い目ごとの自信度 (高い順にソートした最初が main) */
+  const confidenceByKind = {};
+  const itemsWithConfidence = items.map((it) => {
+    const head = parseInt(it.combo[0]);
+    const itemScore = ev.scores.find((s) => s.boatNo === head) || mainScore;
+    const conf = computeConfidence(ev, it, itemScore, evidenceCount, riskProfile);
+    // 券種別: 最高 confidence を採用
+    if (confidenceByKind[it.kind] == null || conf > confidenceByKind[it.kind]) {
+      confidenceByKind[it.kind] = conf;
+    }
+    return { ...it, confidence: conf };
+  });
+
   return {
     decision: "buy",
     reason,
-    items,
-    main: items[0],
+    items: itemsWithConfidence,
+    main: itemsWithConfidence[0],
     total: totalStakeNow,
     grade: main.grade,
     development: ev.development,
@@ -1735,6 +1751,8 @@ export function buildBuyRecommendation(ev, riskProfile, perRaceCap) {
     checks,
     evidenceCount,
     confidence,
+    /* Round 133: 券種別自信スコア */
+    confidenceByKind,
   };
 }
 
