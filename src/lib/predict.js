@@ -1204,6 +1204,40 @@ export function buildBuyRecommendation(ev, riskProfile, perRaceCap) {
   const inDominant = inProb >= 0.50;
   const inFavored  = inProb >= 0.45;
 
+  /* === Round 128: スタイル特化ゲート (3 スタイルの違いを明確化) ===
+     ・steady: 1号艇信頼度が低いレース (1着確率 40% 未満) は見送り
+              → 軸が薄いレースで的中率を犠牲にしない
+     ・aggressive: 1号艇濃厚レース (1着確率 55% 以上) は見送り
+              → イン堅いレースは穴が出ないので、 攻め型の出番ではない
+     ・balanced: ゲートなし (中庸スタイル、 全レース対応)
+
+     これにより 3 スタイルの 「狙うレース」 が完全に分離される:
+     steady は 1着確率 40-100%、 aggressive は 0-55%、 balanced は全域。 */
+  if (riskProfile === "steady" && inProb < 0.40) {
+    return {
+      decision: "skip",
+      reason: `🛡️ 安定型: 1号艇 ${Math.round(inProb * 100)}% で軸不安 — 見送り`,
+      reasons: [
+        `1号艇 1着確率 ${Math.round(inProb * 100)}% < 40% — 安定型の軸が崩れる可能性`,
+        `安定型は 1号艇信頼度が高いレース (40%+) でのみ買い判定します`,
+        `このレースは 「⚖️ バランス型」 または 「🎯 攻め型」 で見ると候補が出るかもしれません`,
+      ],
+      items: [], total: 0,
+    };
+  }
+  if (riskProfile === "aggressive" && inProb >= 0.55) {
+    return {
+      decision: "skip",
+      reason: `🎯 攻め型: 1号艇 ${Math.round(inProb * 100)}% でイン堅い — 見送り`,
+      reasons: [
+        `1号艇 1着確率 ${Math.round(inProb * 100)}% >= 55% — 高配当が出にくい`,
+        `攻め型は 1号艇が崩れる可能性のあるレース (55%未満) でのみ買い判定します`,
+        `このレースは 「🛡️ 安定型」 または 「⚖️ バランス型」 で見ると候補が出るかもしれません`,
+      ],
+      items: [], total: 0,
+    };
+  }
+
   /* === 候補を厳選 === */
   let candidates = ev.items.filter((t) => {
     if (!allowed.includes(t.kind)) return false;

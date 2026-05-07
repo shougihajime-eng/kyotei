@@ -1838,6 +1838,12 @@ export default function App() {
             race={selectedRace}
             evalRes={selectedRace ? evals[selectedRace.id] : null}
             recommendation={selectedRace ? recommendations[selectedRace.id] : null}
+            allStyleRecs={selectedRace ? {
+              steady: allStyleRecommendations.steady?.[selectedRace.id],
+              balanced: allStyleRecommendations.balanced?.[selectedRace.id],
+              aggressive: allStyleRecommendations.aggressive?.[selectedRace.id],
+            } : null}
+            currentStyle={settings.riskProfile}
             onRecord={handleRecord}
             onBack={() => setTab("list")}
             virtualMode={settings.virtualMode}

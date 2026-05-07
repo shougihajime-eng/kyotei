@@ -5,8 +5,10 @@ import RaceLinks from "./RaceLinks.jsx";
 
 /**
  * レース詳細 — 結論カード + 6艇の確率/スコア + 直前情報サマリ + 関連記事
+ *
+ * Round 127: allStyleRecs を受け取り、 3 スタイル比較カードを表示
  */
-export default function RaceDetail({ race, evalRes, recommendation, onRecord, onBack, virtualMode }) {
+export default function RaceDetail({ race, evalRes, recommendation, allStyleRecs, currentStyle, onRecord, onBack, virtualMode }) {
   if (!race) {
     return <div className="max-w-3xl mx-auto px-4 mt-6 text-center opacity-70">レースが選択されていません</div>;
   }
@@ -31,6 +33,9 @@ export default function RaceDetail({ race, evalRes, recommendation, onRecord, on
           📐 <b>{recommendation.points || 0} 点購入の理由:</b> {recommendation.rationale}
         </section>
       )}
+
+      {/* Round 127: 3 スタイル比較カード — 同じレースでスタイル別の違いを一目で見る */}
+      <StyleComparisonCard allStyleRecs={allStyleRecs} currentStyle={currentStyle} />
 
       {/* データ取得状況パネル */}
       <DataAvailabilityPanel race={race} />
@@ -378,6 +383,99 @@ function RelatedNews({ evalRes }) {
           </li>
         ))}
       </ul>
+    </section>
+  );
+}
+
+/* === Round 127: 3 スタイル比較カード ===
+   同じレースで安定型 / バランス型 / 攻め型 が何を買うか / 見送るかを並べて表示。
+   「3 スタイルの違い」 をユーザーが目で確認できるようにする。 */
+function StyleComparisonCard({ allStyleRecs, currentStyle }) {
+  if (!allStyleRecs) return null;
+  const STYLES = [
+    { key: "steady", label: "🛡️ 安定型", color: "#3B82F6", desc: "的中率重視" },
+    { key: "balanced", label: "⚖️ バランス型", color: "#F59E0B", desc: "中庸" },
+    { key: "aggressive", label: "🎯 攻め型", color: "#EF4444", desc: "高配当狙い" },
+  ];
+  // 何かしらの rec があるかチェック
+  const hasAny = STYLES.some((s) => allStyleRecs[s.key]);
+  if (!hasAny) return null;
+
+  return (
+    <section className="card p-4">
+      <h3 className="font-bold text-sm mb-3">🔀 3 スタイル比較 (同じレースを別の戦略で見る)</h3>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
+        {STYLES.map((s) => {
+          const rec = allStyleRecs[s.key];
+          const isCurrent = s.key === currentStyle;
+          if (!rec) {
+            return (
+              <div key={s.key} style={{
+                padding: 12, borderRadius: 12,
+                border: `1.5px solid ${s.color}33`,
+                background: "rgba(255,255,255,0.02)",
+                opacity: 0.55,
+              }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: s.color, marginBottom: 4 }}>
+                  {s.label} {isCurrent && <span className="pill badge-brand" style={{ marginLeft: 4, fontSize: 10 }}>選択中</span>}
+                </div>
+                <div className="text-xs opacity-70">未評価</div>
+              </div>
+            );
+          }
+          const dec = rec.decision;
+          const isBuy = dec === "buy";
+          const main = rec.main || rec.items?.[0];
+          const decBadge = isBuy ? "🟢 買い" :
+            dec === "skip" ? "❌ 見送り" :
+            dec === "odds-pending" ? "⏳ オッズ待ち" :
+            dec === "no-odds" ? "❌ オッズ未取得" :
+            dec === "data-checking" ? "🔍 確認中" :
+            dec === "closed" ? "🔒 締切後" : dec;
+          const decColor = isBuy ? "#10b981" : dec === "skip" ? "#94a3b8" : "#fbbf24";
+          return (
+            <div key={s.key} style={{
+              padding: 12, borderRadius: 12,
+              border: isCurrent ? `2px solid ${s.color}` : `1.5px solid ${s.color}55`,
+              background: isCurrent ? `${s.color}10` : "rgba(255,255,255,0.02)",
+              boxShadow: isCurrent ? `0 0 0 1px ${s.color}40 inset` : undefined,
+            }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: s.color }}>
+                  {s.label}
+                  {isCurrent && <span className="pill badge-brand" style={{ marginLeft: 4, fontSize: 10, padding: "2px 6px" }}>選択中</span>}
+                </div>
+                <span style={{ fontSize: 11, color: decColor, fontWeight: 700 }}>{decBadge}</span>
+              </div>
+              <div style={{ fontSize: 10.5, color: "var(--text-tertiary)", marginBottom: 8 }}>{s.desc}</div>
+              {isBuy && main && (
+                <>
+                  <div style={{
+                    fontSize: 13, fontWeight: 800, fontFamily: "var(--font-mono, monospace)",
+                    color: "var(--text-primary)", marginBottom: 4,
+                  }}>
+                    {main.kind} {main.combo}
+                  </div>
+                  <div style={{ fontSize: 11, opacity: 0.85, lineHeight: 1.5 }}>
+                    EV {main.ev?.toFixed(2)} / オッズ {main.odds?.toFixed(1)} 倍 / 確率 {((main.prob || 0) * 100).toFixed(1)}%
+                  </div>
+                  <div style={{ fontSize: 10.5, marginTop: 6, color: "var(--text-tertiary)" }}>
+                    買い目 {rec.items?.length || 0} 点 / 投資 ¥{(rec.total || 0).toLocaleString()} / 自信 {rec.confidence ?? "—"}/100
+                  </div>
+                </>
+              )}
+              {!isBuy && (
+                <div style={{ fontSize: 11, opacity: 0.85, lineHeight: 1.5 }}>
+                  {rec.reason || rec.reasons?.[0] || "見送り"}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <div style={{ fontSize: 10.5, color: "var(--text-tertiary)", marginTop: 10, lineHeight: 1.5 }}>
+        💡 同じレースでも EV 下限 / 券種 / 点数上限 が違うので 3 スタイルで判断が分かれます。
+      </div>
     </section>
   );
 }
