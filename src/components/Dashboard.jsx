@@ -12,6 +12,7 @@ import TopDecisionBar from "./TopDecisionBar.jsx";
 import TopVerdictBanner from "./TopVerdictBanner.jsx";
 import KpiPanel from "./KpiPanel.jsx";
 import TodayVerificationPanel from "./TodayVerificationPanel.jsx";
+import { analyzePatterns } from "../lib/patternAnalysis.js";
 import CloudSyncCheckPanel from "./CloudSyncCheckPanel.jsx";
 import { yen } from "../lib/format.js";
 
@@ -104,6 +105,9 @@ export default function Dashboard({
 
       {/* Round 73 Phase 1②: 検証 KPI パネル (ROI / 的中率 / 平均オッズ / 最大連敗 / 連敗確率) */}
       <KpiPanel predictions={visibleData?.predictions} />
+
+      {/* Round 136: 得意/苦手パターン自動抽出 — 過去の確定済データから 「あなたが得意なレース条件」 を見える化 */}
+      <WinningPatternsCard predictions={visibleData?.predictions} />
 
       {/* Round 87: クラウド同期チェック (折りたたみ式) — DevTools 不要で復元状態確認 */}
       <CloudSyncCheckPanel
@@ -565,3 +569,96 @@ function StrategyRankingCardImpl({ ranking, currentProfile, switchProfile }) {
     </section>
   );
 }
+
+/* === Round 136: 得意/苦手パターン自動抽出カード === */
+function WinningPatternsCard({ predictions }) {
+  const result = useMemo(() => analyzePatterns(predictions), [predictions]);
+
+  if (!result.hasEnough) {
+    return (
+      <section className="card p-4">
+        <h3 className="font-bold text-sm mb-2">🧠 あなたの得意パターン (自動分析)</h3>
+        <div className="text-xs opacity-70" style={{ lineHeight: 1.6 }}>
+          📊 蓄積中 — 確定済 {result.sampleSize} 戦 / あと <b>{result.remaining || 0}</b> 戦で分析開始<br />
+          確定したレースが 10 戦溜まると、 <b>「会場 × イン濃厚度 × 風 × スタイル」</b> の組み合わせで
+          得意/苦手パターンを自動抽出します。
+        </div>
+      </section>
+    );
+  }
+
+  const hasBest = result.bestPatterns.length > 0;
+  const hasWorst = result.worstPatterns.length > 0;
+
+  return (
+    <section className="card p-4">
+      <h3 className="font-bold text-sm mb-3">🧠 あなたの得意/苦手パターン (確定 {result.sampleSize} 戦から自動分析)</h3>
+
+      {hasBest && (
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 11, color: "var(--c-success-text)", letterSpacing: "0.06em", fontWeight: 700, marginBottom: 6 }}>
+            🏆 得意パターン (ROI 100% 超)
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {result.bestPatterns.map((p, i) => (
+              <div key={i} style={{
+                padding: "8px 10px", borderRadius: 8,
+                border: "1px solid var(--c-success-border)",
+                background: "var(--c-success-bg)",
+                fontSize: 11.5, lineHeight: 1.5,
+              }}>
+                <div style={{ fontWeight: 700, color: "var(--text-primary)", marginBottom: 2 }}>
+                  {p.pattern}
+                </div>
+                <div style={{ color: "var(--text-secondary)" }}>
+                  ROI <b className="text-pos">{Math.round(p.roi * 100)}%</b> /
+                  的中率 {Math.round(p.hitRate * 100)}% /
+                  {p.count}戦 / 損益 <b className={p.pnl >= 0 ? "text-pos" : "text-neg"}>{p.pnl >= 0 ? "+" : ""}¥{p.pnl.toLocaleString()}</b>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {hasWorst && (
+        <div>
+          <div style={{ fontSize: 11, color: "var(--c-danger-text)", letterSpacing: "0.06em", fontWeight: 700, marginBottom: 6 }}>
+            ⚠️ 苦手パターン (ROI 85% 未満 — 避けるべき)
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {result.worstPatterns.map((p, i) => (
+              <div key={i} style={{
+                padding: "8px 10px", borderRadius: 8,
+                border: "1px solid var(--c-danger-border)",
+                background: "var(--c-danger-bg)",
+                fontSize: 11.5, lineHeight: 1.5,
+              }}>
+                <div style={{ fontWeight: 700, color: "var(--text-primary)", marginBottom: 2 }}>
+                  {p.pattern}
+                </div>
+                <div style={{ color: "var(--text-secondary)" }}>
+                  ROI <b className="text-neg">{Math.round(p.roi * 100)}%</b> /
+                  的中率 {Math.round(p.hitRate * 100)}% /
+                  {p.count}戦 / 損益 <b className="text-neg">¥{p.pnl.toLocaleString()}</b>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {!hasBest && !hasWorst && (
+        <div className="text-xs opacity-70" style={{ lineHeight: 1.6 }}>
+          現時点で 「ROI 100% 超」 の得意パターンも 「ROI 85% 未満」 の苦手パターンも
+          検出されていません。 全体的に中庸な状態です。 試行回数を増やすと特化が見えてきます。
+        </div>
+      )}
+
+      <div style={{ fontSize: 10.5, color: "var(--text-tertiary)", marginTop: 10, lineHeight: 1.5 }}>
+        💡 「会場類型 × 1号艇1着確率 × 風 × スタイル」 で 3 戦以上のクロス集計を ROI 順に表示。
+      </div>
+    </section>
+  );
+}
+
