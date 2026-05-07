@@ -522,11 +522,11 @@ export function analyzeExhibitionST(race) {
   });
 }
 
-/* === Round 21: 事故レース (危険レース) 検知 ===
-   ・ST ばらつき大 (max - min > 0.10)
-   ・モーター差が極端 (max - min > 35)
-   ・展開依存が強い (上位 2 艇の確率差が小さい / 1号艇 0.30 未満かつ拮抗)
-   検出された場合、UI で「危険レース」 を表示し「買わない」 提案
+/* === Round 21 + 124: 事故レース (危険レース) 検知 ===
+   ・ST ばらつき大 / モーター差極端 / 上位拮抗 / 軸不安 / 大荒れ水面 / 部品交換 3艇+
+   ・Round 124 強化: F 経験者多数 / 1号艇直近不調 / データ欠損
+   ・severity を重み付けに変更 (causes 数 × 25 ではなく、 各要因の重みを合算)
+   検出された場合、 UI で「危険レース」 を表示し 「買わない」 提案
 */
 export function detectAccidentRace(race, scores, probs) {
   if (!Array.isArray(race?.boats) || race.boats.length !== 6) return null;
@@ -534,20 +534,24 @@ export function detectAccidentRace(race, scores, probs) {
   const motorArr = race.boats.map((b) => b.motor2).filter((m) => m != null && !isNaN(m));
 
   const causes = [];
-  // ST ばらつき大
+  let severity = 0; // Round 124: 重み付け加算
+
+  // ST ばらつき大 (+20)
   if (stArr.length >= 4) {
     const maxST = Math.max(...stArr);
     const minST = Math.min(...stArr);
     if (maxST - minST > 0.10) {
       causes.push(`ST ばらつき大 (${minST.toFixed(2)}〜${maxST.toFixed(2)})`);
+      severity += 20;
     }
   }
-  // モーター差が極端
+  // モーター差が極端 (+20)
   if (motorArr.length >= 4) {
     const maxM = Math.max(...motorArr);
     const minM = Math.min(...motorArr);
     if (maxM - minM > 35) {
       causes.push(`モーター差が極端 (${minM}%〜${maxM}%)`);
+      severity += 20;
     }
   }
   // 展開依存が強い
@@ -556,31 +560,64 @@ export function detectAccidentRace(race, scores, probs) {
     const inProb = probs[0];
     if (sorted[0] - sorted[1] < 0.05 && sorted[0] < 0.40) {
       causes.push(`上位拮抗 (展開依存高)`);
+      severity += 25;
     }
     if (inProb < 0.30) {
       causes.push(`1号艇1着確率 ${(inProb * 100).toFixed(0)}% — 安定軸なし`);
+      severity += 25;
     }
   }
-  // 風 + 波 が同時に強い
+  // 風 + 波 が同時に強い (+30 — 影響大)
   if ((race.wind ?? 0) >= 7 && (race.wave ?? 0) >= 8) {
     causes.push(`大荒れ水面 (風${race.wind}m + 波${race.wave}cm)`);
+    severity += 30;
   }
-  // 部品交換が複数艇
+  // 部品交換が複数艇 (+20)
   const partsCount = race.boats.filter((b) => Array.isArray(b.partsExchange) && b.partsExchange.length > 0).length;
   if (partsCount >= 3) {
     causes.push(`${partsCount}艇で部品交換 — 直前変動大`);
+    severity += 20;
+  }
+
+  // === Round 124 強化: F・L 経験者が多いレース (+25) ===
+  const flCount = race.boats.filter((b) => {
+    const rf = b?.recentForm;
+    return rf && ((rf.fNum || 0) + (rf.lNum || 0)) >= 1;
+  }).length;
+  if (flCount >= 3) {
+    causes.push(`F・L 経験者 ${flCount}艇 — 慎重スタートで進入が歪む可能性`);
+    severity += 25;
+  }
+
+  // === Round 124 強化: 1 号艇が直近不調 (+30 — 軸の不安は影響大) ===
+  const inBoat = race.boats.find((b) => b?.boatNo === 1);
+  if (inBoat?.recentForm?.avg != null && inBoat.recentForm.count >= 5) {
+    if (inBoat.recentForm.avg >= 4.0) {
+      causes.push(`1号艇が直近不調 (平均着順 ${inBoat.recentForm.avg}) — 軸として不安定`);
+      severity += 30;
+    }
+  }
+
+  // === Round 124 強化: データ欠損 (+20 — 判断材料不足) ===
+  const requiredFields = ["motor2", "exTime", "ST", "winRate"];
+  const missingFieldCount = requiredFields.filter((f) => {
+    const filled = race.boats.filter((b) => b?.[f] != null).length;
+    return filled < 4; // 6 艇中 4 艇未満しか埋まってないなら欠損扱い
+  }).length;
+  if (missingFieldCount >= 2) {
+    causes.push(`重要データ欠損 (${missingFieldCount} 種) — 判断材料不足`);
+    severity += 20;
   }
 
   if (causes.length === 0) return { isAccident: false, causes: [], severity: 0 };
-  // 重大度 (重み付け)
-  const severity = Math.min(100, causes.length * 25);
+  severity = Math.min(100, severity);
   return {
-    isAccident: causes.length >= 2 || severity >= 50,
+    isAccident: severity >= 50,
     causes,
     severity,
-    message: causes.length >= 2
-      ? "⚠️ 危険レース — 複数の不安要素あり、買わない選択を推奨"
-      : "⚠️ 注意レース — 不安要素あり",
+    message: severity >= 70 ? "🚨 高危険レース — 強く 「買わない」 を推奨"
+            : severity >= 50 ? "⚠️ 危険レース — 複数の不安要素あり、 買わない選択を推奨"
+            : "⚠️ 注意レース — 軽度の不安要素",
   };
 }
 
