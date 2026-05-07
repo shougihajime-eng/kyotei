@@ -177,10 +177,62 @@ export default function App() {
     showToast("ログアウトしました — ローカル保存は継続", "info");
   }, [showToast]);
 
+  /* Round 116: クラウドクリーンアップ済フラグ
+     ・main.jsx で local は自動削除済 (kyoteiRound115CleanupDone)
+     ・cloud は authUser ロード後に削除する必要がある (削除前に fullSync が走ると古い cloud → local に戻ってしまう)
+     ・cloudCleanupDone=false の間は fullSync / lightSync を停止
+     ・1 度クリアしたら kyoteiR115CloudCleanupDone を立てて二度と走らない */
+  const [cloudCleanupDone, setCloudCleanupDone] = useState(() => {
+    try { return localStorage.getItem("kyoteiR115CloudCleanupDone") === "1"; }
+    catch { return true; }
+  });
+
+  /* Round 116: 起動時 1 回だけ、 main.jsx でクリアした旨をトーストで知らせる */
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem("kyoteiCleanupJustDone");
+      if (!raw) return;
+      sessionStorage.removeItem("kyoteiCleanupJustDone");
+      const { predCount } = JSON.parse(raw) || {};
+      const msg = predCount > 0
+        ? `✅ 過去予想 ${predCount} 件 + 検証 / 学習ログを削除しました`
+        : `✅ 古いログを整理しました`;
+      // showToast は宣言後に呼ばれる必要があるので setTimeout でディフェ
+      setTimeout(() => showToast(msg, "ok"), 200);
+    } catch {}
+  }, [showToast]);
+
+  /* Round 116: authUser がロードされたら 1 回だけクラウド側も削除 */
+  useEffect(() => {
+    if (cloudCleanupDone) return;
+    if (!authUser) return; // 未ログインなら cloud 削除は不要 (フラグはそのまま — 次回ログイン時に削除)
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await deleteCloudData(authUser.id);
+        if (cancelled) return;
+        if (res.ok) {
+          try { localStorage.setItem("kyoteiR115CloudCleanupDone", "1"); } catch {}
+          showToast(`☁️ クラウド ${res.deleted} 件を削除しました`, "ok");
+        } else {
+          showToast(`⚠️ クラウド削除失敗: ${res.error}`, "neg");
+          // fail open しない (次のリロードで再試行できるように)
+          return;
+        }
+        setCloudCleanupDone(true);
+      } catch (e) {
+        console.error("[r116 cloud cleanup] failed:", e);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [authUser, cloudCleanupDone, showToast]);
+
   // ログイン直後の full sync (一度だけ) + 5 分ごと定期 fullSync
   const syncedForUserRef = useRef(null);
   useEffect(() => {
     if (!authUser) { syncedForUserRef.current = null; return; }
+    // Round 116: クラウドクリーンアップが終わるまで sync を止める
+    if (!cloudCleanupDone) { syncedForUserRef.current = null; return; }
     let cancelled = false;
     async function runFullSync(reason) {
       if (cancelled) return;
@@ -205,12 +257,15 @@ export default function App() {
     const id = setInterval(() => runFullSync("interval"), 5 * 60 * 1000);
     return () => { cancelled = true; clearInterval(id); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authUser]);
+  }, [authUser, cloudCleanupDone]);
 
   // Round 95: 予測変化時の light sync (5s → 1s に短縮 — Supabase 主管理化)
   const lightSyncTimerRef = useRef(null);
   useEffect(() => {
     if (!authUser) return;
+    // Round 116: クラウドクリーンアップ未完了の間は push しない
+    // (してしまうと空 → 古い local が cloud に書き戻る)
+    if (!cloudCleanupDone) return;
     if (lightSyncTimerRef.current) clearTimeout(lightSyncTimerRef.current);
     lightSyncTimerRef.current = setTimeout(() => {
       setSyncStatus((s) => ({ ...s, state: "syncing" }));
@@ -223,7 +278,7 @@ export default function App() {
       });
     }, 1000);   // Round 95: 5000 → 1000ms (即時同期に近づける)
     return () => clearTimeout(lightSyncTimerRef.current);
-  }, [predictions, authUser]);
+  }, [predictions, authUser, cloudCleanupDone]);
   /* スタイル切替の差分通知用 ref。switchProfile / useEffect は recommendations 定義後に作る (TDZ 回避) */
   const lastSwitchInfo = useRef(null);
   /* recommendations の最新値を ref に保持 (switchProfile が hoisted で参照できるようにする) */

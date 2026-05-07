@@ -3,6 +3,54 @@ import ReactDOM from "react-dom/client";
 import App from "./App.jsx";
 import "./index.css";
 
+/* === Round 116: 起動時 1 回だけ過去予想ログを自動削除 ===
+   背景: ユーザー判断で 「-15 分前に予想したものではない過去ログは意味がない」 と決まった。
+   ボタンを押すのも面倒という要望に応え、 React mount 前に自動で削除する。
+   設定 (予算 / リスク感覚) は保持。 1 回実行したらフラグを立てて二度と走らない。
+
+   ※ クラウド (Supabase) 側の削除は App.jsx の useEffect で auth ロード後に実施。 */
+(function autoCleanupLegacyData() {
+  if (typeof localStorage === "undefined") return;
+  const FLAG = "kyoteiRound115CleanupDone";
+  try {
+    if (localStorage.getItem(FLAG) === "1") return; // 実行済
+    const KEY = "kyoteiAssistantV2";
+    const raw = localStorage.getItem(KEY);
+    let savedSettings = null;
+    let predCount = 0;
+    if (raw) {
+      try {
+        const obj = JSON.parse(raw);
+        savedSettings = obj?.settings || null;
+        predCount = obj?.predictions ? Object.keys(obj.predictions).length : 0;
+      } catch {}
+    }
+    // 何も入っていない (= 新規ユーザー / 既にクリア済) ならフラグだけ立てて終わり
+    if (predCount === 0 && !localStorage.getItem("kyoteiPublicLog") && !localStorage.getItem("kyoteiLearningLog")) {
+      localStorage.setItem(FLAG, "1");
+      return;
+    }
+    // 削除実行 (設定だけ保持)
+    localStorage.removeItem(KEY);
+    localStorage.removeItem("kyoteiPublicLog");
+    localStorage.removeItem("kyoteiLearningLog");
+    localStorage.removeItem("kyoteiAssistantStateV3");
+    localStorage.removeItem("kyoteiAssistantStateV2");
+    if (savedSettings) {
+      localStorage.setItem(KEY, JSON.stringify({ settings: savedSettings, predictions: {} }));
+    }
+    localStorage.setItem(FLAG, "1");
+    // クラウド側は authUser がロードされた後 App 内で削除 (ここでは local のみ)
+    // ユーザーへ完了通知用フラグ (App 起動後にトーストを 1 回出すため)
+    sessionStorage.setItem("kyoteiCleanupJustDone", JSON.stringify({ predCount }));
+    // eslint-disable-next-line no-console
+    console.log(`[auto-cleanup] cleared ${predCount} legacy predictions + public/learning logs`);
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.warn("[auto-cleanup] failed:", e);
+  }
+})();
+
 /**
  * 起動失敗を白画面にせず、必ず原因を表示する ErrorBoundary。
  * - エラーメッセージ + スタックトレースを画面に出す
