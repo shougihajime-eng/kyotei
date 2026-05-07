@@ -132,6 +132,9 @@ export default function Dashboard({
         <StrategyRankingCard ranking={strategyRanking} currentProfile={settings.riskProfile} switchProfile={switchProfile} />
       )}
 
+      {/* Round 119: 今日のアプリ判定サマリ (1 行で「全体 / 買い / 見送り」 を即把握) */}
+      <TodayJudgmentSummary races={races} recommendations={recommendations} />
+
       {/* Round 114: 「もうすぐ判定」 専用ミニ一覧 — 1 秒ごとカウントダウン */}
       <ImminentRaces races={races} recommendations={recommendations} onPickRace={onPickRace} />
 
@@ -208,6 +211,87 @@ export default function Dashboard({
         </>
       )}
     </div>
+  );
+}
+
+/* === Round 119: 今日のアプリ判定サマリ ===
+   「いま全レース中、 アプリは何件 buy / 何件 skip / 何件待ち と判断しているか」 を 1 行で。
+   ユーザーが 「全然出ない」 と感じる時に、 本当に出ていないのか・データ待ちなのかを区別できる。 */
+const TodayJudgmentSummary = memo(TodayJudgmentSummaryImpl);
+function TodayJudgmentSummaryImpl({ races, recommendations }) {
+  const stats = useMemo(() => {
+    if (!races || races.length === 0 || !recommendations) {
+      return { total: 0, buy: 0, skip: 0, pending: 0, noOdds: 0, closed: 0 };
+    }
+    let buy = 0, skip = 0, pending = 0, noOdds = 0, closed = 0;
+    for (const r of races) {
+      const rec = recommendations[r.id];
+      const dec = rec?.decision;
+      if (dec === "buy") buy++;
+      else if (dec === "skip") skip++;
+      else if (dec === "odds-pending") pending++;
+      else if (dec === "no-odds") noOdds++;
+      else if (dec === "closed") closed++;
+    }
+    return { total: races.length, buy, skip, pending, noOdds, closed };
+  }, [races, recommendations]);
+  if (stats.total === 0) return null;
+  const buyHighlight = stats.buy > 0;
+  return (
+    <section className="card p-3" style={{
+      minHeight: 64,
+      background: buyHighlight
+        ? "linear-gradient(180deg, rgba(16, 185, 129, 0.10) 0%, rgba(0, 0, 0, 0.20) 100%), var(--bg-card)"
+        : "linear-gradient(180deg, rgba(148, 163, 184, 0.06) 0%, rgba(0, 0, 0, 0.15) 100%), var(--bg-card)",
+      border: buyHighlight ? "1px solid rgba(16, 185, 129, 0.32)" : "1px solid rgba(148, 163, 184, 0.18)",
+    }}>
+      <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+        <span style={{
+          fontSize: 11, padding: "2px 9px", borderRadius: 999,
+          background: "rgba(0, 0, 0, 0.30)", color: "#bae6fd", fontWeight: 800,
+          letterSpacing: "0.04em",
+        }}>
+          📋 今日のアプリ判定
+        </span>
+        <span className="num" style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+          全 <b style={{ color: "#e0f2fe" }}>{stats.total}</b> R 中
+        </span>
+        <span className="num" style={{
+          fontSize: 13.5, fontWeight: 800,
+          color: buyHighlight ? "#34D399" : "var(--text-tertiary)",
+        }}>
+          🟢 買い <b style={{ fontSize: 16 }}>{stats.buy}</b>
+        </span>
+        <span className="num" style={{ fontSize: 12, color: "#fca5a5" }}>
+          🔴 見送り {stats.skip}
+        </span>
+        {stats.pending > 0 && (
+          <span className="num" style={{ fontSize: 12, color: "#a78bfa" }}>
+            ⏳ 待ち {stats.pending}
+          </span>
+        )}
+        {stats.noOdds > 0 && (
+          <span className="num" style={{ fontSize: 12, color: "#fde68a" }}>
+            ⚠️ オッズ無 {stats.noOdds}
+          </span>
+        )}
+        {stats.closed > 0 && (
+          <span className="num" style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
+            🔒 締切 {stats.closed}
+          </span>
+        )}
+      </div>
+      {stats.buy === 0 && stats.pending > 0 && (
+        <div className="text-xs mt-1" style={{ color: "#ddd6fe", lineHeight: 1.5 }}>
+          💡 まだ買い判定はありませんが、 オッズ確定待ちが {stats.pending} 件あります。 締切 18 分前から判定が動き始めます。
+        </div>
+      )}
+      {stats.buy === 0 && stats.pending === 0 && stats.skip > 0 && (
+        <div className="text-xs mt-1" style={{ color: "#fca5a5", lineHeight: 1.5 }}>
+          💡 今日は全レース見送り判定です。 厳選見送りはアプリの仕様。 リスク回避日と捉えてください。
+        </div>
+      )}
+    </section>
   );
 }
 

@@ -53,11 +53,12 @@ function ImminentRaces({ races, recommendations, onPickRace }) {
     });
   };
 
-  const { active, soon, goldenCount } = useMemo(() => {
-    if (!races || races.length === 0) return { active: [], soon: [], goldenCount: 0 };
+  const { active, soon, goldenCount, nextGolden } = useMemo(() => {
+    if (!races || races.length === 0) return { active: [], soon: [], goldenCount: 0, nextGolden: null };
     const a = [];
     const s = [];
     let golden = 0;
+    let next = null; // active/soon どちらでもない、 さらに先の最も近いレース
     for (const r of races) {
       const e = startEpoch(r.date, r.startTime);
       if (e == null) continue;
@@ -70,6 +71,12 @@ function ImminentRaces({ races, recommendations, onPickRace }) {
         a.push({ race: r, minutesToStart, isGolden });
       } else if (minutesToStart <= SOON_WINDOW_MIN) {
         s.push({ race: r, minutesToStart });
+      } else {
+        // 20 分超のレース — 「次の本番判定」 候補として最も近いものだけ保持
+        // (本番判定タイム = 締切 18 分前から始まる → minutesToStart - 18 分が 「あと何分で本番判定開始」)
+        if (!next || minutesToStart < next.minutesToStart) {
+          next = { race: r, minutesToStart };
+        }
       }
     }
     // ゴールデン優先で並び替え (15分前ピンポイントを最上部に)
@@ -78,10 +85,63 @@ function ImminentRaces({ races, recommendations, onPickRace }) {
       return x.minutesToStart - y.minutesToStart;
     });
     s.sort((x, y) => x.minutesToStart - y.minutesToStart);
-    return { active: a, soon: s, goldenCount: golden };
+    return { active: a, soon: s, goldenCount: golden, nextGolden: next };
   }, [races, now]);
 
-  if (active.length === 0 && soon.length === 0) return null;
+  /* Round 119: 「いま判定中」 / 「もうすぐ判定」 が両方 0 件でも、 次の本番判定タイムの予告を表示。
+     ・active も soon も nextGolden も無い → 何も表示しない
+     ・nextGolden があれば 「次の本番判定まで X 分」 のミニカードを返す */
+  if (active.length === 0 && soon.length === 0) {
+    if (!nextGolden) return null;
+    const e = startEpoch(nextGolden.race.date, nextGolden.race.startTime);
+    const m = e ? (e - now) / 60000 : null;
+    if (m == null) return null;
+    const minutesUntilGolden = Math.max(0, Math.ceil(m - GOLDEN_WINDOW_MAX)); // 本番判定タイム開始までの残り
+    return (
+      <section className="card p-3" style={{
+        minHeight: 80,
+        background: "linear-gradient(180deg, rgba(56, 189, 248, 0.06) 0%, rgba(0, 0, 0, 0.20) 100%), var(--bg-card)",
+        border: "1px solid rgba(56, 189, 248, 0.28)",
+      }}>
+        <div style={{ fontSize: 12, fontWeight: 800, color: "#bae6fd", letterSpacing: "0.02em", marginBottom: 6 }}>
+          ⏳ 次の本番判定まで
+        </div>
+        <button
+          type="button"
+          onClick={() => onPickRace?.(nextGolden.race.id)}
+          style={{
+            width: "100%",
+            textAlign: "left",
+            padding: "10px 12px",
+            borderRadius: 10,
+            background: "rgba(0, 0, 0, 0.22)",
+            border: "1px solid rgba(255, 255, 255, 0.06)",
+            color: "var(--text-primary)",
+            cursor: "pointer",
+          }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+            <span style={{ fontSize: 13, fontWeight: 700 }}>
+              {nextGolden.race.venue} <span className="num">{nextGolden.race.raceNo}R</span>
+              <span className="num" style={{ marginLeft: 6, fontSize: 11, opacity: 0.75 }}>({nextGolden.race.startTime})</span>
+            </span>
+            <span className="num" style={{
+              fontSize: 13, fontWeight: 800,
+              background: "linear-gradient(180deg, #FBBF24 0%, #F59E0B 100%)",
+              color: "#451A03",
+              padding: "3px 10px",
+              borderRadius: 999,
+              letterSpacing: "0.02em",
+            }}>
+              ⭐ あと {minutesUntilGolden} 分で本番判定
+            </span>
+          </div>
+          <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 4 }}>
+            締切 {Math.max(0, Math.ceil(m))} 分前 — 残り時間が 18 分を切ると本番判定タイムに入ります
+          </div>
+        </button>
+      </section>
+    );
+  }
 
   return (
     <section className="card p-3 card-glow" style={{
