@@ -13,6 +13,7 @@ import TopVerdictBanner from "./TopVerdictBanner.jsx";
 import KpiPanel from "./KpiPanel.jsx";
 import TodayVerificationPanel from "./TodayVerificationPanel.jsx";
 import { analyzePatterns, classifyRaceByPattern } from "../lib/patternAnalysis.js";
+import { computeStreakStats } from "../lib/dayInsights.js";
 import DataProgressCard from "./DataProgressCard.jsx";
 import CloudSyncCheckPanel from "./CloudSyncCheckPanel.jsx";
 import { yen } from "../lib/format.js";
@@ -117,6 +118,9 @@ export default function Dashboard({
 
       {/* Round 139: データ蓄積進捗 — 「あと何件で機能解禁か」 を進捗バーで見える化 */}
       <DataProgressCard predictions={visibleData?.predictions} />
+
+      {/* Round 140: 連敗/連勝アラート — 冷静になれ or 波に乗ってる */}
+      <StreakAlertCard predictions={visibleData?.predictions} />
 
       {/* Round 136: 得意/苦手パターン自動抽出 — 過去の確定済データから 「あなたが得意なレース条件」 を見える化 */}
       <WinningPatternsCard predictions={visibleData?.predictions} />
@@ -771,6 +775,73 @@ function PatternMatchedRacesCard({ races, evals, profile, predictions, onPickRac
 
       <div style={{ fontSize: 10.5, color: "var(--text-tertiary)", marginTop: 10, lineHeight: 1.5 }}>
         💡 過去の確定データに基づいて 「自分が勝てる/負けるパターン」 に該当するレースを自動判定。
+      </div>
+    </section>
+  );
+}
+
+/* === Round 140: 連敗/連勝アラート ===
+   3 連敗以上 → 「冷静になれ」 警告
+   3 連勝以上 → 「波に乗ってる」 サイン
+   それ以外 → 表示なし (情報過多回避) */
+function StreakAlertCard({ predictions }) {
+  const stats = useMemo(() => computeStreakStats(predictions), [predictions]);
+
+  if (stats.sampleSize < 3) return null; // データ不足
+  const count = stats.currentStreakCount;
+  if (count < 3) return null; // 連勝/連敗が 3 未満なら表示しない
+
+  const isWin = stats.currentStreakKind === "win";
+
+  if (isWin) {
+    return (
+      <section style={{
+        padding: "14px 16px",
+        borderRadius: 14,
+        border: "1.5px solid rgba(16,185,129,0.55)",
+        background: "linear-gradient(135deg, rgba(16,185,129,0.18) 0%, rgba(16,185,129,0.08) 100%)",
+        boxShadow: "0 4px 14px rgba(16,185,129,0.20)",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ fontSize: 28 }}>🔥</div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 15, fontWeight: 800, color: "#a7f3d0", marginBottom: 2 }}>
+              {count} 連勝中 — 波に乗ってる
+            </div>
+            <div style={{ fontSize: 11.5, color: "var(--text-secondary)", lineHeight: 1.5 }}>
+              この調子の良さは本物の可能性。 ただし「自信過剰で根拠薄いレースに手を出さない」 のが鉄則。
+              {stats.maxWinStreak > count && ` (過去最大 ${stats.maxWinStreak} 連勝)`}
+            </div>
+          </div>
+        </div>
+      </section>
+    );
+  }
+  // 連敗
+  const isSerious = count >= 5;
+  return (
+    <section style={{
+      padding: "14px 16px",
+      borderRadius: 14,
+      border: `1.5px solid ${isSerious ? "rgba(239,68,68,0.65)" : "rgba(245,158,11,0.55)"}`,
+      background: isSerious
+        ? "linear-gradient(135deg, rgba(239,68,68,0.20) 0%, rgba(239,68,68,0.08) 100%)"
+        : "linear-gradient(135deg, rgba(245,158,11,0.18) 0%, rgba(245,158,11,0.08) 100%)",
+      boxShadow: isSerious ? "0 4px 14px rgba(239,68,68,0.22)" : undefined,
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ fontSize: 28 }}>{isSerious ? "🚨" : "❄️"}</div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 15, fontWeight: 800, color: isSerious ? "#fecaca" : "#fcd34d", marginBottom: 2 }}>
+            {count} 連敗中 — {isSerious ? "強制クールダウン推奨" : "冷静になれ"}
+          </div>
+          <div style={{ fontSize: 11.5, color: "var(--text-secondary)", lineHeight: 1.5 }}>
+            {isSerious
+              ? "5 連敗以上は 「ロジックではなく流れ」。 一度離れて頭を冷やすのが最善。 取り返そうとして根拠薄いレースに賭けると傷が深くなる。"
+              : "連敗時は判断が鈍りやすい。 EV / 確率 / 根拠数 が基準を満たすレースだけに絞る。 無理に取り返そうとしない。"}
+            {stats.maxLossStreak > count && ` (過去最大 ${stats.maxLossStreak} 連敗)`}
+          </div>
+        </div>
       </div>
     </section>
   );
