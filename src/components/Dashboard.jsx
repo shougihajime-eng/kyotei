@@ -148,13 +148,25 @@ export default function Dashboard({
       {/* 今日の収支 (1行ミニバー) */}
       <TodayMiniBar today={today} />
 
+      {/* Round 119: 「アプリ提案累計」 を最大ボタンで強調 (ユーザーが「アプリ信用してよいか」 即判定) */}
+      <button onClick={() => onPickRace("stats:ai")} style={{
+        width: "100%", minHeight: 56, padding: "12px 18px",
+        borderRadius: 14, border: "2px solid #F59E0B",
+        background: "linear-gradient(180deg, #FBBF24 0%, #F59E0B 100%)",
+        color: "#451A03", fontWeight: 800, fontSize: 14.5,
+        letterSpacing: "0.01em", cursor: "pointer",
+        boxShadow: "0 1px 0 rgba(255,255,255,0.30) inset, 0 4px 14px rgba(245,158,11,0.40)",
+      }}>
+        🤖 アプリ提案だけの累計収支グラフ — 信用してよいか判定する
+      </button>
+
       {/* 主要ボタン (大きく) */}
       <div className="grid grid-cols-2 gap-2">
         <button className="btn btn-primary" style={{ minHeight: 48 }} onClick={() => onPickRace("verify")}>
           📅 履歴・検証
         </button>
         <button className="btn btn-primary" style={{ minHeight: 48 }} onClick={() => onPickRace("stats")}>
-          📈 グラフ
+          📈 全体グラフ
         </button>
       </div>
 

@@ -129,6 +129,8 @@ export default function App() {
 
   /* === Volatile state === */
   const [tab, setTab] = useState("home");
+  /* Round 119: Stats を 「アプリ提案」 タブで開く時のヒント (Dashboard → Stats への initial tab 受け渡し) */
+  const [statsInitialTab, setStatsInitialTab] = useState(null);
   const [races, setRaces] = useState([]);
   const [selectedRaceId, setSelectedRaceId] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -1697,7 +1699,16 @@ export default function App() {
             authUser={authUser}
             syncStatus={syncStatus}
             onReset={handleReset}
-            onPickRace={(t) => setTab(t)}
+            onPickRace={(t) => {
+              // Round 119: "stats:ai" → Stats を AI タブで開く
+              if (t === "stats:ai") {
+                setStatsInitialTab("ai");
+                setTab("stats");
+                return;
+              }
+              setStatsInitialTab(null);
+              setTab(t);
+            }}
           />
         )}
         {tab === "list" && (
@@ -1735,7 +1746,8 @@ export default function App() {
           <Stats predictions={visibleData.predictions}
             visibleData={visibleData}
             lastRefreshAt={lastRefreshAt}
-            virtualMode={settings.virtualMode} />
+            virtualMode={settings.virtualMode}
+            initialTab={statsInitialTab} />
           </Suspense>
         )}
         {tab === "analysis" && (

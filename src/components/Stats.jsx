@@ -14,14 +14,18 @@ import { judgeAIReliability, evaluateSkipQuality } from "../lib/analysis.js";
  *   ・アニメーション無し (isAnimationActive=false) で揺れ防止
  *   ・トップに「最終更新: ◯ 秒前」表示
  */
-export default function Stats({ predictions, lastRefreshAt, virtualMode }) {
+export default function Stats({ predictions, lastRefreshAt, virtualMode, initialTab = null }) {
   // tab: Header の virtualMode を初期値にする (常に同期)
-  const [tab, setTab] = useState(virtualMode === false ? "real" : "air"); // air | real | compare
+  // Round 119: 「ai」 タブ追加 — アプリ提案 (preCloseTarget=true) だけの累計収支
+  //   initialTab="ai" が渡された時は Dashboard からの「🤖 アプリ提案」 ボタンで開かれた状態
+  const [tab, setTab] = useState(() =>
+    initialTab === "ai" ? "ai" : (virtualMode === false ? "real" : "air")
+  );
   const [period, setPeriod] = useState("week"); // today | week | month | all
 
-  // Header のエア/リアル切替に追従 (compare 表示のときは維持)
+  // Header のエア/リアル切替に追従 (compare/ai 表示のときは維持)
   useEffect(() => {
-    if (tab === "compare") return;
+    if (tab === "compare" || tab === "ai") return;
     setTab(virtualMode === false ? "real" : "air");
   }, [virtualMode]);
 
@@ -49,26 +53,60 @@ export default function Stats({ predictions, lastRefreshAt, virtualMode }) {
 
   const air = useMemo(() => all.filter((p) => p.virtual !== false), [all]);
   const real = useMemo(() => all.filter((p) => p.virtual === false), [all]);
+  /* Round 119: アプリ提案 = 直前判定 (15 分前ピンポイント) で
+     アプリが「買え」と言ったレースだけ。 手動買いと完全分離して
+     「アプリの信頼性」 を累計収支で見える化する。 */
+  const ai = useMemo(() => all.filter((p) => p.preCloseTarget === true), [all]);
+  const aiAll = useMemo(() =>
+    Object.values(predictions || {}).filter((p) =>
+      p.preCloseTarget === true && p.decision === "buy"
+    ).length,
+  [predictions]);
 
   // データ無しの理由を判定
   const reason = useMemo(() => {
-    const targetSet = tab === "air" ? air : real;
+    const targetSet = tab === "air" ? air : tab === "real" ? real : tab === "ai" ? ai : null;
+    if (targetSet == null) return null;
     if (targetSet.length > 0) return null;
     if (totalSaved === 0) return { kind: "none", text: "まだ予想が一件も保存されていません。「🔄 更新」 を押してレース情報を取得してください。" };
+    if (tab === "ai") {
+      if (aiAll === 0) {
+        return { kind: "no-ai", text: "アプリが「買え」 と言ったレースがまだ 1 件もありません。 締切 5〜18 分前にアプリが買い判定を出すと自動で集計されます。" };
+      }
+      return { kind: "no-period", text: `アプリ提案レースは ${aiAll} 件保存されていますが、 選択中の期間 (${period === "today" ? "今日" : period === "week" ? "今週" : period === "month" ? "今月" : "全期間"}) + 結果確定済 で該当なし。 期間を 「全期間」 に切り替えてみてください。` };
+    }
     const targetAll = tab === "air" ? totalAirAll : totalRealAll;
     if (targetAll === 0) return { kind: "no-mode", text: tab === "air" ? "エアモードで保存した予想がまだありません。Header の「🧪 エア」 ボタンに切り替えて更新してください。" : "リアル舟券の記録がまだありません。Header の「💰 リアル」 に切り替えて記録するか、検証画面の「+ 手動記録」 で追加してください。" };
     // モードでは保存があるが期間 + 結果確定で 0 件
     return { kind: "no-period", text: `${tab === "air" ? "エア" : "リアル"} 舟券は ${targetAll} 件保存されていますが、選択中の期間 (${period === "today" ? "今日" : period === "week" ? "今週" : period === "month" ? "今月" : "全期間"}) + 結果確定済 で該当なし。期間を 「全期間」 に切り替えてみてください。` };
-  }, [tab, air, real, totalSaved, totalAirAll, totalRealAll, period]);
+  }, [tab, air, real, ai, aiAll, totalSaved, totalAirAll, totalRealAll, period]);
 
   return (
     <div className="max-w-4xl mx-auto px-4 mt-4 space-y-4">
-      {/* タブ */}
-      <div className="flex gap-2">
-        <button onClick={() => setTab("air")} className={"tab-btn flex-1 " + (tab === "air" ? "active" : "")}>🧪 エア舟券</button>
-        <button onClick={() => setTab("real")} className={"tab-btn flex-1 " + (tab === "real" ? "active" : "")}>💰 リアル舟券</button>
-        <button onClick={() => setTab("compare")} className={"tab-btn flex-1 " + (tab === "compare" ? "active" : "")}>⚖️ 比較</button>
+      {/* タブ — Round 119: 「🤖 アプリ提案」 を最優先タブとして追加 */}
+      <div className="flex gap-2 flex-wrap">
+        <button onClick={() => setTab("ai")} className={"tab-btn " + (tab === "ai" ? "active" : "")}
+          style={{ flex: "1 1 120px",
+            background: tab === "ai" ? "linear-gradient(180deg, #FBBF24 0%, #F59E0B 100%)" : undefined,
+            color: tab === "ai" ? "#451A03" : undefined,
+            fontWeight: tab === "ai" ? 800 : undefined }}>
+          🤖 アプリ提案
+        </button>
+        <button onClick={() => setTab("air")} className={"tab-btn " + (tab === "air" ? "active" : "")} style={{ flex: "1 1 100px" }}>🧪 エア舟券</button>
+        <button onClick={() => setTab("real")} className={"tab-btn " + (tab === "real" ? "active" : "")} style={{ flex: "1 1 100px" }}>💰 リアル舟券</button>
+        <button onClick={() => setTab("compare")} className={"tab-btn " + (tab === "compare" ? "active" : "")} style={{ flex: "1 1 80px" }}>⚖️ 比較</button>
       </div>
+      {tab === "ai" && (
+        <div className="text-xs px-3 py-2 rounded-lg" style={{
+          background: "linear-gradient(180deg, rgba(251, 191, 36, 0.10) 0%, rgba(0, 0, 0, 0.18) 100%)",
+          border: "1px solid rgba(251, 191, 36, 0.30)",
+          color: "#fde68a",
+          lineHeight: 1.6,
+        }}>
+          ⭐ <b>アプリが「買え」 と言ったレース</b>だけを集計しています (締切 5〜18 分前の本番判定)。<br/>
+          手動買いとは完全分離。 ここの累計収支グラフが <b>アプリの信頼性そのもの</b>です。
+        </div>
+      )}
 
       {/* 期間切替 (今日 / 今週 / 今月 / 全期間) */}
       <div className="flex gap-2 items-center flex-wrap">
@@ -122,10 +160,14 @@ export default function Stats({ predictions, lastRefreshAt, virtualMode }) {
           ? (<section className="card p-6 text-center" style={{ minHeight: 200 }}>
               <div className="opacity-70 text-sm">{reason.text}</div>
               <div className="text-xs opacity-50 mt-3">
-                {reason.kind === "no-mode" && tab === "real" ? "💡 リアル切替後、レースが確定すると自動で集計されます" : reason.kind === "no-period" ? "💡 期間 「全期間」 ボタンを押してください" : "💡 「🔄 更新」 を押してください"}
+                {reason.kind === "no-ai" ? "💡 締切 5〜18 分前のレースが来るのを待ってください" : reason.kind === "no-mode" && tab === "real" ? "💡 リアル切替後、レースが確定すると自動で集計されます" : reason.kind === "no-period" ? "💡 期間 「全期間」 ボタンを押してください" : "💡 「🔄 更新」 を押してください"}
               </div>
             </section>)
-          : <SingleView items={tab === "air" ? air : real} label={tab === "air" ? "エア" : "リアル"} />}
+          : <SingleView
+              items={tab === "ai" ? ai : tab === "air" ? air : real}
+              label={tab === "ai" ? "🤖 アプリ提案" : tab === "air" ? "エア" : "リアル"}
+              isAI={tab === "ai"}
+            />}
     </div>
   );
 }
@@ -282,9 +324,73 @@ function AITrustPanelImpl({ predictions }) {
   );
 }
 
-/* === エア or リアル の単独表示 (memo) === */
+/* === Round 119: アプリの信頼性 verdict (アプリ提案タブ専用) ===
+   ・累計 ROI / サンプル数で「信用していいか」 を 1 枚で判定
+   ・ユーザーが「このアプリ買うべきか」 を即決できるように、 大きい数字 + 結論 + 一言 */
+const AIReliabilityVerdict = memo(AIReliabilityVerdictImpl);
+function AIReliabilityVerdictImpl({ summary, count }) {
+  const roi = summary.stake > 0 ? summary.roi : null;
+  const pnl = summary.pnl || 0;
+  let level, headline, accent, advice;
+  if (count < 10) {
+    level = "蓄積中"; accent = "#22D3EE";
+    headline = `あと ${10 - count} 戦で初判定`;
+    advice = "10 戦以上たまると 「信用してよいか」 を判定できます。 慌てずデータを貯めましょう。";
+  } else if (roi == null) {
+    level = "結果待ち"; accent = "#94A3B8";
+    headline = "結果未確定";
+    advice = "予想は記録されていますが、 まだ結果が反映されていません。 数十秒〜数分後に再確認を。";
+  } else if (roi >= 1.10) {
+    level = "信用してOK"; accent = "#10B981";
+    headline = `ROI ${Math.round(roi * 100)}% — 控除率超え達成`;
+    advice = "アプリの「買え」 提案で長期的にプラス。 リアル少額試行も検討範囲。";
+  } else if (roi >= 1.00) {
+    level = "微妙"; accent = "#F59E0B";
+    headline = `ROI ${Math.round(roi * 100)}% — 控除率超えだが安全圏ではない`;
+    advice = "プラスマイナスゼロ近辺。 サンプル増やして判定継続を推奨。";
+  } else if (roi >= 0.85) {
+    level = "負け越し"; accent = "#F87171";
+    headline = `ROI ${Math.round(roi * 100)}% — まだリアル投入不可`;
+    advice = "アプリの提案を信じて買うとマイナス。 ロジック改善 (しきい値・スタイル) が必要。";
+  } else {
+    level = "致命的"; accent = "#EF4444";
+    headline = `ROI ${Math.round(roi * 100)}% — ロジック根本見直し必要`;
+    advice = "現状のアプリ提案は信用すべきでない。 必ず改善してから検討を。";
+  }
+  return (
+    <section className="card p-4 fade-in" style={{
+      borderColor: `${accent}80`,
+      borderWidth: 2,
+      background: `
+        linear-gradient(135deg, ${accent}10 0%, transparent 60%),
+        linear-gradient(180deg, rgba(11, 18, 32, 0.92) 0%, rgba(8, 15, 28, 0.92) 100%)
+      `,
+    }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap", marginBottom: 8 }}>
+        <div style={{ fontSize: 11, color: "var(--text-tertiary)", letterSpacing: "0.10em", textTransform: "uppercase", fontWeight: 700 }}>
+          🤖 アプリの信頼性 verdict
+        </div>
+        <span style={{
+          fontSize: 11, padding: "2px 9px", borderRadius: 999,
+          background: `${accent}24`, color: accent, fontWeight: 800, letterSpacing: "0.04em",
+        }}>{level}</span>
+      </div>
+      <div style={{ fontSize: 22, fontWeight: 900, color: accent, lineHeight: 1.2, letterSpacing: "-0.015em", marginBottom: 6 }}>
+        {headline}
+      </div>
+      <div style={{ fontSize: 12.5, color: "var(--text-secondary)", lineHeight: 1.55, marginBottom: 8 }}>
+        {advice}
+      </div>
+      <div className="num" style={{ fontSize: 11, color: "var(--text-tertiary)", letterSpacing: "0.02em" }}>
+        サンプル {count} 戦 ・ 累計 {pnl >= 0 ? "+" : "−"}{Math.abs(Math.round(pnl)).toLocaleString()} 円 ・ 投資 {Math.round(summary.stake || 0).toLocaleString()} 円
+      </div>
+    </section>
+  );
+}
+
+/* === エア or リアル or アプリ提案 の単独表示 (memo) === */
 const SingleView = memo(SingleViewImpl);
-function SingleViewImpl({ items, label }) {
+function SingleViewImpl({ items, label, isAI = false }) {
   const summary = useMemo(() => summarize(items), [items]);
   const daily = useMemo(() => buildDaily(items), [items]);
   const cumulative = useMemo(() => buildCumulative(daily), [daily]);
@@ -322,6 +428,9 @@ function SingleViewImpl({ items, label }) {
 
   return (
     <>
+      {/* Round 119: アプリ提案タブの場合 「アプリの信頼性 verdict」 を一目で */}
+      {isAI && <AIReliabilityVerdict summary={summary} count={items.length} />}
+
       {/* KPI */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
         <Kpi label="累計収支" value={(summary.pnl >= 0 ? "+" : "") + yen(summary.pnl)} color={summary.pnl >= 0 ? "#34d399" : "#f87171"} />
@@ -332,7 +441,7 @@ function SingleViewImpl({ items, label }) {
       </div>
 
       {/* 累計収支 */}
-      <Card title="累計収支">
+      <Card title={isAI ? "🤖 アプリ提案だけの累計収支 (信頼性チャート)" : "累計収支"}>
         <ResponsiveContainer width="100%" height={220}>
           <AreaChart data={cumulative} margin={{ left: 0, right: 12, top: 12, bottom: 0 }}>
             <defs>
