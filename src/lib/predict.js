@@ -54,14 +54,23 @@ export function gradeFactor(v) {
   return "C";
 }
 
-/* 直前情報からの補正係数 (0.85〜1.15) + 理由 */
-export function computeConditionMod(boat) {
+/* 直前情報からの補正係数 (0.80〜1.20) + 理由
+ * Round 141: 展示タイム同レース比較 / 中間チルト / 波補正 を追加して
+ *            「直前情報をもっと使い倒す」 強化。
+ */
+export function computeConditionMod(boat, race) {
   let mod = 1.0;
   const reasons = [];
   const parts = Array.isArray(boat.partsExchange) ? boat.partsExchange : [];
   if (parts.some((p) => /ペラ|プロペラ|エンジン/.test(p))) {
-    mod *= 0.90;
-    reasons.push({ kind: "neg", text: `部品交換 (${parts.join("/")}) −10%` });
+    // Round 141: 1 号艇のペラ/エンジン交換は -12% (本命の信頼性が崩れる)
+    if (boat.boatNo === 1) {
+      mod *= 0.88;
+      reasons.push({ kind: "neg", text: `1号艇 部品交換 (${parts.join("/")}) −12%` });
+    } else {
+      mod *= 0.90;
+      reasons.push({ kind: "neg", text: `部品交換 (${parts.join("/")}) −10%` });
+    }
   } else if (parts.length > 0) {
     mod *= 0.95;
     reasons.push({ kind: "neg", text: `部品交換 −5%` });
@@ -70,6 +79,10 @@ export function computeConditionMod(boat) {
     if (boat.tilt >= 1.5) {
       if (boat.boatNo >= 4) { mod *= 1.05; reasons.push({ kind: "pos", text: `チルト ${boat.tilt} 外艇有利 +5%` }); }
       else if (boat.boatNo === 1) { mod *= 0.97; reasons.push({ kind: "neg", text: `チルト ${boat.tilt} 1号艇不利 −3%` }); }
+    } else if (boat.tilt >= 1.0) {
+      // Round 141 NEW: 中間チルト (1.0-1.4)
+      if (boat.boatNo >= 4) { mod *= 1.03; reasons.push({ kind: "pos", text: `チルト ${boat.tilt} 外艇 +3%` }); }
+      else if (boat.boatNo === 1) { mod *= 0.99; reasons.push({ kind: "neg", text: `チルト ${boat.tilt} 1号艇 −1%` }); }
     } else if (boat.tilt <= -0.5 && boat.boatNo === 1) {
       mod *= 1.03;
       reasons.push({ kind: "pos", text: `チルト ${boat.tilt} 出足型 1号艇 +3%` });
@@ -99,6 +112,44 @@ export function computeConditionMod(boat) {
     }
   }
   // (e) 明確な好材料 — モーター 2連率 50%+ ですでに加点済 (factor weight)、追加加点なし
+
+  /* Round 141 NEW: 展示タイム同レース比較
+     全体スコア (factor weight) の正規化に加えて、 「同レース内で頭抜けて速い/遅い」 艇に
+     はっきり加点・減点する (norm.ex は緩やかな勾配なので頭抜きを取り切れない)。
+     差が 0.05 秒以上ある時のみ意味のある差として扱う。 */
+  if (boat.exTime != null && !isNaN(boat.exTime) && race?.boats) {
+    const exTimes = race.boats.map((b) => b?.exTime).filter((v) => v != null && !isNaN(v));
+    if (exTimes.length >= 4) {
+      const minEx = Math.min(...exTimes);
+      const maxEx = Math.max(...exTimes);
+      const myEx = +boat.exTime;
+      const spread = maxEx - minEx;
+      if (spread >= 0.05) {
+        if (myEx === minEx) {
+          mod *= 1.04;
+          reasons.push({ kind: "pos", text: `展示最速 (${myEx}秒) +4%` });
+        } else if (myEx === maxEx) {
+          mod *= 0.96;
+          reasons.push({ kind: "neg", text: `展示最遅 (${myEx}秒) −4%` });
+        }
+      }
+    }
+  }
+
+  /* Round 141 NEW: 波補正
+     波 6cm 以上 → 1号艇のターン精度に影響 (-3%)、 4-6 号艇は捲り展開のチャンス (+2%)
+     既存の windDirectionMod は「風」 に特化、 ここで「波」 を独立補正する。 */
+  const wave = race?.wave ?? 0;
+  if (wave >= 6) {
+    if (boat.boatNo === 1) {
+      mod *= 0.97;
+      reasons.push({ kind: "neg", text: `波${wave}cm 1号艇 −3%` });
+    } else if (boat.boatNo >= 4) {
+      mod *= 1.02;
+      reasons.push({ kind: "pos", text: `波${wave}cm 外艇 +2%` });
+    }
+  }
+
   return { mod: Math.max(0.80, Math.min(1.20, mod)), reasons };
 }
 
@@ -233,7 +284,7 @@ function scoreBoat(boat, race) {
   if (boat.boatNo === 1) baseScore += 0.05;       // 1号艇に下駄
   else if (boat.boatNo === 6) baseScore -= 0.08;  // 6号艇は強いペナルティ (明確根拠が無ければ本命にしない)
   else if (boat.boatNo === 5) baseScore -= 0.04;
-  const cond = computeConditionMod(boat);
+  const cond = computeConditionMod(boat, race); // Round 141: race を渡して同レース比較が効くように
   const wd = windDirectionMod(boat, race?.windDir, race?.wind);
   const ca = courseAptitudeMod(boat); // Round 121: コース別実績補正
   const rf = recentFormMod(boat);     // Round 123: 直近の好調/不調補正
@@ -1766,7 +1817,7 @@ export function getScoreBreakdown(boat, race) {
   const fSt = norm.st(boat.ST);
   const fWr = norm.wr(boat.winRate);
   const fB2 = norm.b2(boat.boat2);
-  const cond = computeConditionMod(boat);
+  const cond = computeConditionMod(boat, race); // Round 141
   const wd = windDirectionMod(boat, race?.windDir, race?.wind);
   const components = [
     { key: "inAdvantage", label: "1号艇有利度", value: fIn, weight: FACTOR_WEIGHTS.inAdvantage,
