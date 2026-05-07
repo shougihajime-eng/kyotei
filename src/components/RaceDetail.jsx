@@ -8,7 +8,7 @@ import RaceLinks from "./RaceLinks.jsx";
  *
  * Round 127: allStyleRecs を受け取り、 3 スタイル比較カードを表示
  */
-export default function RaceDetail({ race, evalRes, recommendation, allStyleRecs, currentStyle, onRecord, onBack, virtualMode }) {
+export default function RaceDetail({ race, evalRes, recommendation, allStyleRecs, currentStyle, currentPrediction, onRecord, onBack, virtualMode }) {
   if (!race) {
     return <div className="max-w-3xl mx-auto px-4 mt-6 text-center opacity-70">レースが選択されていません</div>;
   }
@@ -36,6 +36,9 @@ export default function RaceDetail({ race, evalRes, recommendation, allStyleRecs
 
       {/* Round 127: 3 スタイル比較カード — 同じレースでスタイル別の違いを一目で見る */}
       <StyleComparisonCard allStyleRecs={allStyleRecs} currentStyle={currentStyle} />
+
+      {/* Round 134: 予想推移カード — 同じレース・スタイルで予想がどう変わったか */}
+      <PredictionHistoryCard currentPrediction={currentPrediction} />
 
       {/* データ取得状況パネル */}
       <DataAvailabilityPanel race={race} />
@@ -495,6 +498,86 @@ function StyleComparisonCard({ allStyleRecs, currentStyle }) {
       </div>
       <div style={{ fontSize: 10.5, color: "var(--text-tertiary)", marginTop: 10, lineHeight: 1.5 }}>
         💡 同じレースでも EV 下限 / 券種 / 点数上限 が違うので 3 スタイルで判断が分かれます。
+      </div>
+    </section>
+  );
+}
+
+/* === Round 134: 予想推移カード ===
+   同じレース・スタイルで予想が時間経過でどう変わったかを時系列で表示。
+   prediction.history (重要な変化があったときに積まれる) + 現在のスナップショット。 */
+function PredictionHistoryCard({ currentPrediction }) {
+  if (!currentPrediction) return null;
+  const history = currentPrediction.history || [];
+  // 履歴 + 現在のスナップショットを時系列順に
+  const currentMain = currentPrediction.combos?.[0] || currentPrediction.intendedMain;
+  const currentEntry = currentPrediction.snapshotAt ? {
+    at: currentPrediction.snapshotAt,
+    decision: currentPrediction.decision,
+    mainCombo: currentMain?.combo || null,
+    mainKind: currentMain?.kind || null,
+    mainEv: currentMain?.ev != null ? +currentMain.ev.toFixed(2) : null,
+    mainProb: currentMain?.prob != null ? +currentMain.prob.toFixed(3) : null,
+    confidence: currentPrediction.confidence ?? null,
+    isCurrent: true,
+  } : null;
+  const allEntries = [...history, ...(currentEntry ? [currentEntry] : [])];
+  if (allEntries.length === 0) return null;
+
+  const formatTime = (iso) => {
+    try {
+      const d = new Date(iso);
+      return d.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
+    } catch { return "—"; }
+  };
+  const decBadge = (d) => {
+    const isBuy = d === "buy";
+    return {
+      icon: isBuy ? "🟢" : d === "skip" ? "❌" : d === "odds-pending" ? "⏳" : d === "no-odds" ? "❌" : d === "data-checking" ? "🔍" : d === "closed" ? "🔒" : "—",
+      color: isBuy ? "#10b981" : d === "skip" ? "#94a3b8" : "#fbbf24",
+    };
+  };
+
+  return (
+    <section className="card p-4">
+      <h3 className="font-bold text-sm mb-3">📈 予想推移 (このレース・スタイルでの判定の変化)</h3>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {allEntries.map((e, i) => {
+          const b = decBadge(e.decision);
+          return (
+            <div key={i} style={{
+              display: "flex", alignItems: "center", gap: 10, padding: "8px 12px",
+              borderRadius: 10,
+              background: e.isCurrent ? "rgba(34,211,238,0.10)" : "rgba(255,255,255,0.02)",
+              border: e.isCurrent ? "1.5px solid var(--brand-border)" : "1px solid rgba(255,255,255,0.06)",
+            }}>
+              <span style={{ fontSize: 11, color: "var(--text-tertiary)", minWidth: 50 }} className="num">
+                {formatTime(e.at)}
+              </span>
+              <span style={{ fontSize: 14 }}>{b.icon}</span>
+              <span style={{ fontSize: 12, color: b.color, fontWeight: 700, minWidth: 60 }}>
+                {e.decision === "buy" ? "買い" : e.decision === "skip" ? "見送り" : e.decision || "—"}
+              </span>
+              <span style={{ flex: 1, fontSize: 12, color: "var(--text-primary)" }}>
+                {e.mainCombo ? (
+                  <>
+                    <span className="font-mono" style={{ fontWeight: 700 }}>{e.mainKind} {e.mainCombo}</span>
+                    {e.mainEv != null && <span style={{ marginLeft: 8, fontSize: 11, opacity: 0.8 }}>EV {e.mainEv}</span>}
+                  </>
+                ) : "—"}
+              </span>
+              {e.confidence != null && (
+                <span style={{ fontSize: 11, color: "var(--text-tertiary)" }}>自信 {e.confidence}</span>
+              )}
+              {e.isCurrent && (
+                <span className="pill badge-brand" style={{ fontSize: 10, padding: "2px 6px" }}>現在</span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <div style={{ fontSize: 10.5, color: "var(--text-tertiary)", marginTop: 10, lineHeight: 1.5 }}>
+        💡 「決定 / 買い目 / EV」 が変わったタイミングだけ記録 (最大 10 件)。 予想の安定性が見えます。
       </div>
     </section>
   );

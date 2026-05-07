@@ -838,6 +838,33 @@ export default function App() {
             r: (o.reasons || []).slice(0, 1).join(""),
           });
           if (cmp(existing) !== cmp(updated)) {
+            /* === Round 134: 予想履歴の追加 ===
+               同じレース・スタイルで予想が時間経過でどう変わったか追えるよう、
+               「重要な変化」 (decision 変化 / main combo 変化 / EV ±0.05 以上)
+               があったら existing のスナップショットを history に積む。
+               最大 10 件まで保持 (容量制限)。 */
+            const oldMain = existing.combos?.[0] || existing.intendedMain;
+            const newMain = updated.combos?.[0] || updated.intendedMain;
+            const isImportantChange = !!existing.snapshotAt && (
+              existing.decision !== updated.decision ||
+              (oldMain?.combo || null) !== (newMain?.combo || null) ||
+              Math.abs((oldMain?.ev || 0) - (newMain?.ev || 0)) >= 0.05
+            );
+            const newHistory = (existing.history || []).slice();
+            if (isImportantChange) {
+              newHistory.push({
+                at: existing.snapshotAt,
+                decision: existing.decision || null,
+                mainCombo: oldMain?.combo || null,
+                mainKind: oldMain?.kind || null,
+                mainEv: oldMain?.ev != null ? +oldMain.ev.toFixed(2) : null,
+                mainProb: oldMain?.prob != null ? +oldMain.prob.toFixed(3) : null,
+                confidence: existing.confidence ?? null,
+              });
+              if (newHistory.length > 10) newHistory.splice(0, newHistory.length - 10);
+            }
+            updated.history = newHistory;
+
             next[key] = updated;
             changed = true;
           }
@@ -1866,6 +1893,9 @@ export default function App() {
               aggressive: allStyleRecommendations.aggressive?.[selectedRace.id],
             } : null}
             currentStyle={settings.riskProfile}
+            currentPrediction={selectedRace ? (
+              predictions[`${(selectedRace.date || "").replace(/-/g, "")}_${selectedRace.id}_${settings.riskProfile}`]
+            ) : null}
             onRecord={handleRecord}
             onBack={() => setTab("list")}
             virtualMode={settings.virtualMode}
