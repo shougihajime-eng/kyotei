@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { yen } from "../lib/format.js";
+import { yen, startEpoch } from "../lib/format.js";
 
 /**
  * Round 107: RaceList premium polish
@@ -22,14 +22,27 @@ export default function RaceList({ races, evals, recommendations, onPickRace }) 
       const scenario = ev?.development?.scenario || "—";
       const inTrust = ev?.inTrust;
       const points = rec?.items?.length || 0;
-      return { race: r, ev, rec, grade, maxEV, mainCombo, total, decision, scenario, inTrust, points };
-    }).sort((a, b) => b.maxEV - a.maxEV);
+      const startMs = startEpoch(r.date, r.startTime);
+      const safetyBuy = !!rec?.safetyBuy;
+      return { race: r, ev, rec, grade, maxEV, mainCombo, total, decision, scenario, inTrust, points, startMs, safetyBuy };
+    });
   }, [races, evals, recommendations]);
 
-  const goodOnly = rows.filter((row) => row.decision === "buy" && (row.grade === "S" || row.grade === "A"));
+  /* Round 153: buy 全件を発走時刻順に並べる (近いレースが上)
+     - セーフティ買い (grade=C) も含める (Round 151 で導入)
+     - 6 号艇偏重チェックは S/A のみ対象に */
+  const goodOnly = rows
+    .filter((row) => row.decision === "buy")
+    .sort((a, b) => {
+      // 発走時刻が近い順、 取れなかったものは末尾
+      if (a.startMs == null && b.startMs == null) return 0;
+      if (a.startMs == null) return 1;
+      if (b.startMs == null) return -1;
+      return a.startMs - b.startMs;
+    });
   const oddsPending = rows.filter((row) => row.decision === "odds-pending");
   const noOdds = rows.filter((row) => row.decision === "no-odds");
-  const others = rows.filter((row) => row.decision === "skip");
+  const others = rows.filter((row) => row.decision === "skip").sort((a, b) => b.maxEV - a.maxEV);
 
   // 6号艇偏重チェック
   const totalBuy = goodOnly.length;
@@ -50,7 +63,7 @@ export default function RaceList({ races, evals, recommendations, onPickRace }) 
           icon="🔥"
           title="買うべきレース"
           count={goodOnly.length}
-          desc="EV 1.10 以上の連勝系券種を抽出。 S = EV 1.30+, A = 1.10+。"
+          desc="買い判定が出た全レースを発走時刻順 (近い順) で。 🛟 はセーフティ買い (上位 EV 救済)。"
         />
         {goodOnly.length === 0 ? (
           <div style={{ fontSize: 13, color: "var(--text-tertiary)", padding: "20px 4px", textAlign: "center" }}>
@@ -214,9 +227,11 @@ function SectionHeader({ icon, title, count, desc, small }) {
 function RaceCard({ row, onPick }) {
   const trust = row.inTrust;
   const isS = row.grade === "S";
+  const isSafety = !!row.safetyBuy;
 
-  const accentColor = isS ? "var(--c-success)" : "var(--brand)";
-  const accentRgba = isS ? "rgba(16, 185, 129," : "rgba(34, 211, 238,";
+  // セーフティ買いは cyan 系で別色表示 (S/A の派手さは抑える)
+  const accentColor = isSafety ? "#22D3EE" : (isS ? "var(--c-success)" : "var(--brand)");
+  const accentRgba = isSafety ? "rgba(34, 211, 238," : (isS ? "rgba(16, 185, 129," : "rgba(34, 211, 238,");
 
   return (
     <div
@@ -264,14 +279,27 @@ function RaceCard({ row, onPick }) {
             締切 {row.race.startTime || "—"}
           </div>
         </div>
-        <span className={"pill badge-grade-" + row.grade} style={{
-          fontSize: 13,
-          padding: "5px 12px",
-          fontWeight: 800,
-          letterSpacing: "0.04em",
-        }}>
-          {row.grade}
-        </span>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          {isSafety && (
+            <span title="セーフティ買い (本来見送りだが上位 EV で救済)" style={{
+              fontSize: 10.5, padding: "3px 8px", borderRadius: 999,
+              background: "rgba(34,211,238,0.18)",
+              border: "1px solid rgba(34,211,238,0.45)",
+              color: "#67E8F9", fontWeight: 800,
+              letterSpacing: "0.04em",
+            }}>
+              🛟 セーフ
+            </span>
+          )}
+          <span className={"pill badge-grade-" + row.grade} style={{
+            fontSize: 13,
+            padding: "5px 12px",
+            fontWeight: 800,
+            letterSpacing: "0.04em",
+          }}>
+            {row.grade}
+          </span>
+        </div>
       </div>
 
       {/* === ピル: 買い + 信頼度 === */}
