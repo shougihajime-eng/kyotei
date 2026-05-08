@@ -309,22 +309,53 @@ function BattleModeCard({ races, recommendations, onPickRace, predictions, evals
     );
   }
 
-  /* Round 146: 「今日は買い指示なし」 表示 */
+  /* Round 149: 「今日は買い指示なし」 を派手な「見送り推奨」 表示に格上げ */
   if (battleState.kind === "none") {
     return (
       <section style={{
-        padding: "18px 20px",
-        borderRadius: 18,
-        background: "linear-gradient(180deg, rgba(11, 18, 32, 0.96) 0%, rgba(8, 15, 28, 0.96) 100%)",
-        border: "1.5px solid rgba(255,255,255,0.10)",
+        padding: "26px 22px 22px",
+        borderRadius: 20,
+        background:
+          "linear-gradient(135deg, rgba(168, 85, 247, 0.20) 0%, rgba(99, 102, 241, 0.10) 100%), " +
+          "linear-gradient(180deg, rgba(11, 18, 32, 0.96) 0%, rgba(8, 15, 28, 0.96) 100%)",
+        border: "2px solid #A855F7",
+        boxShadow:
+          "0 0 0 1px rgba(168,85,247,0.40) inset, " +
+          "0 8px 32px rgba(0,0,0,0.40), " +
+          "0 0 80px -12px rgba(168,85,247,0.55)",
+        backdropFilter: "blur(12px)",
         textAlign: "center",
       }}>
-        <div style={{ fontSize: "min(22px, 5.5vw)", fontWeight: 800, color: "#F1F5F9", marginBottom: 6 }}>
-          ⚪ 今日はもう買い指示なし
+        <div style={{
+          fontSize: "min(36px, 9vw)", fontWeight: 900,
+          color: "#D8B4FE", letterSpacing: "0.005em",
+          marginBottom: 8, lineHeight: 1.1,
+          textShadow: "0 0 22px rgba(216,180,254,0.50)",
+        }}>
+          🛡️ 今日は見送り推奨
         </div>
-        <div style={{ fontSize: 13, color: "#94A3B8", lineHeight: 1.6 }}>
-          AI が「期待値プラスに買えるレース」 を見つけられませんでした。<br />
-          <b style={{ color: "#67E8F9" }}>「買わない」 も立派な選択</b> — 焦らず明日に賭けましょう。
+        <div style={{
+          display: "inline-block",
+          padding: "6px 14px", marginBottom: 14, borderRadius: 999,
+          background: "rgba(168,85,247,0.20)",
+          border: "1.5px solid rgba(168,85,247,0.50)",
+          color: "#E9D5FF", fontSize: 13, fontWeight: 800,
+          letterSpacing: "0.02em",
+        }}>
+          AI が期待値プラスのレースを発見できませんでした
+        </div>
+        <div style={{
+          fontSize: "min(20px, 5vw)", fontWeight: 800,
+          color: "#F1F5F9", marginBottom: 10, lineHeight: 1.4,
+        }}>
+          「買わない」 も<br className="sm:hidden" />
+          <span style={{ color: "#22F5A8", textShadow: "0 0 12px rgba(34,245,168,0.45)" }}>
+            立派な「勝ち」 です。
+          </span>
+        </div>
+        <div style={{ fontSize: 13, color: "#CBD5E1", lineHeight: 1.7, padding: "0 8px" }}>
+          無理に買うと負けます。 焦らず、 自信のあるレースだけ買いましょう。<br />
+          数時間後に新しい買い候補が出るかもしれません ・ 自動で 5 分ごとにチェック中。
         </div>
       </section>
     );

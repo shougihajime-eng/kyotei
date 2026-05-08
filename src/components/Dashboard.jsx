@@ -16,6 +16,7 @@ import { analyzePatterns, classifyRaceByPattern } from "../lib/patternAnalysis.j
 import { computeStreakStats } from "../lib/dayInsights.js";
 import DataProgressCard from "./DataProgressCard.jsx";
 import TodayHitsCard from "./TodayHitsCard.jsx";
+import BuyOrderHero from "./BuyOrderHero.jsx";
 import CloudSyncCheckPanel from "./CloudSyncCheckPanel.jsx";
 import { yen } from "../lib/format.js";
 
@@ -83,6 +84,10 @@ export default function Dashboard({
 
       {/* 更新バー (常時) */}
       <RefreshBar onRefresh={onRefresh} refreshing={refreshing} refreshMsg={refreshMsg} lastRefreshAt={lastRefreshAt} />
+
+      {/* Round 149: 「これを買え!」 シンプル指示書 — 直近 (発走 0-15 分) の buy だけ
+         場 / R / 買い目 / 金額 を巨大表示 + TELEBOAT への動線 + 初心者ガイド */}
+      <BuyOrderHero races={races} recommendations={recommendations} />
 
       {/* Round 118: 「今、 これに賭けろ」 巨大表示モード — 最重要 (買い判定があれば最優先表示) */}
       {/* Round 139: predictions / evals / profile を渡してパターンマッチを表示 */}
