@@ -100,6 +100,15 @@ export default function BuyOrderHero({ races, recommendations }) {
   const isVeryUrgent = minutesToStart <= 5;
   const voteUrl = buildRaceCardUrl(race.jcd, race.date, race.raceNo);
 
+  // Round 155: 勝負度 + 危険度 を結論カードに反映
+  const grade = rec.grade || "—"; // S/A/B/C
+  // 危険度: ev.accident.severity (0-100) を 低/中/高 にマッピング
+  const accidentSev = rec?.accident?.severity || 0;
+  const riskLabel = accidentSev >= 60 ? "高" : accidentSev >= 30 ? "中" : "低";
+  const riskColor = riskLabel === "高" ? "#F87171" : riskLabel === "中" ? "#FCD34D" : "#22F5A8";
+  const points = rec?.items?.length || 0;
+  const reasonShort = rec.reason ? String(rec.reason).slice(0, 40) : null;
+
   return (
     <section style={{
       padding: "26px 22px 22px",
@@ -139,6 +148,40 @@ export default function BuyOrderHero({ races, recommendations }) {
         }}>
           {m === 0 ? `あと ${sec} 秒で締切` : `あと ${m} 分で締切`}
         </div>
+      </div>
+
+      {/* Round 155: 勝負度 + 危険度 + 点数 — 結論を 1 行で */}
+      <div style={{
+        display: "flex", flexWrap: "wrap", gap: 8,
+        marginBottom: 14,
+      }}>
+        <span style={{
+          padding: "5px 12px", borderRadius: 999,
+          background: "rgba(252,211,77,0.16)",
+          border: "1.5px solid rgba(252,211,77,0.50)",
+          color: "#FCD34D", fontSize: 12.5, fontWeight: 800,
+          letterSpacing: "0.02em",
+        }}>
+          🏆 勝負度: <span className="num" style={{ fontSize: 14 }}>{grade}</span>
+        </span>
+        <span style={{
+          padding: "5px 12px", borderRadius: 999,
+          background: `${riskColor}22`,
+          border: `1.5px solid ${riskColor}80`,
+          color: riskColor, fontSize: 12.5, fontWeight: 800,
+          letterSpacing: "0.02em",
+        }}>
+          ⚠️ 危険度: {riskLabel}
+        </span>
+        <span style={{
+          padding: "5px 12px", borderRadius: 999,
+          background: "rgba(34,211,238,0.14)",
+          border: "1.5px solid rgba(34,211,238,0.45)",
+          color: "#67E8F9", fontSize: 12.5, fontWeight: 800,
+          letterSpacing: "0.02em",
+        }}>
+          🎯 買い目: <span className="num">{points}</span> 点
+        </span>
       </div>
 
       {/* どこで - 場 + R */}
@@ -192,6 +235,18 @@ export default function BuyOrderHero({ races, recommendations }) {
           (オッズ {rec.main.odds?.toFixed(1)}倍 / EV {rec.main.ev?.toFixed(2)})
         </span>
       </div>
+
+      {/* なぜ買うのか (理由を一言で) */}
+      {reasonShort && (
+        <div style={{
+          marginBottom: 14, padding: "10px 14px",
+          background: "rgba(0,0,0,0.30)", borderRadius: 10,
+          fontSize: 13, color: "#FDE68A", lineHeight: 1.5,
+          letterSpacing: "0.01em",
+        }}>
+          💡 <b>理由:</b> {reasonShort}
+        </div>
+      )}
 
       {/* 公式で買うボタン (超目立つ) */}
       {voteUrl && (
