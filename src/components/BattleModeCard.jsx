@@ -145,80 +145,166 @@ function BattleModeCard({ races, recommendations, onPickRace, predictions, evals
     return computeDataConfidence(battle.race);
   }, [battle?.race]);
 
-  /* Round 146: 「次の勝負レース」 表示 (15 分-6 時間先) */
+  /* Round 148: 「次の勝負レース」 を 「今」 と同等の派手さに引き上げ */
   if (battleState.kind === "next") {
     const { race, rec, minutesToStart } = battleState.nextBest;
     const m = Math.floor(minutesToStart);
     const h = Math.floor(m / 60);
     const mm = m % 60;
-    const timeLabel = h > 0 ? `あと ${h} 時間 ${mm} 分` : `あと ${mm} 分`;
+    const timeLabel = h > 0 ? `あと ${h}時間${mm}分` : `あと ${mm}分`;
     const voteUrl = buildRaceCardUrl(race.jcd, race.date, race.raceNo);
+    const accent = "#22D3EE";
     return (
       <section style={{
-        padding: "20px 20px 18px",
+        padding: "24px 22px 20px",
         borderRadius: 18,
         background:
-          "linear-gradient(135deg, rgba(34, 211, 238, 0.16) 0%, rgba(37, 99, 235, 0.08) 100%), " +
+          "linear-gradient(135deg, rgba(34, 211, 238, 0.30) 0%, rgba(37, 99, 235, 0.16) 100%), " +
           "linear-gradient(180deg, rgba(11, 18, 32, 0.96) 0%, rgba(8, 15, 28, 0.96) 100%)",
-        border: "2px solid #22D3EE",
-        boxShadow: "0 0 0 1px rgba(34,211,238,0.30) inset, 0 8px 32px rgba(0,0,0,0.40), 0 0 64px -12px rgba(34,211,238,0.40)",
+        border: `2px solid ${accent}`,
+        boxShadow:
+          "0 0 0 1px rgba(34,211,238,0.45) inset, " +
+          "0 8px 32px rgba(0,0,0,0.40), " +
+          "0 0 80px -10px rgba(34,211,238,0.65)",
         backdropFilter: "blur(12px)",
+        minHeight: 360,
+        position: "relative",
+        animation: "nextPulse 2.4s ease-in-out infinite",
       }}>
-        <div style={{ fontSize: 11.5, color: "#67E8F9", fontWeight: 800, letterSpacing: "0.10em", textTransform: "uppercase", marginBottom: 6 }}>
-          🟡 次の勝負レース
-        </div>
-        <div style={{ fontSize: "min(28px, 7.5vw)", fontWeight: 900, color: "#F1F5F9", lineHeight: 1.15, marginBottom: 8 }}>
-          {race.venue} <span className="num">{race.raceNo}R</span>
-          <span style={{ marginLeft: 10, fontSize: 14, color: "#94A3B8", fontWeight: 600 }} className="num">
-            {race.startTime}締切
-          </span>
-        </div>
+        {/* 残り時間バッジ (右上) */}
         <div className="num" style={{
-          display: "inline-block", padding: "6px 14px", marginBottom: 12,
-          borderRadius: 999, background: "rgba(34,211,238,0.18)",
-          border: "1px solid rgba(34,211,238,0.40)", color: "#67E8F9",
-          fontSize: 14, fontWeight: 800,
+          position: "absolute", top: 12, right: 14,
+          background: "rgba(34,211,238,0.22)", color: "#67E8F9",
+          padding: "6px 14px", borderRadius: 999,
+          fontSize: 13, fontWeight: 800, letterSpacing: "0.02em",
+          border: "1.5px solid rgba(34,211,238,0.50)",
+          boxShadow: "0 0 16px rgba(34,211,238,0.35)",
         }}>
           {timeLabel}
         </div>
+
+        {/* 大見出し */}
+        <div style={{
+          fontSize: "min(34px, 8.5vw)", fontWeight: 900,
+          color: accent, letterSpacing: "0.005em",
+          marginBottom: 6, lineHeight: 1.15,
+          textShadow: "0 0 18px rgba(34,211,238,0.55)",
+        }}>
+          ⚡ 次の勝負レース
+        </div>
+
+        {/* 候補件数バッジ */}
+        <div style={{
+          display: "inline-flex", alignItems: "center", gap: 6,
+          padding: "5px 12px", marginBottom: 10, borderRadius: 999,
+          background: "linear-gradient(135deg, rgba(34,211,238,0.28) 0%, rgba(34,211,238,0.14) 100%)",
+          border: "1.5px solid rgba(34,211,238,0.55)",
+          color: "#67E8F9", fontSize: 12, fontWeight: 800,
+          letterSpacing: "0.02em",
+        }}>
+          🎯 今日の買い候補 <span className="num">{battleState.buyToday}</span> 件中の最優先
+        </div>
+
+        {/* 会場 + Rno + 締切 */}
+        <div style={{ fontSize: 14, color: "var(--text-secondary)", marginBottom: 16, letterSpacing: "0.01em" }}>
+          <b style={{ fontSize: 16, color: "var(--text-primary)" }}>
+            {race.venue} <span className="num">{race.raceNo}R</span>
+          </b>
+          <span style={{ marginLeft: 8, opacity: 0.85 }} className="num">
+            ({race.startTime} 締切)
+          </span>
+          {rec.grade && (
+            <span className={"pill badge-grade-" + rec.grade} style={{
+              marginLeft: 10, fontSize: 11.5, padding: "3px 9px",
+              fontWeight: 800, letterSpacing: "0.04em",
+            }}>
+              {rec.grade}評価
+            </span>
+          )}
+        </div>
+
+        {/* 本命買い目 (巨大表示 — 「今」 と同サイズ) */}
         {rec.main && (
-          <div style={{ background: "rgba(0,0,0,0.30)", borderRadius: 12, padding: "12px 14px", marginBottom: 10 }}>
-            <div style={{ fontSize: 10.5, color: "#94A3B8", letterSpacing: "0.10em", textTransform: "uppercase", marginBottom: 4 }}>
-              本命 ({rec.main.kind})
+          <div style={{
+            background: "rgba(0, 0, 0, 0.38)", borderRadius: 16,
+            padding: "20px 16px 18px", textAlign: "center",
+            border: `1.5px solid ${accent}66`, marginBottom: 16,
+          }}>
+            <div style={{
+              fontSize: 11, color: "var(--text-tertiary)",
+              letterSpacing: "0.10em", textTransform: "uppercase",
+              fontWeight: 700, marginBottom: 6,
+            }}>
+              本命買い目 ({rec.main.kind})
             </div>
-            <div className="font-mono num" style={{ fontSize: "min(36px, 9vw)", fontWeight: 900, letterSpacing: "0.02em" }}>
+            <div className="font-mono" style={{
+              fontSize: "min(56px, 14vw)", fontWeight: 900,
+              lineHeight: 1.05, letterSpacing: "0.02em",
+              color: "var(--text-primary)", marginBottom: 8,
+              textShadow: "0 0 22px rgba(34,211,238,0.30)",
+            }}>
               {rec.main.combo}
             </div>
-            <div className="num" style={{ fontSize: 12, color: "#94A3B8", marginTop: 4 }}>
-              投資 {yen(rec.main.stake)} / EV {rec.main.ev?.toFixed(2)}
+            <div style={{
+              display: "grid", gridTemplateColumns: "repeat(3, 1fr)",
+              gap: 10, marginTop: 14, paddingTop: 12,
+              borderTop: "1px solid rgba(255,255,255,0.08)",
+            }}>
+              <Stat label="投資" value={yen(rec.main.stake)} num color={accent} />
+              <Stat label="オッズ" value={`${rec.main.odds?.toFixed(1)}倍`} num />
+              <Stat label="EV" value={rec.main.ev?.toFixed(2)} num color="#fde68a" />
             </div>
           </div>
         )}
-        <div style={{ fontSize: 11.5, color: "#94A3B8", marginBottom: 10 }}>
-          ※今日の買い候補 <b className="num text-brand">{battleState.buyToday}</b> 件中、 最優先のレースです。
-        </div>
-        <div style={{ display: "flex", gap: 8 }}>
+
+        {/* 一言理由 */}
+        {rec.reason && (
+          <div style={{
+            fontSize: 12.5, color: "#fde68a", textAlign: "center",
+            marginBottom: 14, padding: "8px 12px",
+            background: "rgba(0,0,0,0.22)", borderRadius: 10,
+            lineHeight: 1.5,
+          }}>
+            💡 {rec.reason}
+          </div>
+        )}
+
+        {/* アクションボタン (「今」 と同サイズ) */}
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           <button onClick={() => onPickRace?.(race.id)} style={{
-            flex: "1 1 140px", minHeight: 44, padding: "10px 14px",
+            flex: "1 1 140px", minHeight: 48, padding: "12px 16px",
             borderRadius: 12, background: "rgba(255,255,255,0.08)",
-            color: "#F1F5F9", fontWeight: 700, fontSize: 13,
+            color: "var(--text-primary)", fontWeight: 700, fontSize: 13.5,
             border: "1px solid rgba(255,255,255,0.18)", cursor: "pointer",
           }}>
             📋 詳しく見る
           </button>
           {voteUrl && (
             <a href={voteUrl} target="_blank" rel="noopener noreferrer" style={{
-              flex: "1 1 180px", minHeight: 44, padding: "10px 14px",
-              borderRadius: 12, background: "linear-gradient(180deg, #FBBF24 0%, #F59E0B 100%)",
-              color: "#451A03", fontWeight: 800, fontSize: 13.5,
-              textDecoration: "none", textAlign: "center",
-              display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6,
-              boxShadow: "0 1px 0 rgba(255,255,255,0.25) inset, 0 4px 12px rgba(245,158,11,0.34)",
+              flex: "1 1 200px", minHeight: 48, padding: "12px 16px",
+              borderRadius: 12,
+              background: "linear-gradient(180deg, #FBBF24 0%, #F59E0B 100%)",
+              color: "#451A03", fontWeight: 800, fontSize: 14.5,
+              border: "none", cursor: "pointer", textDecoration: "none",
+              textAlign: "center",
+              display: "inline-flex", alignItems: "center",
+              justifyContent: "center", gap: 6, letterSpacing: "0.01em",
+              boxShadow: "0 1px 0 rgba(255,255,255,0.30) inset, 0 4px 14px rgba(245,158,11,0.40)",
             }}>
-              💰 公式で買う ↗
+              💰 BOATRACE 公式で買う <span style={{ fontSize: 11, opacity: 0.7 }}>↗</span>
             </a>
           )}
         </div>
+        <div style={{ fontSize: 10.5, opacity: 0.65, textAlign: "center", marginTop: 8, lineHeight: 1.5 }}>
+          ※ 公式サイトの該当レースに飛びます。 投票には TELEBOAT の会員ログインが必要です。
+        </div>
+
+        <style>{`
+          @keyframes nextPulse {
+            0%, 100% { box-shadow: 0 0 0 1px rgba(34,211,238,0.45) inset, 0 8px 32px rgba(0,0,0,0.40), 0 0 80px -10px rgba(34,211,238,0.65); }
+            50%      { box-shadow: 0 0 0 1px rgba(34,211,238,0.65) inset, 0 8px 40px rgba(0,0,0,0.50), 0 0 120px -5px rgba(34,211,238,0.85); }
+          }
+        `}</style>
       </section>
     );
   }
