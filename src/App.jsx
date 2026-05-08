@@ -1939,6 +1939,7 @@ export default function App() {
             evals={evals}
             today={today} weekly={weekly}
             refreshing={refreshing} refreshMsg={refreshMsg} lastRefreshAt={lastRefreshAt}
+            nextRefreshAt={nextRefreshAt}
             onRefresh={refreshAll} onRetry={refreshAll} onRecord={handleRecord} settings={settings}
             switchProfile={switchProfile}
             strategyRanking={strategyRanking}

@@ -16,6 +16,7 @@ import { analyzePatterns, classifyRaceByPattern } from "../lib/patternAnalysis.j
 import { computeStreakStats } from "../lib/dayInsights.js";
 import DataProgressCard from "./DataProgressCard.jsx";
 import TodayHitsCard from "./TodayHitsCard.jsx";
+import MissedBuyCard from "./MissedBuyCard.jsx";
 import BuyOrderHero from "./BuyOrderHero.jsx";
 import SkipBreakdownCard from "./SkipBreakdownCard.jsx";
 import CloudSyncCheckPanel from "./CloudSyncCheckPanel.jsx";
@@ -42,7 +43,7 @@ export default function Dashboard({
   visibleData, evals,
   isSampleMode, storageStatus, publicLogTick,
   authUser, syncStatus,
-  onReset,
+  onReset, nextRefreshAt,
 }) {
   const [showDetails, setShowDetails] = useState(false);
 
@@ -84,7 +85,7 @@ export default function Dashboard({
       )}
 
       {/* 更新バー (常時) */}
-      <RefreshBar onRefresh={onRefresh} refreshing={refreshing} refreshMsg={refreshMsg} lastRefreshAt={lastRefreshAt} />
+      <RefreshBar onRefresh={onRefresh} refreshing={refreshing} refreshMsg={refreshMsg} lastRefreshAt={lastRefreshAt} nextRefreshAt={nextRefreshAt} />
 
       {/* Round 149: 「これを買え!」 シンプル指示書 — 直近 (発走 0-15 分) の buy だけ
          場 / R / 買い目 / 金額 を巨大表示 + TELEBOAT への動線 + 初心者ガイド */}
@@ -106,6 +107,14 @@ export default function Dashboard({
 
       {/* Round 150: 今日のレース内訳 — buy 0 件の異常を即把握 + 主要 skip 理由 Top 3 */}
       <SkipBreakdownCard races={races} recommendations={recommendations} />
+
+      {/* Round 154: 買い忘れ警告 — buy 判定だったのに記録しなかったレースの結果集計 */}
+      <MissedBuyCard
+        races={races}
+        recommendations={recommendations}
+        predictions={visibleData?.predictions}
+        onPickRace={onPickRace}
+      />
 
       {/* Round 88: 最上部「今日の結論」 — どのスタイルが勝っているか 1 枚で */}
       <TopVerdictBanner predictions={visibleData?.predictions} />

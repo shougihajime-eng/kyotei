@@ -1,6 +1,43 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { yen, startEpoch } from "../lib/format.js";
 import { buildRaceCardUrl } from "../lib/raceLinks.js";
+
+/* === Round 154: 「これを買え!」 が出た瞬間にビープ音 ===
+   ・1 レースにつき 1 回 (連打防止)
+   ・Web Audio API で短いビープ — 上昇音 (880→1320Hz) の 2 連打 (0.45 秒)
+   ・ユーザーが操作 (タップ/クリック) するまで AudioContext は鳴らない (ブラウザ仕様) */
+const beepedBuyOrderIds = new Set();
+let _audioCtxBuy = null;
+function getAudioCtxBuy() {
+  try {
+    if (!_audioCtxBuy) {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return null;
+      _audioCtxBuy = new Ctx();
+    }
+    if (_audioCtxBuy.state === "suspended") _audioCtxBuy.resume?.();
+    return _audioCtxBuy;
+  } catch { return null; }
+}
+function playBuyOrderBeep() {
+  const ctx = getAudioCtxBuy();
+  if (!ctx) return;
+  const now = ctx.currentTime;
+  // 「これを買え」 専用音 — 上昇 + 強調 (3 連打)
+  [[660, now, 0.18], [990, now + 0.20, 0.18], [1320, now + 0.40, 0.24]].forEach(([freq, start, dur]) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0.0001, start);
+    gain.gain.exponentialRampToValueAtTime(0.20, start + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(start);
+    osc.stop(start + dur + 0.05);
+  });
+}
 
 /**
  * Round 149: 「これを買え!」 シンプル指示書 (BuyOrderHero)
@@ -42,6 +79,19 @@ export default function BuyOrderHero({ races, recommendations }) {
     }
     return best;
   }, [races, recommendations, now]);
+
+  // Round 154: target 出現時に 1 回ビープ (1 レースにつき 1 回)
+  const lastBeepRef = useRef(null);
+  useEffect(() => {
+    const id = target?.race?.id;
+    if (!id) return;
+    if (lastBeepRef.current === id) return;
+    if (beepedBuyOrderIds.has(id)) return;
+    lastBeepRef.current = id;
+    beepedBuyOrderIds.add(id);
+    const t = setTimeout(() => playBuyOrderBeep(), 150);
+    return () => clearTimeout(t);
+  }, [target?.race?.id]);
 
   if (!target) return null;
   const { race, rec, minutesToStart } = target;
