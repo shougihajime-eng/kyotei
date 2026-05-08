@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { yen, startEpoch } from "../lib/format.js";
 import { buildRaceCardUrl } from "../lib/raceLinks.js";
+import { computeDataConfidence } from "../lib/dataConfidence.js";
 
 /* === Round 154: 「これを買え!」 が出た瞬間にビープ音 ===
    ・1 レースにつき 1 回 (連打防止)
@@ -108,6 +109,10 @@ export default function BuyOrderHero({ races, recommendations }) {
   const riskColor = riskLabel === "高" ? "#F87171" : riskLabel === "中" ? "#FCD34D" : "#22F5A8";
   const points = rec?.items?.length || 0;
   const reasonShort = rec.reason ? String(rec.reason).slice(0, 40) : null;
+  // Round 158: データ厚さ ★1-5 (BattleMode と同じ)
+  const dataConf = computeDataConfidence(race);
+  const starText = "★".repeat(dataConf.stars) + "☆".repeat(5 - dataConf.stars);
+  const starColor = dataConf.stars >= 4 ? "#22F5A8" : dataConf.stars === 3 ? "#67E8F9" : dataConf.stars === 2 ? "#FCD34D" : "#F87171";
 
   return (
     <section style={{
@@ -181,6 +186,16 @@ export default function BuyOrderHero({ races, recommendations }) {
           letterSpacing: "0.02em",
         }}>
           🎯 買い目: <span className="num">{points}</span> 点
+        </span>
+        <span title={`データ ${dataConf.requiredFulfilled}/5 必須 + ${dataConf.supplementCount}/4 補助`}
+          style={{
+            padding: "5px 12px", borderRadius: 999,
+            background: `${starColor}22`,
+            border: `1.5px solid ${starColor}80`,
+            color: starColor, fontSize: 12.5, fontWeight: 800,
+            letterSpacing: "0.04em",
+          }}>
+          📊 {starText}
         </span>
       </div>
 
