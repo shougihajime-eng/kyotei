@@ -13,6 +13,9 @@ export default function SkipBreakdownCard({ races, recommendations }) {
   const stats = useMemo(() => {
     if (!races || races.length === 0 || !recommendations) return null;
     let buy = 0, skip = 0, pending = 0, finished = 0;
+    let safetyBuy = 0;
+    let noProgram = 0; // 出走表が取れていない (= boats が無い/空)
+    let noOdds = 0;    // オッズが未取得
     const skipCounts = {};
     for (const r of races) {
       const rec = recommendations[r.id];
@@ -20,12 +23,18 @@ export default function SkipBreakdownCard({ races, recommendations }) {
         finished++;
         continue;
       }
+      // データ取得状況の集計 (発走前のみ)
+      const hasBoats = Array.isArray(r.boats) && r.boats.length > 0;
+      const hasOdds = !!(r.tri?.length || r.exa?.length || r.dub?.length);
+      if (!hasBoats) noProgram++;
+      else if (!hasOdds) noOdds++;
       if (!rec) {
         pending++;
         continue;
       }
       if (rec.decision === "buy") {
         buy++;
+        if (rec.safetyBuy) safetyBuy++;
       } else if (rec.decision === "skip") {
         skip++;
         // skip の主因をカウント (主要キーワードで分類)
@@ -40,11 +49,13 @@ export default function SkipBreakdownCard({ races, recommendations }) {
     const topSkip = Object.entries(skipCounts)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 3);
-    return { total, buy, skip, pending, finished, topSkip };
+    // データ取得異常: 出走表すら無いレースが過半数
+    const dataIssue = noProgram >= Math.max(20, total * 0.5);
+    return { total, buy, skip, pending, finished, topSkip, safetyBuy, noProgram, noOdds, dataIssue };
   }, [races, recommendations]);
 
   if (!stats || stats.total === 0) return null;
-  const { total, buy, skip, pending, finished, topSkip } = stats;
+  const { total, buy, skip, pending, finished, topSkip, safetyBuy, noProgram, dataIssue } = stats;
 
   // buy が極端に少ない時 (= 全レース対象で 0 件) は赤バナー、 ある程度なら通常表示
   const isAlarmingZero = buy === 0 && (skip + pending) >= 30;
@@ -97,14 +108,39 @@ export default function SkipBreakdownCard({ races, recommendations }) {
         </div>
       )}
 
-      {isAlarmingZero && (
+      {/* セーフティ買い件数 (常時表示、 0 なら隠す) */}
+      {safetyBuy > 0 && (
+        <div style={{
+          marginTop: 8, padding: "8px 10px",
+          background: "rgba(34,211,238,0.10)", borderRadius: 6,
+          fontSize: 11.5, color: "#67E8F9",
+        }}>
+          🛟 うち <b className="num">{safetyBuy}</b> 件はセーフティ買い (本来見送りだが EV 上位救済)
+        </div>
+      )}
+
+      {/* データ取得異常通知 — 出走表すら無いレースが多すぎる */}
+      {dataIssue && (
+        <div style={{
+          marginTop: 8, padding: "10px 12px",
+          background: "rgba(245,158,11,0.16)", borderRadius: 8,
+          border: "1.5px solid rgba(245,158,11,0.40)",
+          fontSize: 11.5, color: "#FCD34D", lineHeight: 1.6,
+        }}>
+          ⚠️ <b>データ取得異常</b>: 出走表が取れていないレースが <span className="num">{noProgram}</span> 件もあります。
+          上の更新ボタンを押して再取得してください。
+          (boatrace.jp の通信不調 / Wi-Fi 不調の可能性)
+        </div>
+      )}
+
+      {isAlarmingZero && !dataIssue && (
         <div style={{
           marginTop: 12, padding: "10px 12px",
           background: "rgba(239,68,68,0.12)", borderRadius: 8,
           fontSize: 11.5, color: "#FECACA", lineHeight: 1.6,
         }}>
-          💡 もし「データ不足」 が多いなら更新ボタンを押して再取得してください。<br />
-          「ゲート」 系で多くスキップされていれば設定で別スタイル (steady/balanced/aggressive) を試してみてください。
+          💡 主要 skip 理由を見て、 緩和できる項目があれば <b>設定でスタイル変更</b> (steady/balanced/aggressive) を試してください。<br />
+          発走 30 分前のレースが少ないだけかもしれません ・ 数時間後にもう一度確認を。
         </div>
       )}
     </section>

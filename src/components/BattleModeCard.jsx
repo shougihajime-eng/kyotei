@@ -79,39 +79,46 @@ function BattleModeCard({ races, recommendations, onPickRace, predictions, evals
   /* Round 146: 3 状態 (今/次/なし) で常に「買い指示」 を表示
      - 今 (0-15 分): 既存の派手表示
      - 次 (15 分-6 時間): 「次の勝負レース」 として中期予告
-     - なし: 「今日はもう買い指示なし」 をハッキリ表示 */
+     - なし: 「今日はもう買い指示なし」 をハッキリ表示
+     Round 152: pending (データ取得待ち) もカウントしてフォールバック強化 */
   const NEXT_HORIZON_MIN = 360; // 6 時間先まで「次」 として扱う
   const battleState = useMemo(() => {
-    if (!races || !recommendations) return { kind: "none", buyToday: 0, nowBest: null, nextBest: null };
+    if (!races || !recommendations) return { kind: "none", buyToday: 0, pendingFuture: 0, totalFuture: 0, nowBest: null, nextBest: null };
     let nowBest = null;
     let nextBest = null;
     let buyToday = 0;
+    let pendingFuture = 0;  // 発走後にまだデータ未取得 (評価対象になりそうなレース)
+    let totalFuture = 0;    // 発走前のレース総数
     for (const r of races) {
       const e = startEpoch(r.date, r.startTime);
       if (e == null) continue;
       const minutesToStart = (e - now) / 60000;
       if (minutesToStart <= 0) continue;
+      totalFuture++;
       const rec = recommendations[r.id];
+      // データが揃っていない / 未評価レース (= 後ほど buy 候補化する可能性あり)
+      const hasBoats = Array.isArray(r.boats) && r.boats.length > 0;
+      if (!hasBoats || !rec) {
+        pendingFuture++;
+      }
       if (rec?.decision !== "buy") continue;
       buyToday++;
       const gradeRank = ({ S: 4, A: 3, B: 2, C: 1 }[rec.grade]) || 0;
       if (minutesToStart <= ODDS_STABLE_MINUTES) {
-        // 今 (0-15 分): 高グレード優先 + 締切近い順
         const score = gradeRank * 1000 + (ODDS_STABLE_MINUTES - minutesToStart);
         if (!nowBest || score > nowBest.score) {
           nowBest = { race: r, rec, minutesToStart, score };
         }
       } else if (minutesToStart <= NEXT_HORIZON_MIN) {
-        // 次 (15 分 - 6 時間): 高グレード優先 + 早い時刻順
         const score = gradeRank * 1000 + (NEXT_HORIZON_MIN - minutesToStart);
         if (!nextBest || score > nextBest.score) {
           nextBest = { race: r, rec, minutesToStart, score };
         }
       }
     }
-    if (nowBest) return { kind: "now", buyToday, nowBest, nextBest };
-    if (nextBest) return { kind: "next", buyToday, nowBest: null, nextBest };
-    return { kind: "none", buyToday, nowBest: null, nextBest: null };
+    if (nowBest) return { kind: "now", buyToday, pendingFuture, totalFuture, nowBest, nextBest };
+    if (nextBest) return { kind: "next", buyToday, pendingFuture, totalFuture, nowBest: null, nextBest };
+    return { kind: "none", buyToday, pendingFuture, totalFuture, nowBest: null, nextBest: null };
   }, [races, recommendations, now]);
   // 既存の "battle" 互換 (now 状態のみ)
   const battle = battleState.nowBest;
@@ -357,6 +364,18 @@ function BattleModeCard({ races, recommendations, onPickRace, predictions, evals
           無理に買うと負けます。 焦らず、 自信のあるレースだけ買いましょう。<br />
           数時間後に新しい買い候補が出るかもしれません ・ 自動で 5 分ごとにチェック中。
         </div>
+        {/* Round 152: フォールバック強化 — まだ評価されていないレース数を表示 */}
+        {battleState.pendingFuture > 0 && (
+          <div style={{
+            marginTop: 14, padding: "10px 12px",
+            background: "rgba(34,211,238,0.10)", borderRadius: 10,
+            border: "1px solid rgba(34,211,238,0.30)",
+            fontSize: 12, color: "#67E8F9", lineHeight: 1.6,
+          }}>
+            ⏳ 今後まだ <b className="num">{battleState.pendingFuture}</b> レース分のデータ取得待ち
+            ({battleState.totalFuture} 件中) — 取得が進めば買い候補が増える可能性があります。
+          </div>
+        )}
       </section>
     );
   }

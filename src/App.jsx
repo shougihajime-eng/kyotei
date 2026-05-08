@@ -1720,7 +1720,10 @@ export default function App() {
         authUser={authUser} onOpenLogin={() => setShowLogin(true)} onLogout={handleLogout}
         syncStatus={syncStatus}
         effectiveRaceDate={effectiveRaceDate}
-        suggestedStyle={suggestStyle(evals, predictions)} />
+        suggestedStyle={suggestStyle(evals, predictions)}
+        buyCount={Object.values(recommendations).filter(r => r?.decision === "buy").length}
+        safetyBuyCount={Object.values(recommendations).filter(r => r?.decision === "buy" && r?.safetyBuy).length}
+      />
 
       {/* ログインモーダル */}
       <LoginModal open={showLogin} onClose={() => setShowLogin(false)} onLogin={handleLogin} />

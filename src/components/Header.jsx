@@ -24,7 +24,7 @@ const PROFILE_INFO = {
 };
 
 export default memo(HeaderImpl);
-function HeaderImpl({ tab, setTab, today, settings, setSettings, switchProfile, switchVirtualMode, refreshing, onRefresh, lastRefreshAt, nextRefreshAt, savedCount, authUser, onOpenLogin, onLogout, syncStatus, effectiveRaceDate, suggestedStyle }) {
+function HeaderImpl({ tab, setTab, today, settings, setSettings, switchProfile, switchVirtualMode, refreshing, onRefresh, lastRefreshAt, nextRefreshAt, savedCount, authUser, onOpenLogin, onLogout, syncStatus, effectiveRaceDate, suggestedStyle, buyCount = 0, safetyBuyCount = 0 }) {
   const air = today?.air || { stake: 0, pnl: 0 };
   const real = today?.real || { stake: 0, pnl: 0 };
   const realLabel = real.stake === 0 ? "—" : (real.pnl >= 0 ? "+" + yen(real.pnl) : "−" + yen(Math.abs(real.pnl)));
@@ -75,6 +75,25 @@ function HeaderImpl({ tab, setTab, today, settings, setSettings, switchProfile, 
               </div>
             )}
           </div>
+          {/* Round 152: 買い件数バッジ常駐 — ヘッダにロゴ隣で常に「今日 N 件 buy」 を見せる */}
+          {settings.onboardingDone && buyCount > 0 && (
+            <div title={safetyBuyCount > 0 ? `通常 ${buyCount - safetyBuyCount} 件 + セーフティ ${safetyBuyCount} 件` : `通常 ${buyCount} 件`}
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 4,
+                padding: "5px 10px", borderRadius: 999,
+                background: "linear-gradient(135deg, rgba(34,245,168,0.24) 0%, rgba(16,185,129,0.14) 100%)",
+                border: "1.5px solid rgba(34,245,168,0.55)",
+                color: "#6EE7B7", fontSize: 12, fontWeight: 800,
+                letterSpacing: "0.02em",
+                boxShadow: "0 0 14px rgba(34,245,168,0.30)",
+                marginLeft: 4,
+              }}>
+              💰 <span className="num">{buyCount}</span>件
+              {safetyBuyCount > 0 && (
+                <span style={{ fontSize: 10, opacity: 0.75 }}>(うち🛟{safetyBuyCount})</span>
+              )}
+            </div>
+          )}
         </div>
 
         {/* スペーサー */}
