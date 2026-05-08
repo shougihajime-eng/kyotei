@@ -983,11 +983,15 @@ export default function App() {
       const fetchBefore = e != null && now > e - 30 * 60 * 1000 && now < e + 10 * 60 * 1000;
       // Round 142: 公式予想印は発走 6 時間前以内 + 終了 5 分後まで (早期発表後にロード可能)
       const fetchForecast = minutesToStart != null && minutesToStart <= 360 && minutesToStart >= -5;
+      // Round 156: 結果取得の信頼性強化 — まだ result が無い終了レースは強制 nocache 再取得
+      //   「発走後 5 分以上経過したのに result が無い」 = データ取りこぼしの可能性大
+      const resultMissing = finished && !(r.apiResult?.first || r.result?.first);
+      const resultOpts = resultMissing ? { nocache: true } : {};
       const [prog, odds, before, result, forecast] = await Promise.all([
         fetchRaceProgram(r.jcd, r.raceNo, dateK),
         fetchOdds ? fetchRaceOdds(r.jcd, r.raceNo, dateK) : Promise.resolve(null),
         fetchBefore ? fetchBeforeInfo(r.jcd, r.raceNo, dateK) : Promise.resolve(null),
-        finished ? fetchRaceResult(r.jcd, r.raceNo, dateK) : Promise.resolve(null),
+        finished ? fetchRaceResult(r.jcd, r.raceNo, dateK, resultOpts) : Promise.resolve(null),
         fetchForecast ? fetchRaceForecast(r.jcd, r.raceNo, dateK) : Promise.resolve(null),
       ]);
       return { id: r.id, prog, odds, before, result, forecast };
