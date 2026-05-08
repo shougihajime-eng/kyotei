@@ -17,6 +17,7 @@ import { computeStreakStats } from "../lib/dayInsights.js";
 import DataProgressCard from "./DataProgressCard.jsx";
 import TodayHitsCard from "./TodayHitsCard.jsx";
 import BuyOrderHero from "./BuyOrderHero.jsx";
+import SkipBreakdownCard from "./SkipBreakdownCard.jsx";
 import CloudSyncCheckPanel from "./CloudSyncCheckPanel.jsx";
 import { yen } from "../lib/format.js";
 
@@ -102,6 +103,9 @@ export default function Dashboard({
 
       {/* Round 146: 今日の的中レースを派手に表示 (的中ゼロなら何も出さない) */}
       <TodayHitsCard predictions={visibleData?.predictions} onPickRace={onPickRace} />
+
+      {/* Round 150: 今日のレース内訳 — buy 0 件の異常を即把握 + 主要 skip 理由 Top 3 */}
+      <SkipBreakdownCard races={races} recommendations={recommendations} />
 
       {/* Round 88: 最上部「今日の結論」 — どのスタイルが勝っているか 1 枚で */}
       <TopVerdictBanner predictions={visibleData?.predictions} />

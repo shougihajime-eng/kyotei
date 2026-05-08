@@ -1381,45 +1381,46 @@ export function buildBuyRecommendation(ev, riskProfile, perRaceCap) {
     const wave = ev.race?.wave ?? 0;
     const trustLevel = ev.inTrust?.level;
 
-    // (a) 1号艇 勝率 — Round 93: 5.50 → 5.20 緩和 (B1-A2 ボーダー)
+    // === Round 150 緩和 — 「1日 0 件」 を防ぐため各閾値を約 20% 緩める ===
+    // (a) 1号艇 勝率 — 5.20 → 5.00 (B1 級全般を許容)
     if (winRate1 == null) {
       skipReasons.push("本命型ゲート: 1号艇勝率データ不足 — 的中率重視のため判定保留");
-    } else if (winRate1 < 5.20) {
-      skipReasons.push(`本命型ゲート: 1号艇勝率 ${winRate1.toFixed(2)} < 5.20 — 的中率不足`);
+    } else if (winRate1 < 5.00) {
+      skipReasons.push(`本命型ゲート: 1号艇勝率 ${winRate1.toFixed(2)} < 5.00 — 的中率不足`);
     }
-    // (b) モーター — Round 93: 35 → 32 緩和 (中堅モーター可)
+    // (b) モーター — 32 → 28 (やや弱モーターまで OK)
     if (motor1 == null) {
       skipReasons.push("本命型ゲート: 1号艇モーター値データ不足");
-    } else if (motor1 < 32) {
-      skipReasons.push(`本命型ゲート: 1号艇モーター ${motor1.toFixed(1)}% < 32% — 平均以下`);
+    } else if (motor1 < 28) {
+      skipReasons.push(`本命型ゲート: 1号艇モーター ${motor1.toFixed(1)}% < 28% — 著しく低い`);
     }
-    // (c) 展示タイム — Round 93: 上位 3 位 → 上位 4 位 緩和 (前半グループ)
+    // (c) 展示タイム — 上位 4 位 → 上位 5 位 緩和
     if (exTime1 == null) {
       skipReasons.push("本命型ゲート: 1号艇展示タイムデータ不足");
     } else {
       const allEx = boats.map((b) => b?.exTime).filter((t) => t != null).sort((a, b) => a - b);
-      const top4Cut = allEx[3];
-      if (top4Cut != null && exTime1 > top4Cut) {
-        skipReasons.push(`本命型ゲート: 1号艇展示 ${exTime1.toFixed(2)}秒 (上位4位外) — 当たりやすさ不足`);
+      const top5Cut = allEx[4];
+      if (top5Cut != null && exTime1 > top5Cut) {
+        skipReasons.push(`本命型ゲート: 1号艇展示 ${exTime1.toFixed(2)}秒 (最遅) — 当たりやすさ不足`);
       }
     }
-    // (d) スタート力 — Round 93: 0.17 → 0.18 緩和 (許容範囲を 0.01 拡大)
+    // (d) スタート力 — 0.18 → 0.20 緩和
     if (avgST1 == null) {
       skipReasons.push("本命型ゲート: 1号艇スタート力データ不足");
-    } else if (avgST1 > 0.18) {
-      skipReasons.push(`本命型ゲート: 1号艇平均ST ${avgST1.toFixed(2)} > 0.18 — スタート遅い`);
+    } else if (avgST1 > 0.20) {
+      skipReasons.push(`本命型ゲート: 1号艇平均ST ${avgST1.toFixed(2)} > 0.20 — スタート遅い`);
     }
-    // (e) 強風・荒水面 — Round 93: 風 5→6 / 波 6→7 緩和
-    if (wind >= 6) skipReasons.push(`本命型ゲート: 風 ${wind}m が強い (>=6) — 本命型対象外`);
-    if (wave >= 7) skipReasons.push(`本命型ゲート: 波 ${wave}cm が荒い (>=7) — 本命型対象外`);
-    // (f) 1号艇信頼度
-    const trustOk = (trustLevel === "イン逃げ濃厚" || trustLevel === "1号艇やや有利");
+    // (e) 強風・荒水面 — 風 6→7 / 波 7→9 緩和
+    if (wind >= 7) skipReasons.push(`本命型ゲート: 風 ${wind}m が強い (>=7)`);
+    if (wave >= 9) skipReasons.push(`本命型ゲート: 波 ${wave}cm が荒い (>=9)`);
+    // (f) 1号艇信頼度 — 「不安あり」 までは OK に拡張
+    const trustOk = (trustLevel === "イン逃げ濃厚" || trustLevel === "1号艇やや有利" || trustLevel === "1号艇不安あり");
     if (!trustOk) {
-      skipReasons.push(`本命型ゲート: 1号艇信頼度不足 (${trustLevel || "判定不能"}) — 「イン逃げ濃厚」 「1号艇やや有利」 のみ`);
+      skipReasons.push(`本命型ゲート: 1号艇信頼度不足 (${trustLevel || "判定不能"})`);
     }
-    // 荒れ/混戦シナリオも除外
-    if (ev.development?.scenario === "荒れ" || ev.development?.scenario === "混戦") {
-      skipReasons.push(`本命型ゲート: 展開シナリオ「${ev.development.scenario}」 — 本命型対象外`);
+    // 荒れシナリオのみ除外 (混戦は OK に変更 — 「混戦」 でも 1 号艇本命なら買える)
+    if (ev.development?.scenario === "荒れ") {
+      skipReasons.push(`本命型ゲート: 展開シナリオ「荒れ」 — 本命型対象外`);
     }
     // 候補は 1ヘッド限定 (本命型は 1号艇1着固定の的中率重視)
     candidates = candidates.filter((t) => t.combo.startsWith("1"));
@@ -1437,15 +1438,16 @@ export function buildBuyRecommendation(ev, riskProfile, perRaceCap) {
     const winRate1 = b1?.winRate;
     const wind = ev.race?.wind ?? 0;
     const wave = ev.race?.wave ?? 0;
-    if (winRate1 != null && winRate1 < 5.0) {
-      skipReasons.push(`バランス型ゲート: 1号艇勝率 ${winRate1.toFixed(2)} < 5.00 — 的中率の最低ライン未達`);
+    // Round 150 緩和: バランス型ゲートも約 20% 緩めて買い候補を増やす
+    if (winRate1 != null && winRate1 < 4.70) {
+      skipReasons.push(`バランス型ゲート: 1号艇勝率 ${winRate1.toFixed(2)} < 4.70 — 的中率の最低ライン未達`);
     }
-    if (wind > 5) skipReasons.push(`バランス型ゲート: 風 ${wind}m が強い (>5)`);
-    if (wave > 6) skipReasons.push(`バランス型ゲート: 波 ${wave}cm が荒い (>6)`);
-    if (inProb > 0.65 && candidates.length > 0 && candidates[0].odds < 1.8) {
+    if (wind > 7) skipReasons.push(`バランス型ゲート: 風 ${wind}m が強い (>7)`);
+    if (wave > 9) skipReasons.push(`バランス型ゲート: 波 ${wave}cm が荒い (>9)`);
+    if (inProb > 0.70 && candidates.length > 0 && candidates[0].odds < 1.6) {
       skipReasons.push(`バランス型ゲート: 1号艇圧倒的 ${(inProb*100).toFixed(0)}% かつ本命オッズ ${candidates[0].odds.toFixed(1)}倍 — 安すぎて妙味なし`);
     }
-    candidates = candidates.filter((t) => t.odds <= 60);
+    candidates = candidates.filter((t) => t.odds <= 80);
   } else if (riskProfile === "aggressive") {
     /* === 穴狙い型 (EV/高配当 最優先) — 的中率は気にしない ===
        必須ゲート:
@@ -1453,6 +1455,7 @@ export function buildBuyRecommendation(ev, riskProfile, perRaceCap) {
          (b) 候補本線オッズ ≥ 8 倍 (低配当除外)
          (c) 4-6号艇ヘッド は「根拠 2+」 を引き続き要求
        的中率関連のゲートは一切なし — 当たらなくても OK、 当たれば大きい設計。 */
+    // Round 150 緩和: 穴狙い型も大幅緩和 — 中穴も買えるように
     candidates = candidates.filter((t) => {
       const head = parseInt(t.combo[0]);
       if (head <= 3) return true;
@@ -1460,23 +1463,22 @@ export function buildBuyRecommendation(ev, riskProfile, perRaceCap) {
       const b = ev.race?.boats?.[boatIdx];
       if (!b) return false;
       let evidence = 0;
-      if (b.exTime != null && b.exTime <= 6.80) evidence++;
-      if (b.motor2 != null && b.motor2 >= 40) evidence++;
-      if (b.winRate != null && b.winRate >= 5.5) evidence++;
+      if (b.exTime != null && b.exTime <= 6.85) evidence++; // 6.80 → 6.85
+      if (b.motor2 != null && b.motor2 >= 35) evidence++;   // 40 → 35
+      if (b.winRate != null && b.winRate >= 5.0) evidence++; // 5.5 → 5.0
       if (Array.isArray(b.entryHistory) && b.entryHistory.some((l) => l <= 3)) evidence++;
       if ((ev.race?.wind ?? 0) >= 5 || (ev.race?.wave ?? 0) >= 6) evidence++;
       if (ev.development?.scenario === "荒れ" || ev.development?.scenario === "まくり") evidence++;
-      if (b.tilt != null && b.tilt >= 1.5) evidence++;
-      return evidence >= 2;
+      if (b.tilt != null && b.tilt >= 1.0) evidence++; // 1.5 → 1.0
+      return evidence >= 1; // 2 → 1
     });
-    // (b) 高配当のみ (オッズ < 8 倍は除外)
-    // Round 93: オッズ 8 → 6 / EV 1.50 → 1.40 緩和 (中穴も拾う)
-    candidates = candidates.filter((t) => t.odds >= 6);
-    if (candidates.length > 0 && candidates[0].ev < 1.40) {
-      skipReasons.push(`穴狙い型ゲート: 本線 EV ${Math.round(candidates[0].ev*100)}% < 140% — 高配当ねらいに値しない`);
+    // (b) オッズ閾値 — 6 → 4 (低めも OK にして候補を広げる)
+    candidates = candidates.filter((t) => t.odds >= 4);
+    if (candidates.length > 0 && candidates[0].ev < 1.25) {
+      skipReasons.push(`穴狙い型ゲート: 本線 EV ${Math.round(candidates[0].ev*100)}% < 125% — 妙味不足`);
     }
     if (candidates.length === 0 && skipReasons.length === 0) {
-      skipReasons.push("穴狙い型ゲート: EV ≥ 140% かつオッズ ≥ 6倍 の候補なし — 高配当狙いの対象外");
+      skipReasons.push("穴狙い型ゲート: EV ≥ 125% かつオッズ ≥ 4倍 の候補なし");
     }
   }
 
@@ -1484,8 +1486,8 @@ export function buildBuyRecommendation(ev, riskProfile, perRaceCap) {
   if (candidates.length === 0 && skipReasons.length === 0) {
     skipReasons.push(`オッズ妙味なし (期待回収率 ${Math.round(evMin * 100)}% 以上の候補が ${allowed.join("/")}に存在しない)`);
   }
-  // 5. 候補のトップ EV が低い (薄プラスは見送り)
-  if (candidates.length > 0 && candidates[0].ev < evMin + 0.05) {
+  // 5. 候補のトップ EV が低い (薄プラスは見送り) — Round 150: +0.05 → +0.02 緩和
+  if (candidates.length > 0 && candidates[0].ev < evMin + 0.02) {
     skipReasons.push(`妙味薄い (最高でも期待回収率 ${Math.round(candidates[0].ev * 100)}% — わずかなプラスは長期で消える)`);
   }
   // 6. 候補が広すぎる (穴狙い型のみ — 根拠ある穴に絞る思想なので、広すぎは不確定要素過多)

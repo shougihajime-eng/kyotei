@@ -1474,15 +1474,43 @@ export default function App() {
       const h = new Date().getHours();
       return h >= 8 && h < 22;
     }
+    let lastTickAt = Date.now();
     function tick() {
       if (refreshingRef.current || !isRaceWindow()) return;
+      lastTickAt = Date.now();
       setLastRefreshAt(null);
       refreshAllRef.current && refreshAllRef.current();
       setNextRefreshAt(new Date(Date.now() + BG_INTERVAL_MS).toISOString());
     }
+
+    /* Round 150: Page Visibility 対応 — タブが裏に回ると setInterval は遅延・停止する。
+       タブがアクティブに戻った時、 BG_INTERVAL_MS を超えて経過していたら即 1 度更新。
+       「PC つけっぱなしだったのに更新されてない」 を防ぐ。 */
+    function onVisibilityChange() {
+      if (document.visibilityState !== "visible") return;
+      const elapsed = Date.now() - lastTickAt;
+      if (elapsed >= BG_INTERVAL_MS && isRaceWindow()) {
+        tick();
+      }
+    }
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    /* Round 150: 'focus' イベントも併用 — visibility と微妙に挙動が違うブラウザもあるので両方押さえる */
+    function onWindowFocus() {
+      const elapsed = Date.now() - lastTickAt;
+      if (elapsed >= BG_INTERVAL_MS && isRaceWindow()) {
+        tick();
+      }
+    }
+    window.addEventListener("focus", onWindowFocus);
+
     setNextRefreshAt(new Date(Date.now() + BG_INTERVAL_MS).toISOString());
     const id = setInterval(tick, BG_INTERVAL_MS);
-    return () => clearInterval(id);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("focus", onWindowFocus);
+    };
   }, [settings.onboardingDone]);
 
   /* === 手動記録 (リアル/エア舟券フォーム) ===
