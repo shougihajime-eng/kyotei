@@ -2,6 +2,7 @@ import { memo, useEffect, useState, useMemo, useRef } from "react";
 import { yen, startEpoch } from "../lib/format.js";
 import { buildRaceCardUrl } from "../lib/raceLinks.js";
 import { analyzePatterns, classifyRaceByPattern } from "../lib/patternAnalysis.js";
+import { computeDataConfidence } from "../lib/dataConfidence.js";
 
 /* === Round 119: 買い判定が出た瞬間に音を鳴らす ===
    ・タブが見えている時こそ即気付ける (notifyBuy はタブ可視時は通知しない設計)
@@ -137,6 +138,12 @@ function BattleModeCard({ races, recommendations, onPickRace, predictions, evals
     const ev = evals?.[battle.race.id];
     return classifyRaceByPattern(battle.race, ev, profile, analyzed);
   }, [battle?.race, predictions, evals, profile]);
+
+  /* Round 147: 予想データの厚さ (★1〜5) */
+  const dataConf = useMemo(() => {
+    if (!battle?.race) return null;
+    return computeDataConfidence(battle.race);
+  }, [battle?.race]);
 
   /* Round 146: 「次の勝負レース」 表示 (15 分-6 時間先) */
   if (battleState.kind === "next") {
@@ -320,6 +327,32 @@ function BattleModeCard({ races, recommendations, onPickRace, predictions, evals
           letterSpacing: "0.02em",
         }}>
           ⚠️ 過去苦手パターン (ROI {Math.round(patternResult.roi * 100)}% / {patternResult.count}戦) — 慎重に
+        </div>
+      )}
+
+      {/* Round 147: 予想データの厚さバッジ (★1〜5) */}
+      {dataConf && (
+        <div style={{
+          display: "inline-flex", alignItems: "center", gap: 6,
+          padding: "5px 12px", marginBottom: 10, marginLeft: patternResult ? 8 : 0,
+          borderRadius: 999,
+          background: dataConf.stars >= 4 ? "rgba(16,185,129,0.18)"
+                    : dataConf.stars >= 3 ? "rgba(34,211,238,0.18)"
+                    : dataConf.stars >= 2 ? "rgba(245,158,11,0.18)"
+                    : "rgba(239,68,68,0.18)",
+          border: `1.5px solid ${
+            dataConf.stars >= 4 ? "rgba(16,185,129,0.50)"
+            : dataConf.stars >= 3 ? "rgba(34,211,238,0.50)"
+            : dataConf.stars >= 2 ? "rgba(245,158,11,0.50)"
+            : "rgba(239,68,68,0.50)"
+          }`,
+          color: dataConf.stars >= 4 ? "#a7f3d0"
+               : dataConf.stars >= 3 ? "#67E8F9"
+               : dataConf.stars >= 2 ? "#fcd34d"
+               : "#fecaca",
+          fontSize: 12, fontWeight: 800, letterSpacing: "0.05em",
+        }}>
+          📊 {"★".repeat(dataConf.stars)}{"☆".repeat(5 - dataConf.stars)} データ {dataConf.sources.length}/9 種
         </div>
       )}
 
