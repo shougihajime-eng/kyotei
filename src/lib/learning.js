@@ -119,12 +119,16 @@ export function getLearnedWeights(predictions) {
   const settled = settledList(predictions);
   const total = settled.length;
 
-  if (total < 30) {
+  // Round 159: 学習発動閾値を 30 → 15 件に下げて早く効くように
+  // 30 件はサンプル数として保守的だったが、 自動 snapshot で予想が貯まるのを早めるため緩和
+  // 15 件あれば各艇の傾向 (3 期間) を見るには最小限十分
+  const MIN_LEARNING_SIZE = 15;
+  if (total < MIN_LEARNING_SIZE) {
     return {
       ready: false,
       sampleSize: total,
       adjustments: {},
-      notes: [{ kind: "info", text: `学習にはまず 30 件以上の確定レースが必要 (現在 ${total} 件)` }],
+      notes: [{ kind: "info", text: `学習にはまず ${MIN_LEARNING_SIZE} 件以上の確定レースが必要 (現在 ${total} 件)` }],
       decision: "pending",
       reason: "サンプル不足",
     };

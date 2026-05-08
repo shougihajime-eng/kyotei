@@ -78,31 +78,39 @@
   --c-purple-bg:      rgba(168, 85, 247, 0.09);
   --c-purple-border:  rgba(168, 85, 247, 0.32);
 
-  /* 旧名 buy/skip/hole/warn/mute (後方互換) */
+  /* === Round 159: 意味色を仕様統一 ===
+     ・緑 (buy)   = 買いやすい (--c-success)
+     ・赤 (skip → 廃止 / danger は危険警告に温存)
+     ・グレー (skip / mute) = 見送り (skip を grey 系に再定義)
+     ・青 (hole) = 穴狙い (purple → info / 青系に変更)
+     ・黄 (warn) = 注意 (--c-warning)
+     旧名は残して既存クラスは無修正、 中身だけ意味更新。 */
+  --c-mute:        #6B7280;
+  --c-mute-bg:     rgba(107, 114, 128, 0.10);
+  --c-mute-border: rgba(107, 114, 128, 0.32);
+  --c-mute-text:   #D1D5DB;
+
   --c-buy:        var(--c-success);
   --c-buy-bg:     var(--c-success-bg);
   --c-buy-border: var(--c-success-border);
   --c-buy-text:   var(--c-success-text);
 
-  --c-skip:        var(--c-danger);
-  --c-skip-bg:     var(--c-danger-bg);
-  --c-skip-border: var(--c-danger-border);
-  --c-skip-text:   var(--c-danger-text);
+  /* skip = 「見送り」 → グレー (旧 赤 から変更) */
+  --c-skip:        var(--c-mute);
+  --c-skip-bg:     var(--c-mute-bg);
+  --c-skip-border: var(--c-mute-border);
+  --c-skip-text:   var(--c-mute-text);
 
   --c-warn:        var(--c-warning);
   --c-warn-bg:     var(--c-warning-bg);
   --c-warn-border: var(--c-warning-border);
   --c-warn-text:   var(--c-warning-text);
 
-  --c-hole:        var(--c-purple);
-  --c-hole-bg:     var(--c-purple-bg);
-  --c-hole-border: var(--c-purple-border);
-  --c-hole-text:   var(--c-purple-text);
-
-  --c-mute:        #6B7280;
-  --c-mute-bg:     rgba(107, 114, 128, 0.10);
-  --c-mute-border: rgba(107, 114, 128, 0.32);
-  --c-mute-text:   #D1D5DB;
+  /* hole = 「穴狙い」 → 青系 (旧 紫 から変更) */
+  --c-hole:        var(--c-info);
+  --c-hole-bg:     var(--c-info-bg);
+  --c-hole-border: var(--c-info-border);
+  --c-hole-text:   var(--c-info-text);
 
   /* === 余白スケール (4px base) === */
   --space-1: 4px;
@@ -224,11 +232,12 @@ a:hover { color: var(--brand); }
 /* =====================================================================
  * セマンティック クラス (要素背景/枠/文字 一括)
  * ===================================================================== */
-.sem-buy   { color: var(--c-success-text); background: var(--c-success-bg); border-color: var(--c-success-border); }
-.sem-skip  { color: var(--c-danger-text);  background: var(--c-danger-bg);  border-color: var(--c-danger-border); }
-.sem-hole  { color: var(--c-purple-text);  background: var(--c-purple-bg);  border-color: var(--c-purple-border); }
-.sem-warn  { color: var(--c-warning-text); background: var(--c-warning-bg); border-color: var(--c-warning-border); }
-.sem-mute  { color: var(--c-mute-text);    background: var(--c-mute-bg);    border-color: var(--c-mute-border); }
+/* Round 159: 意味色変数経由で統一 (skip → grey、 hole → blue) */
+.sem-buy   { color: var(--c-buy-text);  background: var(--c-buy-bg);  border-color: var(--c-buy-border); }
+.sem-skip  { color: var(--c-skip-text); background: var(--c-skip-bg); border-color: var(--c-skip-border); }
+.sem-hole  { color: var(--c-hole-text); background: var(--c-hole-bg); border-color: var(--c-hole-border); }
+.sem-warn  { color: var(--c-warn-text); background: var(--c-warn-bg); border-color: var(--c-warn-border); }
+.sem-mute  { color: var(--c-mute-text); background: var(--c-mute-bg); border-color: var(--c-mute-border); }
 
 /* =====================================================================
  * カード (premium glass-morphism feel)
@@ -274,13 +283,15 @@ a:hover { color: var(--brand); }
   line-height: 1.4;
   -webkit-tap-highlight-color: transparent;
 }
-/* Round 134: バッジに淡いグロウを追加 — 「買い」 / 「見送り」 が一瞬で目に入る */
-.badge-buy   { background: var(--c-success-bg); color: var(--c-success-text); border: 1px solid var(--c-success-border); box-shadow: 0 0 12px rgba(16, 185, 129, 0.28); }
-.badge-skip  { background: var(--c-danger-bg);  color: var(--c-danger-text);  border: 1px solid var(--c-danger-border);  box-shadow: 0 0 12px rgba(239, 68, 68, 0.28); }
-.badge-warn  { background: var(--c-warning-bg); color: var(--c-warning-text); border: 1px solid var(--c-warning-border); box-shadow: 0 0 12px rgba(245, 158, 11, 0.24); }
-.badge-hole  { background: var(--c-purple-bg);  color: var(--c-purple-text);  border: 1px solid var(--c-purple-border);  box-shadow: 0 0 14px rgba(168, 85, 247, 0.32); }
-.badge-mute  { background: var(--c-mute-bg);    color: var(--c-mute-text);    border: 1px solid var(--c-mute-border); }
-.badge-brand { background: var(--brand-bg);     color: var(--brand-text);     border: 1px solid var(--brand-border);     box-shadow: 0 0 14px rgba(34, 211, 238, 0.30); }
+/* Round 134/159: バッジに淡いグロウ。 skip=グレー、 hole=青で意味色統一 */
+.badge-buy   { background: var(--c-buy-bg);  color: var(--c-buy-text);  border: 1px solid var(--c-buy-border);  box-shadow: 0 0 12px rgba(16, 185, 129, 0.28); }
+.badge-skip  { background: var(--c-skip-bg); color: var(--c-skip-text); border: 1px solid var(--c-skip-border); }
+.badge-warn  { background: var(--c-warn-bg); color: var(--c-warn-text); border: 1px solid var(--c-warn-border); box-shadow: 0 0 12px rgba(245, 158, 11, 0.24); }
+.badge-hole  { background: var(--c-hole-bg); color: var(--c-hole-text); border: 1px solid var(--c-hole-border); box-shadow: 0 0 14px rgba(59, 130, 246, 0.30); }
+.badge-mute  { background: var(--c-mute-bg); color: var(--c-mute-text); border: 1px solid var(--c-mute-border); }
+.badge-brand { background: var(--brand-bg);  color: var(--brand-text);  border: 1px solid var(--brand-border); box-shadow: 0 0 14px rgba(34, 211, 238, 0.30); }
+/* 危険警告専用バッジ (赤) — 「危険レース判定」 など本当に危険な時だけ */
+.badge-danger { background: var(--c-danger-bg); color: var(--c-danger-text); border: 1px solid var(--c-danger-border); box-shadow: 0 0 12px rgba(239, 68, 68, 0.30); }
 
 /* グレード S/A/B/C */
 .badge-grade-S {

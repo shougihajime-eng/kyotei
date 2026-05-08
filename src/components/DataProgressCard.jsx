@@ -18,7 +18,7 @@ const MILESTONES = [
     color: "#A855F7", // purple
   },
   {
-    threshold: 30,
+    threshold: 15,
     title: "学習機能",
     desc: "過去の的中傾向から重みを自動調整 (1号艇本命の信頼度など)",
     color: "#22D3EE", // cyan
