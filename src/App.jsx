@@ -446,10 +446,12 @@ export default function App() {
   /* 現在スタイルの recommendations は事前計算からピックするだけ
    * Round 151: セーフティネット — buy が 5 件未満なら skip の中から
    *            EV 上位を「セーフティ買い」 として救済 (grade=C 固定)
-   *            「世界一の精度」 より「毎日 5 件以上の手数」 を優先する設計。 */
+   *            「世界一の精度」 より「毎日 5 件以上の手数」 を優先する設計。
+   * Round 157: settings.disableSafetyBuy=true で OFF 可能。 */
   const SAFETY_MIN_BUY = 5;
   const recommendations = useMemo(() => {
     const base = allStyleRecommendations[settings.riskProfile] || {};
+    if (settings.disableSafetyBuy) return base; // ユーザーが OFF を選択時はそのまま
     const buyEntries = Object.entries(base).filter(([_, rec]) => rec?.decision === "buy");
     if (buyEntries.length >= SAFETY_MIN_BUY) return base;
 
@@ -492,7 +494,7 @@ export default function App() {
       }
     }
     return next;
-  }, [allStyleRecommendations, settings.riskProfile, races, evals, cap]);
+  }, [allStyleRecommendations, settings.riskProfile, races, evals, cap, settings.disableSafetyBuy]);
 
   /* Round 32: 戦略ランキング (allStyleRecommendations から導出) */
   const strategyRanking = useMemo(

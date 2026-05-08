@@ -90,6 +90,33 @@ export default function Settings({ settings, setSettings, switchVirtualMode, swi
           {field("perRaceLimit", "1レース上限 (円)")}
           {field("evMin", "最小EV (1.10 推奨)")}
         </div>
+
+        {/* Round 157: セーフティ買い (5 件保証) ON/OFF */}
+        <div style={{
+          marginTop: 14, padding: "12px 14px",
+          borderRadius: 10, background: "rgba(34,211,238,0.06)",
+          border: "1px solid rgba(34,211,238,0.20)",
+        }}>
+          <label style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={!settings.disableSafetyBuy}
+              onChange={(e) => setSettings((prev) => ({ ...prev, disableSafetyBuy: !e.target.checked }))}
+              style={{ marginTop: 3, width: 18, height: 18, cursor: "pointer" }}
+            />
+            <div>
+              <div style={{ fontSize: 13.5, fontWeight: 700, color: "#67E8F9" }}>
+                🛟 セーフティ買い (5 件保証) を使う
+              </div>
+              <div style={{ fontSize: 11.5, color: "var(--text-tertiary)", marginTop: 4, lineHeight: 1.6 }}>
+                通常の買い候補が 5 件未満の日は、 期待値 1.0 以上の 「見送りレース」 から
+                上位を救済して買い候補に格上げします (grade=C 固定 / 🛟 マーク付き)。<br />
+                <b>OFF にすると</b>: 買い候補が 0 件の日も無理に救済しません。
+                「世界一の精度」 を厳守したい上級者向け。
+              </div>
+            </div>
+          </label>
+        </div>
       </section>
 
       <section className="card" style={{ padding: 18 }}>
