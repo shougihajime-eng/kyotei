@@ -75,25 +75,45 @@ function BattleModeCard({ races, recommendations, onPickRace, predictions, evals
     return () => clearInterval(id);
   }, []);
 
-  const battle = useMemo(() => {
-    if (!races || !recommendations) return null;
-    let best = null;
+  /* Round 146: 3 状態 (今/次/なし) で常に「買い指示」 を表示
+     - 今 (0-15 分): 既存の派手表示
+     - 次 (15 分-6 時間): 「次の勝負レース」 として中期予告
+     - なし: 「今日はもう買い指示なし」 をハッキリ表示 */
+  const NEXT_HORIZON_MIN = 360; // 6 時間先まで「次」 として扱う
+  const battleState = useMemo(() => {
+    if (!races || !recommendations) return { kind: "none", buyToday: 0, nowBest: null, nextBest: null };
+    let nowBest = null;
+    let nextBest = null;
+    let buyToday = 0;
     for (const r of races) {
       const e = startEpoch(r.date, r.startTime);
       if (e == null) continue;
       const minutesToStart = (e - now) / 60000;
-      if (minutesToStart <= 0 || minutesToStart > ODDS_STABLE_MINUTES) continue;
+      if (minutesToStart <= 0) continue;
       const rec = recommendations[r.id];
       if (rec?.decision !== "buy") continue;
-      // S/A/B/C のグレード優先 + 発走時刻近い順
+      buyToday++;
       const gradeRank = ({ S: 4, A: 3, B: 2, C: 1 }[rec.grade]) || 0;
-      const score = gradeRank * 1000 + (15 - minutesToStart); // 早いほど + 高グレードほど
-      if (!best || score > best.score) {
-        best = { race: r, rec, minutesToStart, score };
+      if (minutesToStart <= ODDS_STABLE_MINUTES) {
+        // 今 (0-15 分): 高グレード優先 + 締切近い順
+        const score = gradeRank * 1000 + (ODDS_STABLE_MINUTES - minutesToStart);
+        if (!nowBest || score > nowBest.score) {
+          nowBest = { race: r, rec, minutesToStart, score };
+        }
+      } else if (minutesToStart <= NEXT_HORIZON_MIN) {
+        // 次 (15 分 - 6 時間): 高グレード優先 + 早い時刻順
+        const score = gradeRank * 1000 + (NEXT_HORIZON_MIN - minutesToStart);
+        if (!nextBest || score > nextBest.score) {
+          nextBest = { race: r, rec, minutesToStart, score };
+        }
       }
     }
-    return best;
+    if (nowBest) return { kind: "now", buyToday, nowBest, nextBest };
+    if (nextBest) return { kind: "next", buyToday, nowBest: null, nextBest };
+    return { kind: "none", buyToday, nowBest: null, nextBest: null };
   }, [races, recommendations, now]);
+  // 既存の "battle" 互換 (now 状態のみ)
+  const battle = battleState.nowBest;
 
   // Round 119: battle 出現時 (= 買い判定が表示された瞬間) に 1 回ビープ音
   const lastBeepRef = useRef(null);
@@ -118,8 +138,106 @@ function BattleModeCard({ races, recommendations, onPickRace, predictions, evals
     return classifyRaceByPattern(battle.race, ev, profile, analyzed);
   }, [battle?.race, predictions, evals, profile]);
 
-  if (!battle) return null;
+  /* Round 146: 「次の勝負レース」 表示 (15 分-6 時間先) */
+  if (battleState.kind === "next") {
+    const { race, rec, minutesToStart } = battleState.nextBest;
+    const m = Math.floor(minutesToStart);
+    const h = Math.floor(m / 60);
+    const mm = m % 60;
+    const timeLabel = h > 0 ? `あと ${h} 時間 ${mm} 分` : `あと ${mm} 分`;
+    const voteUrl = buildRaceCardUrl(race.jcd, race.date, race.raceNo);
+    return (
+      <section style={{
+        padding: "20px 20px 18px",
+        borderRadius: 18,
+        background:
+          "linear-gradient(135deg, rgba(34, 211, 238, 0.16) 0%, rgba(37, 99, 235, 0.08) 100%), " +
+          "linear-gradient(180deg, rgba(11, 18, 32, 0.96) 0%, rgba(8, 15, 28, 0.96) 100%)",
+        border: "2px solid #22D3EE",
+        boxShadow: "0 0 0 1px rgba(34,211,238,0.30) inset, 0 8px 32px rgba(0,0,0,0.40), 0 0 64px -12px rgba(34,211,238,0.40)",
+        backdropFilter: "blur(12px)",
+      }}>
+        <div style={{ fontSize: 11.5, color: "#67E8F9", fontWeight: 800, letterSpacing: "0.10em", textTransform: "uppercase", marginBottom: 6 }}>
+          🟡 次の勝負レース
+        </div>
+        <div style={{ fontSize: "min(28px, 7.5vw)", fontWeight: 900, color: "#F1F5F9", lineHeight: 1.15, marginBottom: 8 }}>
+          {race.venue} <span className="num">{race.raceNo}R</span>
+          <span style={{ marginLeft: 10, fontSize: 14, color: "#94A3B8", fontWeight: 600 }} className="num">
+            {race.startTime}締切
+          </span>
+        </div>
+        <div className="num" style={{
+          display: "inline-block", padding: "6px 14px", marginBottom: 12,
+          borderRadius: 999, background: "rgba(34,211,238,0.18)",
+          border: "1px solid rgba(34,211,238,0.40)", color: "#67E8F9",
+          fontSize: 14, fontWeight: 800,
+        }}>
+          {timeLabel}
+        </div>
+        {rec.main && (
+          <div style={{ background: "rgba(0,0,0,0.30)", borderRadius: 12, padding: "12px 14px", marginBottom: 10 }}>
+            <div style={{ fontSize: 10.5, color: "#94A3B8", letterSpacing: "0.10em", textTransform: "uppercase", marginBottom: 4 }}>
+              本命 ({rec.main.kind})
+            </div>
+            <div className="font-mono num" style={{ fontSize: "min(36px, 9vw)", fontWeight: 900, letterSpacing: "0.02em" }}>
+              {rec.main.combo}
+            </div>
+            <div className="num" style={{ fontSize: 12, color: "#94A3B8", marginTop: 4 }}>
+              投資 {yen(rec.main.stake)} / EV {rec.main.ev?.toFixed(2)}
+            </div>
+          </div>
+        )}
+        <div style={{ fontSize: 11.5, color: "#94A3B8", marginBottom: 10 }}>
+          ※今日の買い候補 <b className="num text-brand">{battleState.buyToday}</b> 件中、 最優先のレースです。
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={() => onPickRace?.(race.id)} style={{
+            flex: "1 1 140px", minHeight: 44, padding: "10px 14px",
+            borderRadius: 12, background: "rgba(255,255,255,0.08)",
+            color: "#F1F5F9", fontWeight: 700, fontSize: 13,
+            border: "1px solid rgba(255,255,255,0.18)", cursor: "pointer",
+          }}>
+            📋 詳しく見る
+          </button>
+          {voteUrl && (
+            <a href={voteUrl} target="_blank" rel="noopener noreferrer" style={{
+              flex: "1 1 180px", minHeight: 44, padding: "10px 14px",
+              borderRadius: 12, background: "linear-gradient(180deg, #FBBF24 0%, #F59E0B 100%)",
+              color: "#451A03", fontWeight: 800, fontSize: 13.5,
+              textDecoration: "none", textAlign: "center",
+              display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6,
+              boxShadow: "0 1px 0 rgba(255,255,255,0.25) inset, 0 4px 12px rgba(245,158,11,0.34)",
+            }}>
+              💰 公式で買う ↗
+            </a>
+          )}
+        </div>
+      </section>
+    );
+  }
 
+  /* Round 146: 「今日は買い指示なし」 表示 */
+  if (battleState.kind === "none") {
+    return (
+      <section style={{
+        padding: "18px 20px",
+        borderRadius: 18,
+        background: "linear-gradient(180deg, rgba(11, 18, 32, 0.96) 0%, rgba(8, 15, 28, 0.96) 100%)",
+        border: "1.5px solid rgba(255,255,255,0.10)",
+        textAlign: "center",
+      }}>
+        <div style={{ fontSize: "min(22px, 5.5vw)", fontWeight: 800, color: "#F1F5F9", marginBottom: 6 }}>
+          ⚪ 今日はもう買い指示なし
+        </div>
+        <div style={{ fontSize: 13, color: "#94A3B8", lineHeight: 1.6 }}>
+          AI が「期待値プラスに買えるレース」 を見つけられませんでした。<br />
+          <b style={{ color: "#67E8F9" }}>「買わない」 も立派な選択</b> — 焦らず明日に賭けましょう。
+        </div>
+      </section>
+    );
+  }
+
+  /* Round 146: kind === "now" — 以下、 既存の派手表示 */
   const { race, rec, minutesToStart } = battle;
   const main = rec.main;
   const m = Math.max(0, Math.floor(minutesToStart));

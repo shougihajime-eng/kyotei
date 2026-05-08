@@ -15,6 +15,7 @@ import TodayVerificationPanel from "./TodayVerificationPanel.jsx";
 import { analyzePatterns, classifyRaceByPattern } from "../lib/patternAnalysis.js";
 import { computeStreakStats } from "../lib/dayInsights.js";
 import DataProgressCard from "./DataProgressCard.jsx";
+import TodayHitsCard from "./TodayHitsCard.jsx";
 import CloudSyncCheckPanel from "./CloudSyncCheckPanel.jsx";
 import { yen } from "../lib/format.js";
 
@@ -93,6 +94,9 @@ export default function Dashboard({
         evals={evals}
         profile={settings.riskProfile}
       />
+
+      {/* Round 146: 今日の的中レースを派手に表示 (的中ゼロなら何も出さない) */}
+      <TodayHitsCard predictions={visibleData?.predictions} onPickRace={onPickRace} />
 
       {/* Round 88: 最上部「今日の結論」 — どのスタイルが勝っているか 1 枚で */}
       <TopVerdictBanner predictions={visibleData?.predictions} />
