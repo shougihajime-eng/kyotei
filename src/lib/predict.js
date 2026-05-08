@@ -1221,7 +1221,9 @@ function countMainEvidence(score) {
   return c;
 }
 
-export function buildBuyRecommendation(ev, riskProfile, perRaceCap) {
+export function buildBuyRecommendation(ev, riskProfile, perRaceCap, bypassSkipReasons = false) {
+  /* Round 151: bypassSkipReasons=true でセーフティ買い (上位 EV 救済) を構築。
+     skip ゲートを無視して buy 判定を作成、 grade は C 固定で 「セーフティ」 を明示。 */
   /* === 早期 skip 判定 === */
   if (!ev) return { decision: "skip", reason: "未評価", reasons: ["評価対象なし"], items: [], total: 0 };
   if (ev.reason === "no-odds") {
@@ -1506,8 +1508,8 @@ export function buildBuyRecommendation(ev, riskProfile, perRaceCap) {
     skipReasons.push(`混戦かつ妙味弱 — 不確定要素が多く期待値プラスが薄い`);
   }
 
-  /* === skip 理由が 1 つでもあれば見送り === */
-  if (skipReasons.length > 0) {
+  /* === skip 理由が 1 つでもあれば見送り (bypass モードでは無視) === */
+  if (skipReasons.length > 0 && !bypassSkipReasons) {
     return {
       decision: "skip",
       reason: skipReasons[0],
@@ -1809,13 +1811,19 @@ export function buildBuyRecommendation(ev, riskProfile, perRaceCap) {
     return { ...it, confidence: conf };
   });
 
+  /* Round 151: セーフティ買いの場合は grade=C 固定、 reason 上書き、 safetyBuy フラグ */
+  const finalReason = bypassSkipReasons
+    ? `🛟 セーフティ買い (本来 ${skipReasons[0] || "見送り"} だが EV 上位救済)`
+    : reason;
+  const finalGrade = bypassSkipReasons ? "C" : main.grade;
+
   return {
     decision: "buy",
-    reason,
+    reason: finalReason,
     items: itemsWithConfidence,
     main: itemsWithConfidence[0],
     total: totalStakeNow,
-    grade: main.grade,
+    grade: finalGrade,
     development: ev.development,
     /* 「なぜこの点数か」 — UI で表示 */
     rationale: why,
@@ -1833,6 +1841,9 @@ export function buildBuyRecommendation(ev, riskProfile, perRaceCap) {
     confidence,
     /* Round 133: 券種別自信スコア */
     confidenceByKind,
+    /* Round 151: セーフティ買いマーキング */
+    safetyBuy: bypassSkipReasons,
+    bypassedSkipReasons: bypassSkipReasons ? skipReasons : null,
   };
 }
 

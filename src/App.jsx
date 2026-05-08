@@ -443,10 +443,56 @@ export default function App() {
     return out;
   }, [races, evals, cap, nowTick]);
 
-  /* 現在スタイルの recommendations は事前計算からピックするだけ */
+  /* 現在スタイルの recommendations は事前計算からピックするだけ
+   * Round 151: セーフティネット — buy が 5 件未満なら skip の中から
+   *            EV 上位を「セーフティ買い」 として救済 (grade=C 固定)
+   *            「世界一の精度」 より「毎日 5 件以上の手数」 を優先する設計。 */
+  const SAFETY_MIN_BUY = 5;
   const recommendations = useMemo(() => {
-    return allStyleRecommendations[settings.riskProfile] || {};
-  }, [allStyleRecommendations, settings.riskProfile]);
+    const base = allStyleRecommendations[settings.riskProfile] || {};
+    const buyEntries = Object.entries(base).filter(([_, rec]) => rec?.decision === "buy");
+    if (buyEntries.length >= SAFETY_MIN_BUY) return base;
+
+    // skip 判定の中から EV 上位 (1.0 以上) を抽出
+    const candidates = [];
+    for (const r of races) {
+      const rec = base[r.id];
+      if (!rec || rec.decision !== "skip") continue;
+      const ev = evals[r.id];
+      if (!ev?.ok || !ev.candidates || ev.candidates.length === 0) continue;
+      const topEv = ev.candidates[0]?.ev || 0;
+      if (topEv < 1.0) continue; // 期待値 1.0 未満は救済しない (大損リスク)
+      candidates.push({ id: r.id, race: r, ev, topEv });
+    }
+    if (candidates.length === 0) return base;
+
+    // EV 順にソートして必要数だけ救済
+    candidates.sort((a, b) => b.topEv - a.topEv);
+    const need = SAFETY_MIN_BUY - buyEntries.length;
+    const promoted = candidates.slice(0, need);
+    if (promoted.length === 0) return base;
+
+    const next = { ...base };
+    for (const p of promoted) {
+      try {
+        const safetyRec = buildBuyRecommendation(p.ev, settings.riskProfile, cap, true);
+        if (safetyRec.decision === "buy") {
+          // 既存の overall/warnings 等は既存 rec から保持
+          const prevRec = base[p.id] || {};
+          safetyRec.overall = prevRec.overall || safetyRec.overall;
+          safetyRec.warnings = prevRec.warnings || safetyRec.warnings || [];
+          safetyRec.venueProfile = prevRec.venueProfile || safetyRec.venueProfile || null;
+          safetyRec.timeSlot = prevRec.timeSlot || safetyRec.timeSlot || null;
+          safetyRec.accident = prevRec.accident || safetyRec.accident || null;
+          safetyRec.structuralAssessment = prevRec.structuralAssessment || safetyRec.structuralAssessment || null;
+          next[p.id] = safetyRec;
+        }
+      } catch (e) {
+        console.error("[r151 safetyBuy] failed for", p.id, e);
+      }
+    }
+    return next;
+  }, [allStyleRecommendations, settings.riskProfile, races, evals, cap]);
 
   /* Round 32: 戦略ランキング (allStyleRecommendations から導出) */
   const strategyRanking = useMemo(
