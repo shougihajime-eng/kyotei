@@ -455,14 +455,16 @@ export default function App() {
     const buyEntries = Object.entries(base).filter(([_, rec]) => rec?.decision === "buy");
     if (buyEntries.length >= SAFETY_MIN_BUY) return base;
 
+    // 🔧 Round 160 緊急バグ修正: ev.candidates は存在しない (evaluateRace の戻り値は items)
     // skip 判定の中から EV 上位 (1.0 以上) を抽出
     const candidates = [];
     for (const r of races) {
       const rec = base[r.id];
       if (!rec || rec.decision !== "skip") continue;
       const ev = evals[r.id];
-      if (!ev?.ok || !ev.candidates || ev.candidates.length === 0) continue;
-      const topEv = ev.candidates[0]?.ev || 0;
+      if (!ev?.ok) continue;
+      // 候補となる買い目 = ev.items (券種別本命候補) または ev.maxEV
+      const topEv = ev.items?.[0]?.ev ?? ev.maxEV ?? 0;
       if (topEv < 1.0) continue; // 期待値 1.0 未満は救済しない (大損リスク)
       candidates.push({ id: r.id, race: r, ev, topEv });
     }
