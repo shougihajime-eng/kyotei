@@ -26,9 +26,10 @@
 - ✅ Round 179 — **場別ランキング機能 設計フェーズ** (SPEC §6.1.2)。 新規 `docs/RANKING-DESIGN.md` 起案 (8 章 / 約 285 行)。 既存 API 実機調査、 スコア式・タグ生成ルール・UI 設計を確定。
 - ✅ Round 180 — **場別 モーター TOP10 実装** (SPEC §6.1.2)。 新規 3 ファイル (venueRanking.js / MotorRankingTable.jsx / VenueRankings.jsx)。 motor2 60% + boat2 25% + 展示 15% スコア、 タグ 4 種 (展示気配◎/部品交換/人気の割に強い/安定)、 場切替タブ動的生成。
 - ✅ Round 181 — **場別 選手 TOP10 実装** (SPEC §6.1.2)。 当地勝率 30% (全国 20% より重く)、 タグ 6 種 (🌊会場巧者 / 🎯ST安定 / 🚀イン巧者 / 🔥マクリ得意 / 💎相性良好 / ⚖安定)、 クラスバッジ。 「場別ランキング機能」 完成。
-- ✅ Round 182 — **AI 進化 段階 B 場別重み学習実装** (SPEC §12 段階 B)。 5 場それぞれが独立した重みを持てるように。 ① `mansyuWeights.js` に `loadVenueWeights(jcd)` / `saveVenueWeights(jcd, w)` / `loadAllVenueWeightsMap()` / `resetVenueWeights(jcd)` 追加、 localStorage キー `mansyuVenueWeights` ({ jcd → weights })。 ② `mansyu.js` に `setVenueWeights(jcd, w)` / `getVenueWeights(jcd)` 追加、 `scoreMansyu(race)` に「引数 > 場別重み (race.jcd) > 全場共通 > 全 1.0」 の優先順導入。 ③ `mansyuLearning.js` の `analyzeMansyuLearning` に `opts.jcd` フィルタオプション追加 (場別データだけで集計可能に)。 ④ `mansyuLearningAuto.js` に `runVenueLearningCycles(predictions, races)` / `shouldRunVenueLearning()` / `runOneVenueLearning()` 追加 — TARGET_VENUES 5 場ループで独立学習、 各場の結果を履歴に jcd フィールド付きで push (kind: venue_applied / venue_skipped)。 ⑤ App.jsx 起動時に `loadAllVenueWeightsMap()` で全場分を `setVenueWeights` 反映、 既存 useEffect に場別学習サイクル追加 (1 日 1 回、 適用された場の数をトースト通知)。 モーター別 / 選手別学習は ID 取得問題が解決してから別 Round で実装。
+- ✅ Round 182 — **AI 進化 段階 B 場別重み学習実装** (SPEC §12 段階 B)。 5 場が独立重みを持つ、 場別学習サイクル、 scoreMansyu の場別重み優先。
+- ✅ Round 183 — **PC 最適化** (SPEC §8)。 ① MansyuTop の maxWidth: 920 → 1280 (1920px ワイドモニタでも余白がスカスカにならない)、 padding clamp(8px, 3vw, 24px) で PC 余白拡大。 ② CardGrid の minmax: 420px → 380px に変更 (1 列スマホ / 2 列タブレット / 3 列 PC ワイド の自動切替)。 これで PC で同時 3 件のレースカードを横並びで見られるダッシュボード化。 大規模な 2 カラムレイアウト (左: Hero + 件数 / 右: カード一覧) は Round 184 以降に分けて検討。
 - 🟡 進行中: なし
-- 🔜 次の一歩: **SPEC §9 ロードマップに従って Round 183 から実装**。 ① Round 183: PC 最適化 (2-3 列ダッシュボード化、 hover インタラクション、 キーボード操作対応、 1920px ワイドモニタ対応) → ② Round 200 想定: AI 段階 C ディープラーニング (TensorFlow.js or Vercel Functions サーバ推論)。
+- 🔜 次の一歩: **SPEC ロードマップの主要項目はほぼ完成**。 残: ① Round 200 想定: AI 段階 C ディープラーニング (TensorFlow.js or Vercel Functions サーバ推論 — データ 1,000 件以上溜まってから検討) ② Round 184+ (任意): モーター別 / 選手別 細粒度学習 (ID 取得問題が解決してから) / 大規模 2 カラム PC レイアウト / 通知の Service Worker 化。
 
 ## 🌐 本番URL
 

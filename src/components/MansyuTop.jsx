@@ -93,7 +93,10 @@ export default function MansyuTop({
   const secondsToNext = nextRefreshMs ? Math.max(0, Math.round((nextRefreshMs - now) / 1000)) : null;
 
   return (
-    <div style={{ maxWidth: 920, margin: "0 auto", padding: "12px clamp(8px, 3vw, 16px) 0" }}>
+    <div style={{
+      maxWidth: 1280, margin: "0 auto",
+      padding: "12px clamp(8px, 3vw, 24px) 0",
+    }}>
       {/* ===== ブランドバナー ===== */}
       <div style={{
         background: "linear-gradient(135deg, #0a0e1a 0%, #15172a 100%)",
@@ -360,8 +363,10 @@ function CardGrid({ children }) {
   return (
     <div style={{
       display: "grid",
-      gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 420px), 1fr))",
-      gap: 10,
+      // Round 183: PC 最適化。 1 列 (スマホ) / 2 列 (タブレット) / 3 列 (PC ワイド) 自動切替。
+      // minmax 380px で PC 3 列、 タブレットで 2 列、 スマホで 1 列に自然に折り返す。
+      gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 380px), 1fr))",
+      gap: 12,
     }}>
       {children}
     </div>
