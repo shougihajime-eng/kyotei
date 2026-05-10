@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, useCallback, useRef, startTransition, lazy, Suspense } from "react";
 import Header from "./components/Header.jsx";
 import MansyuTop from "./components/MansyuTop.jsx";
-import RaceList from "./components/RaceList.jsx";
+// Round 171: RaceList (「📋 一覧」 タブ) は SPEC §6 に従って完全廃止。 ファイル削除済。
 import Onboarding from "./components/Onboarding.jsx";
 import ComplianceFooter from "./components/ComplianceFooter.jsx";
 
@@ -2061,12 +2061,7 @@ export default function App() {
             }}
           />
         )}
-        {tab === "list" && (
-          <RaceList
-            races={races} evals={evals} recommendations={recommendations}
-            onPickRace={(id) => { setSelectedRaceId(id); setTab("detail"); }}
-          />
-        )}
+        {/* Round 171: tab === "list" ブロックは SPEC §6 に従って完全廃止。 */}
         {tab === "detail" && (
           <Suspense fallback={<LazyFallback />}>
             {/* Round 166 (Phase 2.5): MansyuDetail を上段に表示 (荒れスコアのレーダーチャート + 成分別の理由)。
@@ -2089,7 +2084,7 @@ export default function App() {
                 predictions[`${(selectedRace.date || "").replace(/-/g, "")}_${selectedRace.id}_${settings.riskProfile}`]
               ) : null}
               onRecord={handleRecord}
-              onBack={() => setTab("list")}
+              onBack={() => setTab("home")}
               virtualMode={settings.virtualMode}
             />
           </Suspense>
