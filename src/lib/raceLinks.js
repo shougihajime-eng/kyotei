@@ -140,6 +140,30 @@ export function buildRaceResultUrl(venueCode, date, raceNo) {
 }
 
 /**
+ * Round 161: オッズ (3連単) ページ URL を生成
+ * 公式仕様: https://www.boatrace.jp/owpc/pc/race/oddstf?rno={rno}&jcd={jcd}&hd={YYYYMMDD}
+ */
+export function buildOddsUrl(venueCode, date, raceNo) {
+  const jcd = resolveVenueCode(venueCode, null);
+  const hd = normalizeHd(date);
+  const rno = normalizeRno(raceNo);
+  if (!jcd || !hd || !rno) return null;
+  return `${BOATRACE_BASE}/race/oddstf?rno=${rno}&jcd=${jcd}&hd=${hd}`;
+}
+
+/**
+ * Round 161: 直前情報 (展示・気象) ページ URL を生成
+ * 公式仕様: https://www.boatrace.jp/owpc/pc/race/beforeinfo?rno={rno}&jcd={jcd}&hd={YYYYMMDD}
+ */
+export function buildBeforeInfoUrl(venueCode, date, raceNo) {
+  const jcd = resolveVenueCode(venueCode, null);
+  const hd = normalizeHd(date);
+  const rno = normalizeRno(raceNo);
+  if (!jcd || !hd || !rno) return null;
+  return `${BOATRACE_BASE}/race/beforeinfo?rno=${rno}&jcd=${jcd}&hd=${hd}`;
+}
+
+/**
  * リプレイがそろそろ公開されているか (= レース終了後 ≈ 30分以上経過) を推定。
  * 厳密ではない (公式の公開タイミングは保証されない) が、
  * 未来の日付・当日でレース前 のような明らかな未公開ケースは弾く。
@@ -206,15 +230,19 @@ export function buildRaceLinks(race, now) {
     };
   }
 
-  const raceCardUrl = `${BOATRACE_BASE}/race/racelist?rno=${rno}&jcd=${code}&hd=${hd}`;
-  const resultUrl   = `${BOATRACE_BASE}/race/raceresult?rno=${rno}&jcd=${code}&hd=${hd}`;
-  const available   = isReplayLikelyAvailable(date, startTime, now);
-  const replayUrl   = available
+  const raceCardUrl   = `${BOATRACE_BASE}/race/racelist?rno=${rno}&jcd=${code}&hd=${hd}`;
+  const oddsUrl       = `${BOATRACE_BASE}/race/oddstf?rno=${rno}&jcd=${code}&hd=${hd}`;
+  const beforeInfoUrl = `${BOATRACE_BASE}/race/beforeinfo?rno=${rno}&jcd=${code}&hd=${hd}`;
+  const resultUrl     = `${BOATRACE_BASE}/race/raceresult?rno=${rno}&jcd=${code}&hd=${hd}`;
+  const available     = isReplayLikelyAvailable(date, startTime, now);
+  const replayUrl     = available
     ? `${BOATCAST_BASE}/?jo=${code}&hd=${hd}`
     : null;
 
   return {
     raceCardUrl,
+    oddsUrl,         // Round 161: オッズページ
+    beforeInfoUrl,   // Round 161: 直前情報ページ
     replayUrl,
     resultUrl,
     replayPending: !available,

@@ -11,8 +11,10 @@
 export function defaultSettings() {
   return {
     bankroll: 50000,
-    dailyBudget: 2500,
-    perRaceLimit: 1000,
+    // Round 161: 万舟研究所 — 「買う場合は 5,000 円固定」 仕様
+    dailyBudget: 25000,        // 1 日 5 レース分 (5,000 × 5)
+    perRaceLimit: 5000,        // 1 レース上限 = 固定額
+    fixedRaceStake: 5000,      // 1 レース合計の固定額 (Round 161)
     riskProfile: "balanced", // 安全 (steady) / バランス (balanced) / 攻め (aggressive)
     evMin: 1.10,
     virtualMode: true,       // エア舟券モード
@@ -40,9 +42,14 @@ export function summarizeToday(predictions) {
   return { air, real };
 }
 
-/* 1 レースに使える金額 = min(perRaceLimit, dailyBudget - todayStake) */
+/* 1 レースに使える金額 = min(perRaceLimit, dailyBudget - todayStake)
+   Round 161: fixedRaceStake が設定されていれば固定額を優先 (買う場合 5,000 円固定) */
 export function perRaceCap(settings, today) {
   const total = (today.air?.stake || 0) + (today.real?.stake || 0);
   const remaining = Math.max(0, (settings.dailyBudget || 0) - total);
+  // fixedRaceStake が指定されていれば、 残予算が足りる範囲でそれを返す
+  if (settings.fixedRaceStake && settings.fixedRaceStake > 0) {
+    return Math.min(settings.fixedRaceStake, remaining);
+  }
   return Math.max(0, Math.min(settings.perRaceLimit || 0, remaining));
 }

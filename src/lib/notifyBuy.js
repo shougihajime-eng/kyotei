@@ -159,3 +159,131 @@ export function primeSentResults(predictions) {
     if (p?.result?.first) sentResultIds.add(key);
   }
 }
+
+/* === Round 161: 激荒れ警報 / 締切 10 分前 / 締切 3 分前 / 万舟的中 === */
+const sentStormIds = new Set();
+const sentClose10Ids = new Set();
+const sentClose3Ids = new Set();
+const sentBigHitIds = new Set();
+
+/**
+ * 激荒れ警報 (storm alert): 荒れスコア大 + EV 大 のレースが直前に出た時に通知
+ *   @param {object} race  - { id, venue, raceNo, startTime }
+ *   @param {object} info  - { stormScore: 0-100, expectedTrifecta: number, reason: string }
+ *   @returns {boolean} 通知を送ったか
+ */
+export function sendStormAlert(race, info = {}) {
+  if (!isNotificationEnabled() || !race?.id) return false;
+  if (sentStormIds.has(race.id)) return false;
+  try {
+    const score = info.stormScore != null ? `荒れ ${info.stormScore}/100` : "激荒れ";
+    const reason = info.reason ? `\n${info.reason}` : "";
+    const expect = info.expectedTrifecta ? `\n期待 ${info.expectedTrifecta.toLocaleString()} 円` : "";
+    const n = new Notification("⚡ 激荒れ警報", {
+      body: `${race.venue} ${race.raceNo}R — ${score}${reason}${expect}`,
+      tag: `kyotei-storm-${race.id}`,
+      icon: "/favicon.ico",
+      badge: "/favicon.ico",
+      requireInteraction: false,
+    });
+    n.onclick = () => { try { window.focus(); n.close(); } catch {} };
+    sentStormIds.add(race.id);
+    return true;
+  } catch (e) {
+    console.error("[notifyStorm] failed:", e);
+    return false;
+  }
+}
+
+/**
+ * 締切 10 分前通知 (1 レース 1 回)
+ *   @param {object} race - { id, venue, raceNo, startTime }
+ *   @returns {boolean}
+ */
+export function sendCloseSoon10(race) {
+  if (!isNotificationEnabled() || !race?.id) return false;
+  if (sentClose10Ids.has(race.id)) return false;
+  try {
+    const n = new Notification("⏰ 締切 10 分前", {
+      body: `${race.venue} ${race.raceNo}R が 10 分後に締切です (発走 ${race.startTime || "?"})`,
+      tag: `kyotei-close10-${race.id}`,
+      icon: "/favicon.ico",
+      badge: "/favicon.ico",
+      requireInteraction: false,
+    });
+    n.onclick = () => { try { window.focus(); n.close(); } catch {} };
+    sentClose10Ids.add(race.id);
+    return true;
+  } catch (e) {
+    console.error("[notifyClose10] failed:", e);
+    return false;
+  }
+}
+
+/**
+ * 締切 3 分前通知 (1 レース 1 回)
+ *   @param {object} race - { id, venue, raceNo, startTime }
+ *   @returns {boolean}
+ */
+export function sendCloseSoon3(race) {
+  if (!isNotificationEnabled() || !race?.id) return false;
+  if (sentClose3Ids.has(race.id)) return false;
+  try {
+    const n = new Notification("🚨 締切 3 分前", {
+      body: `${race.venue} ${race.raceNo}R が 3 分後に締切 — 買うなら今!`,
+      tag: `kyotei-close3-${race.id}`,
+      icon: "/favicon.ico",
+      badge: "/favicon.ico",
+      requireInteraction: true,
+    });
+    n.onclick = () => { try { window.focus(); n.close(); } catch {} };
+    sentClose3Ids.add(race.id);
+    return true;
+  } catch (e) {
+    console.error("[notifyClose3] failed:", e);
+    return false;
+  }
+}
+
+/**
+ * 万舟的中通知 (3連単 配当 10,000 円以上の的中)
+ *   @param {object} prediction - finalize 済の prediction (hit=true / payout / pnl)
+ *   @returns {boolean}
+ */
+export function sendBigHitNotification(prediction) {
+  if (!isNotificationEnabled() || !prediction?.key) return false;
+  if (!prediction.hit) return false;
+  if (sentBigHitIds.has(prediction.key)) return false;
+  // 万舟判定: 配当 ≥ 10000 円 または 単点 odds ≥ 100
+  const payout = prediction.payout || 0;
+  const stake  = prediction.totalStake || 0;
+  const isMan = (stake > 0 && payout >= stake * 100) || (payout >= 10000);
+  if (!isMan) return false;
+  try {
+    const venue = prediction.venue || "";
+    const rno = prediction.raceNo ? `${prediction.raceNo}R` : "";
+    const correct = `${prediction.result.first}-${prediction.result.second}-${prediction.result.third}`;
+    const pnl = prediction.pnl ?? 0;
+    const n = new Notification("🎉 万舟的中!!", {
+      body: `${venue} ${rno}\n配当 +¥${pnl.toLocaleString()} (正解 ${correct})`,
+      tag: `kyotei-bighit-${prediction.key}`,
+      icon: "/favicon.ico",
+      badge: "/favicon.ico",
+      requireInteraction: true,
+    });
+    n.onclick = () => { try { window.focus(); n.close(); } catch {} };
+    sentBigHitIds.add(prediction.key);
+    return true;
+  } catch (e) {
+    console.error("[notifyBigHit] failed:", e);
+    return false;
+  }
+}
+
+/** 起動時に既存 finalize 済の万舟予想を「通知済」にしておく */
+export function primeSentBigHits(predictions) {
+  if (!predictions) return;
+  for (const [key, p] of Object.entries(predictions)) {
+    if (p?.hit) sentBigHitIds.add(key);
+  }
+}

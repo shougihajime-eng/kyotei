@@ -91,12 +91,52 @@ export function applyResultToPrediction(prediction, apiResult, stamp) {
         : winnerWin;
       if (im.combo === winnerForKind) { skipCorrect = false; skipMissed = true; }
     }
+    /* === Round 161: 「もし買っていたら」 計算 (見送り研究データ) ===
+       intendedCombos (見送り時に AI が出していた買い目セット) があれば、
+       その全買い目について 5,000 円配分で「実際買っていたら」 のシミュレーションを保存。
+       これで見送りが正解だったかを後から研究できる。 */
+    const intendedCombos = prediction.intendedCombos || (im ? [im] : []);
+    const TOTAL_BUDGET = 5000;
+    let intendedPayout = 0;
+    let intendedHit = false;
+    const stakePer = intendedCombos.length > 0
+      ? Math.max(100, Math.floor(TOTAL_BUDGET / intendedCombos.length / 100) * 100)
+      : 0;
+    for (const c of intendedCombos) {
+      const winnerForKind =
+          c.kind === "3連単" ? winnerTri
+        : c.kind === "2連単" ? winnerEx
+        : c.kind === "2連複" ? [apiResult.first, apiResult.second].sort((a, b) => a - b).join("=")
+        : c.kind === "3連複" ? [apiResult.first, apiResult.second, apiResult.third].sort((a, b) => a - b).join("=")
+        : winnerWin;
+      const yenPer100 =
+          c.kind === "3連単" ? apiResult.payouts?.trifecta?.[winnerTri]
+        : c.kind === "2連単" ? apiResult.payouts?.exacta?.[winnerEx]
+        : c.kind === "2連複" ? apiResult.payouts?.quinella?.[
+            [apiResult.first, apiResult.second].sort((a, b) => a - b).join("=")
+          ]
+        : c.kind === "3連複" ? apiResult.payouts?.trio?.[
+            [apiResult.first, apiResult.second, apiResult.third].sort((a, b) => a - b).join("=")
+          ]
+        : c.kind === "単勝" ? apiResult.payouts?.tan?.[winnerWin]
+        : 0;
+      if (c.combo === winnerForKind && yenPer100) {
+        intendedPayout += (stakePer / 100) * yenPer100;
+        intendedHit = true;
+      }
+    }
+    const intendedStake = stakePer * intendedCombos.length;
+    const intendedPnl = intendedPayout - intendedStake;
     return {
       ...prediction,
       result: resultObj,
       skipCorrect,
       skipMissed,
       finalized: true,
+      // Round 161: 「もし買っていたら」 シミュレーション結果
+      whatIfBuy: intendedCombos.length > 0
+        ? { stake: intendedStake, payout: intendedPayout, pnl: intendedPnl, hit: intendedHit, combos: intendedCombos.length }
+        : null,
     };
   }
 

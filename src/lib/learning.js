@@ -182,6 +182,72 @@ export function getLearnedWeights(predictions) {
     notes.push({ kind: "info", text: `1号艇本命的中率 ${Math.round(inHitRate*100)}% — 期間で傾向が異なるため重み変更を見送り (過学習防止)` });
   }
 
+  /* === Round 161: 多軸 ROI 補正 (荒れスコア重みの自動改善) ===
+     ・強風 (>=5m): 荒れた回数 / 万舟率 を集計 → 「強風加点を強める」 提案
+     ・深イン (1号艇 inProb >= 0.55): 1号艇 1 着率 → 「深インの加点」 提案
+     ・展示悪化: 本命艇 exTime が遅い時の的中率
+     ・カド攻め (4号艇本命 / 4号艇1着): 4 カドの ROI
+     全て ±0.02 の控えめ補正、最低 5 件以上のサンプルが必要。 */
+  // 強風 ROI
+  const strongWind = settled.filter((p) => (p.weatherSnapshot?.wind ?? p.wind ?? 0) >= 5);
+  if (strongWind.length >= 5) {
+    const sw = summarize(strongWind);
+    if (sw.roi >= 1.10) {
+      adj.windPenalty = (adj.windPenalty || 0) + 0.02;
+      notes.push({ kind: "pos", text: `強風時 ROI ${Math.round(sw.roi*100)}% (${strongWind.length}件) → 強風加点 +0.02 採用` });
+    } else if (sw.roi <= 0.85) {
+      adj.windPenalty = (adj.windPenalty || 0) - 0.02;
+      notes.push({ kind: "neg", text: `強風時 ROI ${Math.round(sw.roi*100)}% (${strongWind.length}件) → 強風加点 -0.02 (慎重に)` });
+    }
+  }
+  // 深イン (1号艇 inProb >= 0.55)
+  const deepIn = settled.filter((p) => Array.isArray(p.probs) && p.probs[0] >= 0.55);
+  if (deepIn.length >= 5) {
+    const di = summarize(deepIn);
+    if (di.roi >= 1.10) {
+      adj.deepInBoost = 0.02;
+      notes.push({ kind: "pos", text: `深イン (確率55%↑) ROI ${Math.round(di.roi*100)}% (${deepIn.length}件) → 深イン加点 +0.02 採用` });
+    } else if (di.roi <= 0.85) {
+      adj.deepInBoost = -0.02;
+      notes.push({ kind: "neg", text: `深イン ROI ${Math.round(di.roi*100)}% (${deepIn.length}件) → 深イン加点 -0.02 (過信注意)` });
+    }
+  }
+  // 展示評価 (本命艇 exTime ベース)
+  const exDataAll = settled.filter((p) => {
+    const mainBoatNum = parseInt((p.combos || [])[0]?.combo?.[0] || "0");
+    const boats = p.boats || p.weatherSnapshot?.boats;
+    return mainBoatNum && Array.isArray(boats) && boats[mainBoatNum - 1]?.exTime != null;
+  });
+  if (exDataAll.length >= 5) {
+    const exGood = exDataAll.filter((p) => {
+      const mainBoatNum = parseInt((p.combos || [])[0]?.combo?.[0] || "0");
+      const boats = p.boats || p.weatherSnapshot?.boats;
+      return boats[mainBoatNum - 1].exTime <= 6.85;
+    });
+    if (exGood.length >= 5) {
+      const xg = summarize(exGood);
+      if (xg.roi >= 1.10) {
+        adj.exhibitionBoost = 0.02;
+        notes.push({ kind: "pos", text: `展示◎ (≤6.85) ROI ${Math.round(xg.roi*100)}% (${exGood.length}件) → 展示加点 +0.02 採用` });
+      } else if (xg.roi <= 0.85) {
+        adj.exhibitionBoost = -0.02;
+        notes.push({ kind: "info", text: `展示◎ ROI ${Math.round(xg.roi*100)}% (${exGood.length}件) → 展示重みを下げる -0.02` });
+      }
+    }
+  }
+  // カド攻め (4号艇本命 / 4号艇1着の的中・回収)
+  const cad = settled.filter((p) => parseInt((p.combos || [])[0]?.combo?.[0]) === 4);
+  if (cad.length >= 5) {
+    const cd = summarize(cad);
+    if (cd.roi >= 1.20) {
+      adj.cadAdvantage = 0.02;
+      notes.push({ kind: "pos", text: `4カド本命 ROI ${Math.round(cd.roi*100)}% (${cad.length}件) → カド攻め加点 +0.02 採用` });
+    } else if (cd.roi <= 0.80) {
+      adj.cadAdvantage = -0.02;
+      notes.push({ kind: "neg", text: `4カド本命 ROI ${Math.round(cd.roi*100)}% (${cad.length}件) → カド過信減点 -0.02` });
+    }
+  }
+
   // 学習ログに記録 (同日内の重複は避ける)
   const today = new Date().toISOString().slice(0, 10);
   const log = loadLearningLog();

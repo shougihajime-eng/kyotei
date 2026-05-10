@@ -84,6 +84,57 @@ export default function RaceLinks({
         accentRgba="rgba(34, 211, 238,"
       />
 
+      {/* === Round 161: オッズ === */}
+      <LinkPill
+        href={links.oddsUrl}
+        disabled={!links.oddsUrl}
+        icon="💴"
+        label="オッズ"
+        title={links.oddsUrl
+          ? `${race.venue || ""} ${race.raceNo || "?"}R の最新オッズを別タブで開く`
+          : "URL を生成できませんでした"}
+        fontSize={fontSize}
+        minHeight={minHeight}
+        padding={padding}
+        radius={radius}
+        accent="#FCD34D"
+        accentRgba="rgba(252, 211, 77,"
+      />
+
+      {/* === Round 161: 直前情報 === */}
+      <LinkPill
+        href={links.beforeInfoUrl}
+        disabled={!links.beforeInfoUrl}
+        icon="🌬️"
+        label="直前情報"
+        title={links.beforeInfoUrl
+          ? `${race.venue || ""} ${race.raceNo || "?"}R の展示・気象を別タブで開く`
+          : "URL を生成できませんでした"}
+        fontSize={fontSize}
+        minHeight={minHeight}
+        padding={padding}
+        radius={radius}
+        accent="#F472B6"
+        accentRgba="rgba(244, 114, 182,"
+      />
+
+      {/* === 結果 (Round 161: デフォルト ON で表示) === */}
+      {showResult !== false && (
+        <LinkPill
+          href={links.resultUrl}
+          disabled={!links.resultUrl}
+          icon="🏁"
+          label="結果"
+          title={links.resultUrl ? "公式の確定結果ページを開く" : "URL を生成できませんでした"}
+          fontSize={fontSize}
+          minHeight={minHeight}
+          padding={padding}
+          radius={radius}
+          accent="var(--c-success)"
+          accentRgba="rgba(16, 185, 129,"
+        />
+      )}
+
       {/* === リプレイ ===
           公式は per-race deep link を出さないため、 race.boatcast.jp の
           会場 + 日付ページへ遷移して、 ユーザーが SPA 内で R 番号選択する想定 */}
@@ -102,23 +153,6 @@ export default function RaceLinks({
         accent="#A78BFA"
         accentRgba="rgba(167, 139, 250,"
       />
-
-      {/* === 結果 (オプション) === */}
-      {showResult && (
-        <LinkPill
-          href={links.resultUrl}
-          disabled={!links.resultUrl}
-          icon="🏁"
-          label="結果"
-          title={links.resultUrl ? "公式の確定結果ページを開く" : "URL を生成できませんでした"}
-          fontSize={fontSize}
-          minHeight={minHeight}
-          padding={padding}
-          radius={radius}
-          accent="var(--c-success)"
-          accentRgba="rgba(16, 185, 129,"
-        />
-      )}
     </div>
   );
 }

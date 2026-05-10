@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useCallback, useRef, startTransition, lazy, Suspense } from "react";
 import Header from "./components/Header.jsx";
-import Dashboard from "./components/Dashboard.jsx";
+import MansyuTop from "./components/MansyuTop.jsx";
 import RaceList from "./components/RaceList.jsx";
 import Onboarding from "./components/Onboarding.jsx";
 import ComplianceFooter from "./components/ComplianceFooter.jsx";
@@ -362,9 +362,20 @@ export default function App() {
   const today = useMemo(() => summarizeToday(visiblePredictions), [visiblePredictions]);
   const cap = useMemo(() => perRaceCap(settings, today), [settings, today]);
 
-  /* 過去成績から学習した重み補正 (-0.05〜+0.05) を計算 */
-  // Round 52: 学習も v2 のみ参照 (legacy データに引きずられない)
-  const learnedWeights = useMemo(() => getLearnedWeights(visiblePredictions), [visiblePredictions]);
+  /* 過去成績から学習した重み補正 (-0.05〜+0.05) を計算
+     Round 52: 学習も v2 のみ参照 (legacy データに引きずられない)
+     Round 161: 自己学習は predictions が変わるたびに自動再計算される。
+       - 結果確定 (backfillResults → setPredictions) → 自動再計算
+       - 1 日終了 / 翌日朝の起動時 → 自動再計算 (predictions 初期ロード時)
+       - LossAnalysis 画面でも getLearningLog() で履歴を確認できる */
+  const learnedWeights = useMemo(() => {
+    const w = getLearnedWeights(visiblePredictions);
+    // Round 161: 学習が新たに採用/ロールバックされたらコンソールに記録
+    if (w?.decision === "accepted" || w?.decision === "rollback") {
+      console.log(`[万舟研究所] 学習 ${w.decision === "accepted" ? "採用" : "ロールバック"} — sample ${w.sampleSize} / ${w.reason}`);
+    }
+    return w;
+  }, [visiblePredictions]);
 
   /* Round 130: 当日リアルタイム補正 — 会場別の今日の傾向を計算
      ・visiblePredictions (= 当日確定済結果含む) から会場別に集計
@@ -1365,6 +1376,7 @@ export default function App() {
     if (primedRef.current) return;
     if (!predictions || Object.keys(predictions).length === 0) return;
     primeSentResults(predictions);
+    primeSentBigHits(predictions); // Round 161: 過去の万舟も 「通知済」 にする
     primedRef.current = true;
   }, [predictions]);
 
@@ -1409,9 +1421,15 @@ export default function App() {
             for (const p of newlyFinalized) {
               try {
                 sendResultNotification(p);
+                // Round 161: 万舟的中 (配当 10,000 円以上) なら別通知
+                sendBigHitNotification(p);
                 // タブが見えている時は画面用にトーストも出す (ユーザー体験 - 何が起きたか分かる)
                 if (typeof document !== "undefined" && document.visibilityState === "visible") {
-                  const headline = p.hit ? `🎯 当選 ${p.venue} ${p.raceNo}R` : `❌ 外れ ${p.venue} ${p.raceNo}R`;
+                  const isBigHit = p.hit && (p.payout ?? 0) >= 10000;
+                  const headline = isBigHit
+                    ? `🎉 万舟的中! ${p.venue} ${p.raceNo}R`
+                    : p.hit ? `🎯 当選 ${p.venue} ${p.raceNo}R`
+                            : `❌ 外れ ${p.venue} ${p.raceNo}R`;
                   const pnlStr = (p.pnl ?? 0) >= 0 ? `+${(p.pnl ?? 0).toLocaleString()}` : `${(p.pnl ?? 0).toLocaleString()}`;
                   showToast(`${headline} ¥${pnlStr}`, p.hit ? "ok" : "neg");
                 }
@@ -1983,28 +2001,14 @@ export default function App() {
 
       <main style={{ paddingBottom: "calc(80px + env(safe-area-inset-bottom, 0px))" }} key={tab} className="page-fade">
         {tab === "home" && (
-          <Dashboard
-            races={races} predictions={visiblePredictions} recommendations={recommendations}
-            visibleData={visibleData}
-            evals={evals}
-            today={today} weekly={weekly}
-            refreshing={refreshing} refreshMsg={refreshMsg} lastRefreshAt={lastRefreshAt}
-            nextRefreshAt={nextRefreshAt}
-            onRefresh={refreshAll} onRetry={refreshAll} onRecord={handleRecord} settings={settings}
-            switchProfile={switchProfile}
-            strategyRanking={strategyRanking}
-            scanStats={scanStats}
-            styleAllocation={styleAllocation}
-            styleHeadlines={styleHeadlines}
-            goMode={goMode}
+          <MansyuTop
+            races={races}
+            refreshing={refreshing}
+            refreshMsg={refreshMsg}
+            lastRefreshAt={lastRefreshAt}
+            onRefresh={refreshAll}
             isSampleMode={isSampleMode}
-            storageStatus={storageStatus}
-            publicLogTick={publicLogTick}
-            authUser={authUser}
-            syncStatus={syncStatus}
-            onReset={handleReset}
             onPickRace={(t) => {
-              // Round 119: "stats:ai" → Stats を AI タブで開く
               if (t === "stats:ai") {
                 setStatsInitialTab("ai");
                 setTab("stats");

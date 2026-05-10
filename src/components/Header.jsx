@@ -58,20 +58,20 @@ function HeaderImpl({ tab, setTab, today, settings, setSettings, switchProfile, 
         <div className="flex items-center gap-2.5" style={{ minWidth: 0, flex: "0 0 auto" }}>
           <div style={{
             width: 38, height: 38, borderRadius: 11,
-            background: "linear-gradient(135deg, #22D3EE 0%, #2563EB 100%)",
+            background: "linear-gradient(135deg, #FBBF24 0%, #DC2626 100%)",
             display: "flex", alignItems: "center", justifyContent: "center",
-            boxShadow: "0 4px 14px rgba(34, 211, 238, 0.32), inset 0 1px 0 rgba(255,255,255,0.20)",
+            boxShadow: "0 4px 14px rgba(220, 38, 38, 0.32), inset 0 1px 0 rgba(255,255,255,0.20)",
             fontSize: 19,
-          }}>🚤</div>
+          }}>🌊</div>
           <div style={{ minWidth: 0 }}>
-            <div className="brand-logo" style={{ fontSize: 18, lineHeight: 1.0, letterSpacing: "-0.01em" }}>競艇 AI</div>
+            <div className="brand-logo" style={{ fontSize: 18, lineHeight: 1.0, letterSpacing: "-0.01em", color: "#FBBF24" }}>万舟研究所</div>
             {effectiveRaceDate ? (
               <div style={{ fontSize: 10.5, color: "var(--brand-text)", letterSpacing: "0.04em", fontWeight: 600, marginTop: 2 }}>
                 📅 {effectiveRaceDate}
               </div>
             ) : (
               <div style={{ fontSize: 9, color: "var(--text-quaternary)", letterSpacing: "0.10em", marginTop: 2, fontWeight: 600 }}>
-                EV ASSISTANT
+                MANSYU LAB
               </div>
             )}
           </div>

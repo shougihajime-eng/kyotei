@@ -1,9 +1,9 @@
 {
-  "name": "kyotei-ev-assistant",
+  "name": "mansyu-laboratory",
   "version": "2.0.0",
   "private": true,
   "type": "module",
-  "description": "Kyotei (boat-race) EV assistant — buy or skip, in 3 seconds.",
+  "description": "万舟研究所 — Boat-race upset detector for 5 specific venues (Toda, Edogawa, Heiwajima, Naruto, Kiryu).",
   "engines": {
     "node": ">=18"
   },

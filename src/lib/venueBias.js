@@ -230,7 +230,12 @@ export function buildWarnings(race, evals) {
   return warnings;
 }
 
-/** 負けパターン分類 (確定済みレースで「本命=1号艇 が 1着でなかった場合」の負け方) */
+/** 負けパターン分類 (確定済みレースで「本命=1号艇 が 1着でなかった場合」の負け方)
+ *  Round 161: 8 分類に拡張 (進入読み違い / 展示評価ミス / モーター過信 / 水面悪化 /
+ *                          オッズ妙味不足 / 攻め手評価不足 / 人気艇強かった / 通常決着)
+ *  - prediction には保存スナップショット (boats / wind / wave / probs / popularity) があれば
+ *    それを利用して詳細な敗因に分類する。 無ければ従来の 4 分類にフォールバック。
+ */
 export function classifyLossPattern(race, prediction) {
   if (!race?.apiResult || !prediction) return null;
   const r = race.apiResult;
@@ -238,19 +243,90 @@ export function classifyLossPattern(race, prediction) {
   const expectedHead = parseInt(prediction.combos?.[0]?.combo?.[0] || "0");
   if (!expectedHead) return null;
   if (r.first === expectedHead) return null; // 1着的中は対象外
+
+  // Round 161: 詳細な 8 分類判定 (saved snapshot ベース)
+  const snap = prediction.weatherSnapshot || {};
+  const wind = snap.wind ?? race?.wind ?? 0;
+  const wave = snap.wave ?? race?.wave ?? 0;
+  const inProb = Array.isArray(prediction.probs) && prediction.probs.length > 0
+    ? prediction.probs[0] : null;
+  // (a) 水面悪化: 強風/高波で本命が崩れた
+  if ((wind >= 6 || wave >= 8) && r.first !== expectedHead) {
+    return { kind: "水面悪化", desc: `風${wind}m / 波${wave}cm — 本命艇が水面に崩されました`, code: "water" };
+  }
   // 1号艇本命のとき
   if (expectedHead === 1) {
-    // 1号艇が3着以下なら大敗
-    // 2着以内かつ 1着が他艇なら「展開負け / まくり負け / まくり差し負け / 刺され負け」
-    const inFirst = r.first;
-    const inSecond = r.second;
+    // (b) 進入読み違い: 1号艇が 3 着以下に沈んでいる + 進入展開で大崩れ
     const ourPos = (r.first === 1 ? 1 : r.second === 1 ? 2 : r.third === 1 ? 3 : 4);
-    if (inFirst === 2 && ourPos === 2) return { kind: "刺され負け", desc: "2号艇に内側から差されました" };
-    if (inFirst === 3) return { kind: "まくり負け", desc: "3号艇のまくりに屈しました" };
-    if (inFirst === 4 || inFirst === 5 || inFirst === 6) return { kind: "外艇まくり負け", desc: `${inFirst}号艇まくり/まくり差し` };
-    if (ourPos >= 3) return { kind: "展開負け", desc: "スタート遅れまたは進入で崩れた可能性" };
+    // (c) 攻め手評価不足: 4-6 号艇が 1 着になった (荒れる根拠を見抜けなかった)
+    if (r.first >= 4) {
+      return {
+        kind: "攻め手評価不足",
+        desc: `${r.first}号艇まくり/まくり差し — 攻め根拠を見抜けず`,
+        code: "attack",
+      };
+    }
+    // (d) 刺され負け: 2 号艇に差された
+    if (r.first === 2 && ourPos === 2) {
+      return { kind: "刺され負け", desc: "2号艇に内側から差されました", code: "sashi" };
+    }
+    // (e) まくり負け: 3 号艇まくり
+    if (r.first === 3) {
+      return { kind: "まくり負け", desc: "3号艇のまくりに屈しました", code: "makuri" };
+    }
+    // (f) 進入読み違い: 1号艇が 3 着以下に沈んだ
+    if (ourPos >= 3) {
+      return { kind: "進入読み違い", desc: "スタート遅れまたは進入で 1 号艇が崩れた可能性", code: "start" };
+    }
+    // (g) 展示評価ミス: 1号艇 inProb が高かったのに外れた → 展示やモーター読みが甘い
+    if (inProb != null && inProb >= 0.55) {
+      return {
+        kind: "展示評価ミス",
+        desc: `1号艇 1 着確率 ${(inProb * 100).toFixed(0)}% と読んだが外れ — 展示・モーター読みを再考`,
+        code: "exhibition",
+      };
+    }
+    // (h) 通常決着: 想定内の負け方 (荒れていない)
+    if (r.first <= 3 && wind <= 3 && wave <= 4) {
+      return { kind: "通常決着", desc: "荒れずに本命外決着 — 取り違いの軽微な誤差", code: "normal" };
+    }
   }
-  // 外艇本命のとき
-  if (r.first === 1) return { kind: "外艇選定ミス", desc: "1号艇が逃げ切り" };
-  return { kind: "外艇選定ミス", desc: `${r.first}号艇が1着 (本命${expectedHead}号艇は${r.first === expectedHead ? "1着" : "外れ"})` };
+
+  // 外艇本命のとき (穴狙い・中堅党)
+  if (r.first === 1) {
+    // (i) 人気艇強かった: 1号艇が強く、 穴狙いが裏目
+    return { kind: "人気艇強かった", desc: "1号艇が逃げ切り — 穴狙いが裏目", code: "honmei-strong" };
+  }
+  // (j) モーター過信: 本命艇のモーター 2 連率が高くても外れた
+  const mainBoatNum = expectedHead;
+  const boatSnap = (snap.boats || prediction.boats || [])[mainBoatNum - 1];
+  if (boatSnap?.motor2 != null && boatSnap.motor2 >= 45) {
+    return {
+      kind: "モーター過信",
+      desc: `${mainBoatNum}号艇モーター ${boatSnap.motor2}% を信頼したが外れ`,
+      code: "motor",
+    };
+  }
+  // (k) オッズ妙味不足: 本命 EV が低かった
+  const mainEv = prediction.combos?.[0]?.ev;
+  if (mainEv != null && mainEv < 1.10) {
+    return {
+      kind: "オッズ妙味不足",
+      desc: `EV ${(mainEv * 100).toFixed(0)}% で買った — 妙味薄い買い目だった`,
+      code: "odds",
+    };
+  }
+  return { kind: "外艇選定ミス", desc: `${r.first}号艇が 1 着 (本命${expectedHead}号艇は外れ)`, code: "wrong-pick" };
 }
+
+/** Round 161: 敗因 8 分類のラベル (UI 表示用) */
+export const LOSS_PATTERN_LABELS = [
+  "進入読み違い",
+  "展示評価ミス",
+  "モーター過信",
+  "水面悪化",
+  "オッズ妙味不足",
+  "攻め手評価不足",
+  "人気艇強かった",
+  "通常決着",
+];

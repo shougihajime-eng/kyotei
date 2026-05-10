@@ -1145,12 +1145,14 @@ export const EV_MIN_BY_PROFILE = {
   aggressive: 1.40,  // Round 93: 1.50 → 1.40
 };
 
-/* スタイル別 「点数上限」 */
+/* スタイル別 「点数上限」
+   Round 161: 万舟研究所 — 全プロファイルで最大 5 点 cap (ユーザー仕様) */
 export const POINT_CAP_BY_PROFILE = {
   steady:     2,
   balanced:   4,
-  aggressive: 6,
+  aggressive: 5,  // 旧 6 → 5 (最大 5 点ルール)
 };
+export const MAX_POINTS_HARD_CAP = 5;  // どんな状況でも 5 点超えは禁止
 
 /* スタイル別 必要根拠数 (Round 37 で更に引き上げ — 厳選見送り強化) */
 export const MIN_EVIDENCE_BY_PROFILE = {
@@ -1613,6 +1615,37 @@ export function buildBuyRecommendation(ev, riskProfile, perRaceCap, bypassSkipRe
 
   if (items.length === 0) {
     return { decision: "skip", reason: "予算配分後の有効候補なし", items: [], total: 0 };
+  }
+
+  /* === Round 161: 万舟研究所ルール — 重複除外 + 5 点ハードキャップ === */
+  // (a) 重複コンボ除外: 同じ kind + combo の買い目は最初の 1 点だけ残す
+  {
+    const seen = new Set();
+    const unique = [];
+    for (const it of items) {
+      const key = `${it.kind}|${it.combo}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      unique.push(it);
+    }
+    if (unique.length < items.length) {
+      why = `${why}（重複除外で ${items.length - unique.length} 点削減）`;
+      items.length = 0;
+      items.push(...unique);
+    }
+  }
+  // (b) 5 点ハードキャップ
+  if (items.length > MAX_POINTS_HARD_CAP) {
+    items.length = MAX_POINTS_HARD_CAP;
+    why = `${why}（5 点ハードキャップ適用）`;
+  }
+  // (c) 5,000 円ぴったり配分: 配分の floor で出た余りを本命に加算
+  if (perRaceCap >= 100 && items.length > 0) {
+    const sumPre = items.reduce((s, it) => s + it.stake, 0);
+    if (sumPre < perRaceCap) {
+      const remainder = Math.floor((perRaceCap - sumPre) / 100) * 100;
+      if (remainder > 0) items[0].stake += remainder;
+    }
   }
 
   // === Round 20: トリガミ除外 ===
