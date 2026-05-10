@@ -23,6 +23,14 @@ import {
   levelLabel,
   levelColor,
 } from "../lib/mansyu.js";
+/* Phase 2: 見送りログ — 荒れスコア < 75 で見送ったレースを全件記録し、
+   後で結果と突き合わせて 「見送って正解 / 万舟見逃し」 を測れるようにする。 */
+import {
+  recordBatch as recordJudgementBatch,
+  attachResultsBatch,
+  getTodaySkipCount,
+  getTodayMissedCount,
+} from "../lib/mansyuSkipLog.js";
 
 const STALE_AFTER_MS = 5 * 60 * 1000;      // 5 分超で古いデータ警告
 const VERY_STALE_MS  = 15 * 60 * 1000;     // 15 分超で強警告
@@ -60,6 +68,25 @@ export default function MansyuTop({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [races, tick]);
 
+  /* Phase 2: races が更新されるたびに見送りログを記録。
+     ① 全レースのスコアを記録 (75+ は 「show」 / 未満は 「skip」)
+     ② 結果が乗っているレースは万舟見逃し判定して finalized 化 */
+  const [logCounts, setLogCounts] = useState({ skip: 0, missed: 0 });
+  useEffect(() => {
+    if (!Array.isArray(races) || races.length === 0) return;
+    try {
+      recordJudgementBatch(races, scoreMansyu);
+      attachResultsBatch(races);
+      setLogCounts({
+        skip: getTodaySkipCount(),
+        missed: getTodayMissedCount(),
+      });
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn("[MansyuTop] skip log update failed:", e);
+    }
+  }, [races]);
+
   const alarms = scored.filter((x) => x.result.level === "alarm");
   const warns  = scored.filter((x) => x.result.level === "warn");
 
@@ -84,8 +111,8 @@ export default function MansyuTop({
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6, flexWrap: "wrap" }}>
           <span style={{ fontSize: 24 }}>🌊</span>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 19, fontWeight: 800, color: "#FBBF24", letterSpacing: "0.02em" }}>万舟研究所</div>
-            <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>
+            <div style={{ fontSize: 22, fontWeight: 800, color: "#FBBF24", letterSpacing: "0.02em", lineHeight: 1.1 }}>万舟研究所</div>
+            <div style={{ fontSize: 12.5, color: "#cbd5e1", marginTop: 4, fontWeight: 500 }}>
               荒れる時だけお知らせ — 5場限定 (戸田・江戸川・平和島・鳴門・桐生)
             </div>
           </div>
@@ -270,15 +297,15 @@ function formatSeconds(s) {
 function SumBox({ label, value, color, emphasis, sub }) {
   return (
     <div style={{
-      padding: "8px 10px",
-      borderRadius: 10,
+      padding: "12px 14px",
+      borderRadius: 12,
       background: emphasis ? `linear-gradient(135deg, ${color}22 0%, rgba(0,0,0,0.20) 100%)` : "rgba(255,255,255,0.03)",
-      border: `1px solid ${emphasis ? color + "55" : "rgba(148, 163, 184, 0.20)"}`,
+      border: `1.5px solid ${emphasis ? color + "70" : "rgba(148, 163, 184, 0.25)"}`,
       textAlign: "center",
     }}>
-      <div style={{ fontSize: 11, color: "#94a3b8", fontWeight: 600, letterSpacing: "0.04em" }}>{label}</div>
-      <div style={{ fontSize: 22, fontWeight: 800, color, lineHeight: 1.1, marginTop: 2 }}>
-        {value}<span style={{ fontSize: 11, opacity: 0.7, marginLeft: 2 }}>{sub || "件"}</span>
+      <div style={{ fontSize: 12, color: "#cbd5e1", fontWeight: 700, letterSpacing: "0.04em" }}>{label}</div>
+      <div style={{ fontSize: 30, fontWeight: 800, color, lineHeight: 1.0, marginTop: 4 }}>
+        {value}<span style={{ fontSize: 13, opacity: 0.75, marginLeft: 3 }}>{sub || "件"}</span>
       </div>
     </div>
   );
@@ -286,10 +313,10 @@ function SumBox({ label, value, color, emphasis, sub }) {
 
 function Section({ title, subtitle, children }) {
   return (
-    <div style={{ marginBottom: 16 }}>
-      <div style={{ marginBottom: 8, padding: "0 4px" }}>
-        <div style={{ fontSize: 16, fontWeight: 800, color: "#e2e8f0", letterSpacing: "0.02em" }}>{title}</div>
-        <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>{subtitle}</div>
+    <div style={{ marginBottom: 18 }}>
+      <div style={{ marginBottom: 10, padding: "0 4px" }}>
+        <div style={{ fontSize: 19, fontWeight: 800, color: "#f1f5f9", letterSpacing: "0.02em" }}>{title}</div>
+        <div style={{ fontSize: 12.5, color: "#cbd5e1", marginTop: 3 }}>{subtitle}</div>
       </div>
       {children}
     </div>
@@ -322,25 +349,25 @@ function TapButton({ onClick, disabled, primary, label, ariaLabel }) {
       disabled={disabled}
       aria-label={ariaLabel || label}
       style={{
-        minHeight: 44,
-        padding: "10px 16px",
+        minHeight: 50,
+        padding: "12px 20px",
         borderRadius: 12,
-        border: primary ? "1.5px solid rgba(251, 191, 36, 0.55)" : "1.5px solid rgba(148, 163, 184, 0.30)",
+        border: primary ? "2px solid rgba(251, 191, 36, 0.65)" : "1.5px solid rgba(148, 163, 184, 0.35)",
         background: disabled
           ? "rgba(255,255,255,0.04)"
           : primary
-            ? (pressed ? "rgba(251, 191, 36, 0.30)" : "rgba(251, 191, 36, 0.16)")
-            : (pressed ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.03)"),
-        color: disabled ? "#64748B" : primary ? "#FBBF24" : "#cbd5e1",
+            ? (pressed ? "rgba(251, 191, 36, 0.34)" : "rgba(251, 191, 36, 0.20)")
+            : (pressed ? "rgba(255,255,255,0.10)" : "rgba(255,255,255,0.04)"),
+        color: disabled ? "#64748B" : primary ? "#FCD34D" : "#e2e8f0",
         fontWeight: 800,
-        fontSize: 13,
+        fontSize: 15,
         letterSpacing: "0.02em",
         cursor: disabled ? "not-allowed" : "pointer",
-        transform: pressed ? "scale(0.96)" : "scale(1)",
+        transform: pressed ? "scale(0.95)" : "scale(1)",
         transition: "transform 0.08s ease, background 0.18s ease",
         WebkitTapHighlightColor: "transparent",
         touchAction: "manipulation",
-        boxShadow: primary && !disabled ? "0 2px 10px rgba(251, 191, 36, 0.22)" : "none",
+        boxShadow: primary && !disabled ? "0 3px 14px rgba(251, 191, 36, 0.32)" : "none",
       }}>
       {label}
     </button>
@@ -375,58 +402,59 @@ function RaceCard({ race, result, close, onPickRace }) {
     onTouchStart={() => setPressed(true)}
     onTouchEnd={() => setPressed(false)}>
       {/* === 上段: 場名 + R番 + 締切 + スコア === */}
-      <div style={{ padding: "12px 14px", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+      <div style={{ padding: "14px 16px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <div style={{ flex: "0 0 auto" }}>
-          <div style={{ fontSize: 18, fontWeight: 800, color: "#f1f5f9", lineHeight: 1.1 }}>
-            {race.venue} <span style={{ fontSize: 22, color }}>{race.raceNo}R</span>
+          <div style={{ fontSize: 22, fontWeight: 800, color: "#f8fafc", lineHeight: 1.0 }}>
+            {race.venue} <span style={{ fontSize: 32, color, marginLeft: 2 }}>{race.raceNo}R</span>
           </div>
-          <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 3 }}>
+          <div style={{ fontSize: 12.5, color: "#cbd5e1", marginTop: 4, fontWeight: 600 }}>
             発走 {race.startTime || "—"}
           </div>
         </div>
         <div style={{
-          padding: "5px 10px", borderRadius: 999,
+          padding: "8px 14px", borderRadius: 999,
           background: closeBg, color: "#fff",
-          fontSize: 12, fontWeight: 800, lineHeight: 1.1,
+          fontSize: 15, fontWeight: 800, lineHeight: 1.1,
+          boxShadow: close != null && close <= 5 ? "0 0 10px rgba(220, 38, 38, 0.55)" : "none",
         }}>
           ⏱ {closeText}
         </div>
         <div style={{ flex: "1 1 0", minWidth: 4 }} />
         <div style={{
-          padding: "5px 12px", borderRadius: 10,
+          padding: "8px 16px", borderRadius: 12,
           background: color, color: "#fff",
-          fontSize: 12, fontWeight: 800, letterSpacing: "0.04em",
-          boxShadow: isAlarm ? `0 0 14px ${color}80` : "none",
+          fontSize: 14, fontWeight: 800, letterSpacing: "0.04em",
+          boxShadow: isAlarm ? `0 0 16px ${color}90` : "none",
           lineHeight: 1.1,
         }}>
           {isAlarm ? "🚨 " : "⚠️ "}{label}
         </div>
         <div style={{
-          padding: "5px 10px", borderRadius: 10,
-          background: "rgba(0,0,0,0.30)",
-          border: `1px solid ${color}55`,
+          padding: "8px 14px", borderRadius: 12,
+          background: "rgba(0,0,0,0.40)",
+          border: `2px solid ${color}77`,
           color: "#fff",
-          display: "flex", alignItems: "baseline", gap: 2,
+          display: "flex", alignItems: "baseline", gap: 3,
         }}>
-          <span style={{ color, fontSize: 22, fontWeight: 800 }}>{result.score}</span>
-          <span style={{ fontSize: 11, opacity: 0.7 }}>/100</span>
+          <span style={{ color, fontSize: 36, fontWeight: 800, lineHeight: 1.0 }}>{result.score}</span>
+          <span style={{ fontSize: 13, opacity: 0.75 }}>/100</span>
         </div>
       </div>
 
       {/* === 万舟期待度 + 注目艇 === */}
-      <div style={{ padding: "0 14px 10px 14px", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-        <div style={{ fontSize: 12, color: "#94a3b8" }}>万舟期待度</div>
-        <div style={{ fontSize: 15, color: "#FBBF24", letterSpacing: "0.10em", fontWeight: 700 }}>{result.mansyuRating}</div>
+      <div style={{ padding: "0 16px 12px 16px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <div style={{ fontSize: 13, color: "#cbd5e1", fontWeight: 600 }}>万舟期待度</div>
+        <div style={{ fontSize: 22, color: "#FBBF24", letterSpacing: "0.12em", fontWeight: 700, lineHeight: 1.0 }}>{result.mansyuRating}</div>
         {result.focus.length > 0 && (
           <>
-            <div style={{ width: 1, height: 14, background: "rgba(148, 163, 184, 0.30)" }} />
-            <div style={{ fontSize: 12, color: "#94a3b8" }}>注目</div>
+            <div style={{ width: 1, height: 16, background: "rgba(148, 163, 184, 0.40)" }} />
+            <div style={{ fontSize: 13, color: "#cbd5e1", fontWeight: 600 }}>注目</div>
             {result.focus.slice(0, 3).map((f) => (
               <span key={f.boatNo} style={{
-                padding: "3px 9px", borderRadius: 999,
-                background: "rgba(34, 211, 238, 0.12)",
-                border: "1px solid rgba(34, 211, 238, 0.40)",
-                color: "#67E8F9", fontSize: 12, fontWeight: 700,
+                padding: "5px 12px", borderRadius: 999,
+                background: "rgba(34, 211, 238, 0.14)",
+                border: "1.5px solid rgba(34, 211, 238, 0.50)",
+                color: "#67E8F9", fontSize: 14, fontWeight: 700,
               }}>
                 {f.boatNo}号艇 {f.racer || ""}
               </span>
@@ -437,34 +465,38 @@ function RaceCard({ race, result, close, onPickRace }) {
 
       {/* === 理由コメント === */}
       <div style={{
-        margin: "0 14px 10px 14px", padding: "9px 11px",
-        borderRadius: 8,
-        background: "rgba(0,0,0,0.30)",
-        borderLeft: `3px solid ${color}`,
-        fontSize: 12.5, color: "#cbd5e1", lineHeight: 1.5,
+        margin: "0 16px 12px 16px", padding: "12px 14px",
+        borderRadius: 10,
+        background: "rgba(0,0,0,0.35)",
+        borderLeft: `4px solid ${color}`,
+        fontSize: 14.5, color: "#e2e8f0", lineHeight: 1.55, fontWeight: 500,
       }}>
         💡 {reasonText}
       </div>
 
       {/* === 買い目 === */}
       {buyOrders.length > 0 && (
-        <div style={{ margin: "0 14px 12px 14px" }}>
-          <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 6, fontWeight: 700, letterSpacing: "0.04em" }}>
+        <div style={{ margin: "0 16px 14px 16px" }}>
+          <div style={{ fontSize: 13, color: "#cbd5e1", marginBottom: 8, fontWeight: 700, letterSpacing: "0.04em" }}>
             買い目 (最大 5 点・重複なし)
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {buyOrders.map((o, i) => (
               <div key={i} style={{
-                display: "flex", alignItems: "center", gap: 10,
-                padding: "7px 10px", borderRadius: 8,
-                background: "rgba(34, 211, 238, 0.07)",
-                border: "1px solid rgba(34, 211, 238, 0.22)",
+                display: "flex", alignItems: "center", gap: 12,
+                padding: "12px 14px", borderRadius: 10,
+                background: "rgba(34, 211, 238, 0.10)",
+                border: "1.5px solid rgba(34, 211, 238, 0.32)",
               }}>
-                <div style={{ fontSize: 16, fontWeight: 800, color: "#67E8F9", letterSpacing: "0.05em" }}>
+                <div style={{ fontSize: 22, fontWeight: 800, color: "#67E8F9", letterSpacing: "0.06em", lineHeight: 1.0 }}>
                   {o.combo.join("-")}
                 </div>
-                <div style={{ fontSize: 10, color: "#94a3b8" }}>{o.kind}</div>
-                <div style={{ flex: 1, minWidth: 0, fontSize: 11, color: "#cbd5e1", textAlign: "right" }}>
+                <div style={{
+                  fontSize: 11, color: "#cbd5e1", fontWeight: 700,
+                  padding: "2px 8px", borderRadius: 999,
+                  background: "rgba(255,255,255,0.06)",
+                }}>{o.kind}</div>
+                <div style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: "#cbd5e1", textAlign: "right", lineHeight: 1.4 }}>
                   {o.reason}
                 </div>
               </div>
@@ -474,31 +506,31 @@ function RaceCard({ race, result, close, onPickRace }) {
       )}
 
       {/* === 折りたたみ詳細 === */}
-      <div style={{ borderTop: "1px solid rgba(148, 163, 184, 0.15)" }}>
+      <div style={{ borderTop: "1px solid rgba(148, 163, 184, 0.20)" }}>
         <button
           onClick={() => setOpen(!open)}
           style={{
-            width: "100%", padding: "10px 14px",
+            width: "100%", padding: "14px 16px", minHeight: 48,
             background: "transparent", border: 0,
-            color: "#94a3b8", fontSize: 12, fontWeight: 700,
+            color: "#cbd5e1", fontSize: 14, fontWeight: 700,
             cursor: "pointer", textAlign: "left",
-            display: "flex", alignItems: "center", gap: 6,
+            display: "flex", alignItems: "center", gap: 8,
             WebkitTapHighlightColor: "transparent",
             touchAction: "manipulation",
           }}>
-          <span>{open ? "▼" : "▶"}</span>
+          <span style={{ fontSize: 16 }}>{open ? "▼" : "▶"}</span>
           <span>詳しい荒れ条件 (スコア内訳・気象・外部リンク)</span>
         </button>
         {open && (
-          <div style={{ padding: "0 14px 12px 14px" }}>
+          <div style={{ padding: "0 16px 14px 16px" }}>
             <ScoreBreakdown parts={result.parts} boost={result.boost} />
-            <div style={{ marginTop: 10, padding: "8px 10px", borderRadius: 8, background: "rgba(0,0,0,0.2)" }}>
-              <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 4 }}>気象 / 水面</div>
-              <div style={{ fontSize: 12, color: "#cbd5e1" }}>
-                {race.weather || "—"} / 風 {race.wind ?? "—"}m{race.windDir ? ` (${race.windDir})` : ""} / 波 {race.wave ?? "—"}cm
+            <div style={{ marginTop: 12, padding: "10px 12px", borderRadius: 10, background: "rgba(0,0,0,0.25)" }}>
+              <div style={{ fontSize: 12, color: "#cbd5e1", marginBottom: 6, fontWeight: 700 }}>気象 / 水面</div>
+              <div style={{ fontSize: 14, color: "#e2e8f0" }}>
+                {race.weather || "—"} / 風 <b className="num">{race.wind ?? "—"}</b>m{race.windDir ? ` (${race.windDir})` : ""} / 波 <b className="num">{race.wave ?? "—"}</b>cm
               </div>
             </div>
-            <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
               <DetailLink label="📋 出走表" race={race} kind="program" />
               <DetailLink label="💰 オッズ" race={race} kind="odds" />
               <DetailLink label="🌊 直前情報" race={race} kind="beforeinfo" />
@@ -507,10 +539,10 @@ function RaceCard({ race, result, close, onPickRace }) {
                 <button
                   onClick={() => onPickRace("list")}
                   style={{
-                    padding: "6px 12px", borderRadius: 8,
-                    background: "rgba(34, 211, 238, 0.10)",
-                    border: "1px solid rgba(34, 211, 238, 0.34)",
-                    color: "#67E8F9", fontSize: 11, fontWeight: 700,
+                    padding: "10px 14px", minHeight: 44, borderRadius: 10,
+                    background: "rgba(34, 211, 238, 0.12)",
+                    border: "1.5px solid rgba(34, 211, 238, 0.40)",
+                    color: "#67E8F9", fontSize: 13, fontWeight: 700,
                     cursor: "pointer",
                     WebkitTapHighlightColor: "transparent",
                     touchAction: "manipulation",
@@ -536,24 +568,24 @@ function ScoreBreakdown({ parts, boost }) {
     { label: "オッズ妙味",     max: 10, score: parts.odds.score,       reasons: parts.odds.reasons },
   ];
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       {rows.map((r) => (
         <div key={r.label} style={{
-          padding: "7px 10px", borderRadius: 8,
-          background: "rgba(0,0,0,0.20)",
+          padding: "10px 12px", borderRadius: 10,
+          background: "rgba(0,0,0,0.25)",
         }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: r.reasons.length ? 4 : 0 }}>
-            <div style={{ flex: 1, fontSize: 12, color: "#cbd5e1", fontWeight: 700 }}>{r.label}</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: r.reasons.length ? 6 : 0 }}>
+            <div style={{ flex: 1, fontSize: 14, color: "#e2e8f0", fontWeight: 700 }}>{r.label}</div>
             <div style={{
-              padding: "2px 9px", borderRadius: 999,
+              padding: "4px 12px", borderRadius: 999,
               background: r.score === 0 ? "#475569" : r.score >= r.max * 0.7 ? "#DC2626" : "#F59E0B",
-              color: "#fff", fontSize: 11, fontWeight: 800,
+              color: "#fff", fontSize: 13, fontWeight: 800,
             }}>
               {r.score}/{r.max}
             </div>
           </div>
           {r.reasons.length > 0 && (
-            <div style={{ fontSize: 11.5, color: "#94a3b8", lineHeight: 1.5 }}>
+            <div style={{ fontSize: 12.5, color: "#cbd5e1", lineHeight: 1.55 }}>
               {r.reasons.join(" / ")}
             </div>
           )}
@@ -561,11 +593,11 @@ function ScoreBreakdown({ parts, boost }) {
       ))}
       {boost > 0 && (
         <div style={{
-          padding: "7px 10px", borderRadius: 8,
-          background: "rgba(220, 38, 38, 0.15)",
-          border: "1px solid rgba(220, 38, 38, 0.40)",
+          padding: "10px 12px", borderRadius: 10,
+          background: "rgba(220, 38, 38, 0.18)",
+          border: "1.5px solid rgba(220, 38, 38, 0.50)",
         }}>
-          <div style={{ fontSize: 12, color: "#FCA5A5", fontWeight: 700 }}>
+          <div style={{ fontSize: 14, color: "#FCA5A5", fontWeight: 800 }}>
             🔥 強制激荒れブースト +{boost}
           </div>
         </div>
@@ -587,13 +619,14 @@ function DetailLink({ label, race, kind }) {
       target="_blank"
       rel="noopener noreferrer"
       style={{
-        padding: "6px 12px", borderRadius: 8,
-        background: "rgba(255,255,255,0.04)",
-        border: "1px solid rgba(148, 163, 184, 0.25)",
-        color: "#cbd5e1", fontSize: 11, fontWeight: 700,
+        padding: "10px 14px", minHeight: 44, borderRadius: 10,
+        background: "rgba(255,255,255,0.06)",
+        border: "1.5px solid rgba(148, 163, 184, 0.35)",
+        color: "#e2e8f0", fontSize: 13, fontWeight: 700,
         textDecoration: "none",
         WebkitTapHighlightColor: "transparent",
         touchAction: "manipulation",
+        display: "inline-flex", alignItems: "center",
       }}>
       {label}
     </a>
