@@ -18,8 +18,9 @@
 - ✅ Round 172 — **AI 進化 段階 A 前半: 自動学習ループ実装**。 新ライブラリ `src/lib/mansyuLearningAuto.js`。 1 日 1 回 analyzeMansyuLearning を自動実行 → 安定性チェック (確定済 ≥ 10 件 / 同提案 3 連続却下で停止) → 通れば applyAllRecommendations で重み自動適用 → mansyu モジュールに即時反映 → トースト通知。 履歴は `mansyuLearningHistory` (localStorage 直近 30 件) に保存。
 - ✅ Round 172.5 — **AI 進化 段階 A 後半: 自動ロールバック実装**。 `mansyuLearningAuto.js` に `checkAndRollback()` 追加。 直近の applied エントリから 7-14 日経過した時に、 適用後の skipLog 確定済 5 件以上で見送り正答率 / 見立て正答率を再集計 → baseline と比較 → どちらか 5pt 以上悪化していたら前重みに自動復元。 結果は履歴に kind: kept / rolledback として記録。 同じ applied は二度判定しない (rolledBackAt マーク)。 これで AI 進化 段階 A の閉ループが完成。
 - ✅ Round 173 — **買い目 5,000 円配分統一** (SPEC §3, §4)。 `mansyu.js` の `buildMansyuBuyOrders` に `distributeStake()` 追加 — 5,000 円を点数で均等配分、 100 円単位、 余りは最初 (一番強い) に上乗せ。 各買い目 order に `stake` 円を付与 (例: 5 点 → 各 1,000 円 / 4 点 → 1,400/1,200/1,200/1,200 / 3 点 → 1,700/1,700/1,600 / 2 点 → 各 2,500 円 / 1 点 → 5,000 円)。 MansyuTop で買い目右側に黄色金額チップを表示、 ヘッダーに「合計 5,000 円」 表示。 export `MANSYU_STAKE` 定数 = 5000 を追加 (将来の参照用)。
+- ✅ Round 174 — **「⚙️ 設定」 タブ全面刷新 (4 項目化)** (SPEC §6.2)。 Settings.jsx を 442 行 → 約 200 行に削減。 SPEC 通り 4 項目のみ: ① ログイン (Supabase) ② ログアウト ③ データ削除 (フレッシュスタート) ④ 通知 ON/OFF (将来通知機能の土台 — 大きなトグルスイッチ UI)。 削除: 「🧪 購入モード エア/リアル切替」 / 「🆕 バージョン管理 v2/legacy」 / 「💾 保存ステータス」 / 「✏️ 手動記録 件数」 / VersionCompareTable / Stat 関数。 settings.notificationsEnabled (boolean) を localStorage に保存。 通知の実体は Round 177 で実装予定。
 - 🟡 進行中: なし
-- 🔜 次の一歩: **SPEC §9 ロードマップに従って Round 174 から実装**。 ① Round 174: 「⚙️ 設定」 タブ 4 項目化 (ログイン/ログアウト/データ削除/通知 ON/OFF) + 「💼 資金」 「🎯 戦略」 関連コード一掃 → ② Round 175: ホーム強化 → ③ Round 176: 研究所タブ整理 → ④ Round 177-178: 通知 / スマホ最適化 → ⑤ **Round 179-181: 場別ランキング機能** → ⑥ Round 182: AI 段階 B 細粒度学習。
+- 🔜 次の一歩: **SPEC §9 ロードマップに従って Round 175 から実装**。 ① Round 175: ホーム画面の「勝負あり / なし」 ヒーロー表現を強化 + 各カードに「買い目・理由 3 行」 を折りたたまずに常時表示 → ② Round 176: 「🔬 研究所」 タブの中身整理 → ③ Round 177: 通知システム土台 → ④ Round 178: スマホ最適化 → ⑤ **Round 179-181: 場別ランキング機能** → ⑥ Round 182: AI 段階 B 細粒度学習。
 
 ## 🌐 本番URL
 
