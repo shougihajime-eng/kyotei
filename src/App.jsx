@@ -433,6 +433,33 @@ export default function App() {
     }
   }, [predictions]);
 
+  /* === Round 177 (SPEC §6.2): 激荒れ警報のブラウザ通知 ===
+     races が更新されるたび、 荒れスコア 85 点以上のレース (alarm レベル) を検出 →
+     sendStormAlert を呼ぶ。 内部で sentStormIds による重複防止が効く。
+     設定タブで通知 ON + ブラウザ許可済みのときだけ実際に通知される。 */
+  useEffect(() => {
+    if (!settings.notificationsEnabled) return;
+    if (!Array.isArray(races) || races.length === 0) return;
+    const now = Date.now();
+    for (const race of races) {
+      // 終了済 (締切から 5 分以上経過) は通知しない
+      const e = startEpoch(race.date, race.startTime);
+      if (e == null || now > e + 5 * 60 * 1000) continue;
+      // 1 時間以上先のレースも通知しない (関心が薄い)
+      if (e - now > 60 * 60 * 1000) continue;
+      try {
+        const result = scoreMansyu(race);
+        if (!result || result.level !== "alarm") continue;
+        sendStormAlert(race, {
+          stormScore: result.score,
+          reason: (result.reasons || []).slice(0, 2).join(" / "),
+        });
+      } catch (e2) {
+        // ignore per-race errors
+      }
+    }
+  }, [races, settings.notificationsEnabled]);
+
   /* === Round 172 / 172.5 (SPEC §12 段階 A): 自動学習サイクル + 自動ロールバック ===
      races / predictions が更新されるたびに 2 つの処理をチェック:
        ① runLearningCycle: 1 日 1 回、 安全条件を満たせば重みを自動適用

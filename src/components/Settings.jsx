@@ -14,6 +14,12 @@
  *   - 「💾 保存ステータス」 (Round 174 — ユーザーが見たい情報ではない)
  */
 import { useState } from "react";
+import {
+  enableNotifications,
+  disableNotifications,
+  isNotificationSupported,
+  getPermissionState,
+} from "../lib/notifyBuy.js";
 
 export default function Settings({
   settings,
@@ -28,11 +34,32 @@ export default function Settings({
   const [includeCloud, setIncludeCloud] = useState(false);
   const [keepSettings, setKeepSettings] = useState(true);
   const notificationsEnabled = settings.notificationsEnabled ?? false;
+  const notifSupported = isNotificationSupported();
+  const notifPermission = getPermissionState();
 
-  function toggleNotifications(next) {
-    setSettings((prev) => ({ ...prev, notificationsEnabled: next }));
-    if (typeof window !== "undefined" && window.__kyoteiToast) {
-      window.__kyoteiToast(next ? "🔔 通知 ON にしました" : "🔕 通知 OFF にしました", "ok");
+  /* Round 177: トグル ON → ブラウザ通知許可リクエスト連動。
+     許可されなかった場合は settings 側も OFF に戻す (UI を実態に揃える)。 */
+  async function toggleNotifications(next) {
+    if (next) {
+      const r = await enableNotifications();
+      if (!r.ok) {
+        // 許可拒否や非対応 → トグルを OFF のまま
+        setSettings((prev) => ({ ...prev, notificationsEnabled: false }));
+        if (typeof window !== "undefined" && window.__kyoteiToast) {
+          window.__kyoteiToast(`⚠️ ${r.reason}`, "neg");
+        }
+        return;
+      }
+      setSettings((prev) => ({ ...prev, notificationsEnabled: true }));
+      if (typeof window !== "undefined" && window.__kyoteiToast) {
+        window.__kyoteiToast("🔔 通知 ON — 激荒れ警報をお届けします", "ok");
+      }
+    } else {
+      disableNotifications();
+      setSettings((prev) => ({ ...prev, notificationsEnabled: false }));
+      if (typeof window !== "undefined" && window.__kyoteiToast) {
+        window.__kyoteiToast("🔕 通知 OFF にしました", "info");
+      }
     }
   }
 
@@ -163,7 +190,20 @@ export default function Settings({
           </span>
         </button>
         <div className="text-xs opacity-70 mt-2" style={{ lineHeight: 1.5 }}>
-          ※ 現時点では設定の保存のみ。 通知の実体は次の Round で実装予定です。
+          {!notifSupported && (
+            <span style={{ color: "#FCA5A5" }}>⚠️ このブラウザは通知に対応していません</span>
+          )}
+          {notifSupported && notifPermission === "denied" && (
+            <span style={{ color: "#FCA5A5" }}>
+              ⚠️ ブラウザで通知が拒否されています。 アドレスバー左の鍵 / 情報アイコンから許可し直してください
+            </span>
+          )}
+          {notifSupported && notifPermission === "granted" && notificationsEnabled && (
+            <span style={{ color: "#A7F3D0" }}>✅ ブラウザ通知の許可済み — 激荒れ警報をリアルタイムでお届けします</span>
+          )}
+          {notifSupported && notifPermission === "default" && (
+            <span>※ ON にすると通知許可をリクエストします</span>
+          )}
         </div>
       </section>
 
