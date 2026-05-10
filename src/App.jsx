@@ -177,16 +177,7 @@ export default function App() {
   const [refreshing, setRefreshing] = useState(false);
   const [refreshMsg, setRefreshMsg] = useState("");
   const [lastRefreshAt, setLastRefreshAt] = useState(null);
-  // Round 163 (Phase 1.5): 更新失敗を常時表示するための state
-  //   - lastSuccessAt: 直近の成功時刻 (ms)
-  //   - lastFailureAt: 直近の失敗時刻 (ms)
-  //   - lastFailureReason: 失敗原因 (str)
-  //   - refreshFailureCount: 連続失敗回数 (リセットは成功時)
-  const [lastSuccessAt, setLastSuccessAt] = useState(null);
-  const [lastFailureAt, setLastFailureAt] = useState(null);
-  const [lastFailureReason, setLastFailureReason] = useState(null);
-  const [refreshFailureCount, setRefreshFailureCount] = useState(0);
-  /* Phase 1.5: 更新失敗の状態を MansyuTop に常時表示する。
+  /* Phase 1.5 (Round 163): 更新失敗を常時表示するための state。
      成功時は null にクリアし、 失敗時は { at, message } を保持する。 */
   const [refreshError, setRefreshError] = useState(null);
   /* Round 113: 1 分ごとの時刻 tick — -15 分ゲートが時間経過で自動的に開く */
@@ -1147,10 +1138,6 @@ export default function App() {
        ユーザーが見えている画面 (今日のレース一覧 + 候補の最新情報) は既にこの時点で完成。 */
     const ts = new Date().toISOString();
     setLastRefreshAt(ts);
-    // Round 163: 成功フック — 失敗カウントをリセット
-    setLastSuccessAt(Date.now());
-    setLastFailureReason(null);
-    setRefreshFailureCount(0);
     if (sched?.ok) {
       const extras = [];
       if (fastTargets.length > 0) extras.push(`直前オッズ ${fastTargets.length}件`);
@@ -1232,10 +1219,6 @@ export default function App() {
       // 例外時は前回データを保持し、UI を壊さない
       console.error("[refreshAll] error:", err);
       setRefreshMsg("⚠️ 一時的に混雑しています。少し時間を空けて再実行してください");
-      // Round 163: 失敗フック — 失敗時刻と原因を保持
-      setLastFailureAt(Date.now());
-      setLastFailureReason(String(err?.message || err || "通信エラー"));
-      setRefreshFailureCount((c) => c + 1);
       setRefreshError({
         at: new Date().toISOString(),
         message: String(err?.message || err || "ネットワーク不調"),

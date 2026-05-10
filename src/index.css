@@ -704,3 +704,30 @@ body { -webkit-overflow-scrolling: touch; overscroll-behavior-y: none; }
     scroll-behavior: auto !important;
   }
 }
+
+/* =====================================================================
+ * Round 163 (Phase 1.5): グローバル ボタンタップ反応
+ *   ・全 button / role=button / a[href] に tap-highlight 除去 + scale 0.95 active
+ *   ・既存の .btn (scale 0.97) とは独立 — :not(.btn) で 二重適用を回避
+ *   ・Inline で transform を持つ要素 (BuyOrderHero など) には :active 時のみ作用するので
+ *     非インタラクション時の見た目は変わらない
+ * ===================================================================== */
+button,
+[role="button"],
+a[href] {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+button:not(.btn):not([disabled]):active,
+[role="button"]:not([aria-disabled="true"]):active,
+a[href]:active {
+  transform: scale(0.95);
+  transition: transform 0.08s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  button:active,
+  [role="button"]:active,
+  a[href]:active {
+    transform: none;
+  }
+}
