@@ -7,6 +7,7 @@
 import { useMemo, useState } from "react";
 import { TARGET_VENUES } from "../lib/mansyu.js";
 import MotorRankingTable from "./MotorRankingTable.jsx";
+import RacerRankingTable from "./RacerRankingTable.jsx";
 
 /* TARGET_VENUES jcd → 表示名 (mansyu.js の VENUE_BASE と整合) */
 const VENUE_NAMES = {
@@ -93,10 +94,11 @@ export default function VenueRankings({ races }) {
         })}
       </div>
 
-      {/* モーター TOP10 テーブル */}
+      {/* === モーター TOP10 === */}
+      <SubHeader icon="🏆" title="モーター TOP10" />
       <div style={{
         background: "rgba(0,0,0,0.25)", borderRadius: 10,
-        padding: "4px 0",
+        padding: "4px 0", marginBottom: 8,
       }}>
         <MotorRankingTable
           races={races}
@@ -104,28 +106,49 @@ export default function VenueRankings({ races }) {
           venueName={VENUE_NAMES[activeJcd] || activeJcd}
         />
       </div>
+      <Caption text="💡 評価: モーター 2 連率 60% + ボート 2 連率 25% + 展示気配 15%" />
 
-      {/* 説明 */}
+      {/* === 選手 TOP10 (Round 181) === */}
+      <SubHeader icon="🏅" title="選手 TOP10" mt={16} />
       <div style={{
-        marginTop: 10, padding: "8px 10px",
-        background: "rgba(0,0,0,0.30)", borderRadius: 8,
-        fontSize: 11, color: "#94A3B8", lineHeight: 1.55,
+        background: "rgba(0,0,0,0.25)", borderRadius: 10,
+        padding: "4px 0", marginBottom: 8,
       }}>
-        💡 評価軸: モーター 2 連率 (60%) + ボート 2 連率 (25%) + 展示気配 (15%)
-        / タグ: 🔥 展示気配◎ / 🛠 部品交換 / 💎 人気の割に強い / 🟢 安定
+        <RacerRankingTable
+          races={races}
+          jcd={activeJcd}
+          venueName={VENUE_NAMES[activeJcd] || activeJcd}
+        />
       </div>
+      <Caption text="💡 評価: 当地勝率 30% + 全国勝率 20% + 級別 15% + ST 15% + モーター相性 10% / 「🌊 会場巧者」 を発見" />
 
-      {/* 予告: 選手 TOP10 (Round 181) */}
-      <div style={{
-        marginTop: 10, padding: "10px 12px",
-        background: "rgba(255,255,255,0.02)",
-        border: "1px dashed rgba(148, 163, 184, 0.30)",
-        borderRadius: 8,
-        fontSize: 12, color: "#94A3B8", lineHeight: 1.55,
-        textAlign: "center",
-      }}>
-        🚧 選手 TOP10 (会場相性 + ST + モーター相性 + 直近) は Round 181 で追加予定
-      </div>
     </section>
+  );
+}
+
+function SubHeader({ icon, title, mt }) {
+  return (
+    <div style={{
+      display: "flex", alignItems: "baseline", gap: 8,
+      marginTop: mt || 0, marginBottom: 6,
+      paddingLeft: 4,
+    }}>
+      <span style={{ fontSize: 18 }}>{icon}</span>
+      <span style={{ fontSize: 14, fontWeight: 800, color: "#e2e8f0", letterSpacing: "0.02em" }}>
+        {title}
+      </span>
+    </div>
+  );
+}
+
+function Caption({ text }) {
+  return (
+    <div style={{
+      padding: "6px 10px",
+      background: "rgba(0,0,0,0.30)", borderRadius: 8,
+      fontSize: 11, color: "#94A3B8", lineHeight: 1.55,
+    }}>
+      {text}
+    </div>
   );
 }
