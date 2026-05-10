@@ -13,8 +13,9 @@
 - ✅ Round 169 — 金額入力 UI 削除 (Settings 4 入力欄 + セーフティ ON/OFF + Onboarding 3 入力欄)、 起動時に金額を 5,000 円固定で強制矯正 (App.jsx)。 Onboarding は同意 2 項目のみに簡素化。
 - ✅ Round 170 — 数字バッジ整理 (SPEC §5)。 MansyuTop の 5 バッジ → 2 バッジ (🚨激荒れ / ⚠️荒れ注意 のみ)、 Header の「💰 N件 buy」 件数バッジ + 「💰リアル/🧪エア」 切替ボタン撤去 (収支表示は単純チップに置換)、 画面下固定バーのモード切替・スタイル循環撤去。 内部記録 (見送りログ・skip count) は学習用に温存。
 - ✅ Round 171 — 「📋 一覧」 タブ完全廃止 (SPEC §6)。 タブ構成 4 → 3 に (🏠ホーム / 🔬研究所 / ⚙️設定)。 RaceList.jsx ファイル削除、 App.jsx の `tab === "list"` ブロック・import 削除、 Header の TABS から list 除去、 MansyuTop の「📊 一覧で見る」 ボタン削除、 RaceDetail の onBack を home に変更。 index.js バンドル −8.6 kB。
+- ✅ Round 171.5 — SPEC §6.1.2 追記: **場別ランキング機能** (信頼感の中核) を仕様化。 動的 5 場参照 / 全場混合禁止 / 「なぜ上位か」 一言タグ必須 / AI 評価ロジック連動。 §9 ロードマップに Round 178-180 (設計 / モーター TOP10 / 選手 TOP10) 追加。
 - 🟡 進行中: なし
-- 🔜 次の一歩: **SPEC §9 ロードマップに従って Round 172 から実装**。 ① Round 172: 買い目 5,000 円配分統一 (sizing.js / styleAllocation.js 簡素化) → ② Round 173: 「⚙️ 設定」 タブ 4 項目化 (ログイン/ログアウト/データ削除/通知 ON/OFF) → ③ Round 174: ホーム強化 → ④ Round 175: 「🔬 研究所」 タブ整理。
+- 🔜 次の一歩: **SPEC §9 ロードマップに従って Round 172 から実装**。 ① Round 172: 買い目 5,000 円配分統一 (sizing.js / styleAllocation.js 簡素化) → ② Round 173: 「⚙️ 設定」 タブ 4 項目化 → ③ Round 174: ホーム強化 → ④ Round 175: 「🔬 研究所」 タブ整理 → ⑤ Round 176-177: 通知 / スマホ最適化 → ⑥ **Round 178-180: 場別ランキング機能 (信頼感の中核)** → ⑦ Round 181: PC 最適化。
 
 ## 🌐 本番URL
 
