@@ -10,6 +10,8 @@ const RaceDetail = lazy(() => import("./components/RaceDetail.jsx"));
 const Verify = lazy(() => import("./components/Verify.jsx"));
 const Stats = lazy(() => import("./components/Stats.jsx"));
 const LossAnalysis = lazy(() => import("./components/LossAnalysis.jsx"));
+// Round 164 (Phase 2): 「研究所」 タブ — 万舟向け学習 + 取りこぼし分析
+const MansyuLab = lazy(() => import("./components/MansyuLab.jsx"));
 const Settings = lazy(() => import("./components/Settings.jsx"));
 
 function LazyFallback() {
@@ -2083,8 +2085,13 @@ export default function App() {
         )}
         {tab === "analysis" && (
           <Suspense fallback={<LazyFallback />}>
-          <LossAnalysis predictions={visibleData.predictions}
-            visibleData={visibleData} races={races} />
+            {/* Round 164: 「分析」 タブを 「研究所」 に切り替え。
+                万舟向け学習 (荒れスコア精度・見送り正答率・取りこぼし) を最上段に出し、
+                その下に既存 LossAnalysis (敗因 8 分類 / 学習ログ) を残す。
+                LossAnalysis は競艇 EV ベースだが、 旧来の検証情報も役立つので残置。 */}
+            <MansyuLab predictions={visibleData.predictions} races={races} />
+            <LossAnalysis predictions={visibleData.predictions}
+              visibleData={visibleData} races={races} />
           </Suspense>
         )}
         {tab === "settings" && (

@@ -13,7 +13,7 @@ const TABS = [
   { k: "list",     label: "一覧",    icon: "📋" },
   { k: "verify",   label: "検証",    icon: "📅" },
   { k: "stats",    label: "グラフ",  icon: "📈" },
-  { k: "analysis", label: "分析",    icon: "🔍" },
+  { k: "analysis", label: "研究所",  icon: "🔬" },
   { k: "settings", label: "設定",    icon: "⚙️" },
 ];
 

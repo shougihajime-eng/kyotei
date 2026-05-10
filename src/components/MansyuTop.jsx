@@ -134,6 +134,8 @@ export default function MansyuTop({
           <SumBox label="🚨 激荒れ" value={alarms.length} color="#FCA5A5" emphasis={alarms.length > 0} />
           <SumBox label="⚠️ 荒れ注意" value={warns.length} color="#FDE68A" emphasis={warns.length > 0} />
           <SumBox label="📡 監視中" value={Array.isArray(races) ? races.length : 0} color="#67E8F9" emphasis={false} sub="レース" />
+          <SumBox label="🤐 見送り" value={logCounts.skip} color="#94A3B8" emphasis={false} sub="件" />
+          <SumBox label="😱 万舟見逃し" value={logCounts.missed} color="#F87171" emphasis={logCounts.missed > 0} sub="件" />
         </div>
 
         {/* === 更新状態 === */}
