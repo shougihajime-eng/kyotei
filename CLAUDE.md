@@ -27,9 +27,11 @@
 - ✅ Round 180 — **場別 モーター TOP10 実装** (SPEC §6.1.2)。 新規 3 ファイル (venueRanking.js / MotorRankingTable.jsx / VenueRankings.jsx)。 motor2 60% + boat2 25% + 展示 15% スコア、 タグ 4 種 (展示気配◎/部品交換/人気の割に強い/安定)、 場切替タブ動的生成。
 - ✅ Round 181 — **場別 選手 TOP10 実装** (SPEC §6.1.2)。 当地勝率 30% (全国 20% より重く)、 タグ 6 種 (🌊会場巧者 / 🎯ST安定 / 🚀イン巧者 / 🔥マクリ得意 / 💎相性良好 / ⚖安定)、 クラスバッジ。 「場別ランキング機能」 完成。
 - ✅ Round 182 — **AI 進化 段階 B 場別重み学習実装** (SPEC §12 段階 B)。 5 場が独立重みを持つ、 場別学習サイクル、 scoreMansyu の場別重み優先。
-- ✅ Round 183 — **PC 最適化** (SPEC §8)。 ① MansyuTop の maxWidth: 920 → 1280 (1920px ワイドモニタでも余白がスカスカにならない)、 padding clamp(8px, 3vw, 24px) で PC 余白拡大。 ② CardGrid の minmax: 420px → 380px に変更 (1 列スマホ / 2 列タブレット / 3 列 PC ワイド の自動切替)。 これで PC で同時 3 件のレースカードを横並びで見られるダッシュボード化。 大規模な 2 カラムレイアウト (左: Hero + 件数 / 右: カード一覧) は Round 184 以降に分けて検討。
+- ✅ Round 183 — **PC 最適化** (SPEC §8)。 maxWidth 920→1280、 CardGrid 1/2/3 列自動切替。
+- ✅ Round 184 — **SPEC §13 安全設計 3 層 追記** (shoug 必須要件)。 自己学習 AI に必須の 3 層を仕様化: ① 学習データ完全保存 (Round 185) ② バックテスト機能 (Round 186) ③ 本番/検証 AI シャドーモード (Round 187)。 §9 ロードマップに Round 184-187 追加。 コード変更なし。
+- ✅ Round 185 — **第 1 層: 学習データ完全保存実装** (SPEC §13.1)。 ① mansyuSkipLog.js の `entryFromScore` に `snapshot` フィールド追加 — `boats[]` (6艇分のフルスナップショット: racer/class/winRate/localWinRate/motor2/boat2/ST/exTime/exhibitionNote/partsExchange)、 `weather/wind/wave/windDir`、 `apiOdds` (3連単+単勝)、 `reasons[]` (判断理由テキスト最大8件)、 `officialForecast`。 ② 新関数 `attachBuyOrders(race, buyOrders)` / `attachBuyOrdersBatch(races, getBuyOrders)` — show 判定レースの買い目を後付け保存。 ③ `attachResult` に `virtualPnl` 計算追加 — buyOrders から「5,000 円買って何円になったか」 を 3連単/2連単/単勝対応で算出 (totalStake / totalReturn / pnl / hits)。 ④ MansyuTop.jsx の useEffect に `attachBuyOrdersBatch` 呼出追加。 これで予想時点のすべての情報が保存され、 後から完全に再現可能 (Round 186 バックテストの基盤)。 既存ストレージ容量 30 日 200 件で 1-2 MB を想定 (5 MB 制限内)。
 - 🟡 進行中: なし
-- 🔜 次の一歩: **SPEC ロードマップの主要項目はほぼ完成**。 残: ① Round 200 想定: AI 段階 C ディープラーニング (TensorFlow.js or Vercel Functions サーバ推論 — データ 1,000 件以上溜まってから検討) ② Round 184+ (任意): モーター別 / 選手別 細粒度学習 (ID 取得問題が解決してから) / 大規模 2 カラム PC レイアウト / 通知の Service Worker 化。
+- 🔜 次の一歩: **SPEC §13 ロードマップに従って Round 186 から実装**。 ① Round 186: 第 2 層 バックテスト機能 (過去 mansyuSkipLog の snapshot から scoreMansyu 再計算 / 的中率・回収率・期待値・最大連敗・見送り精度 の 5 指標 / UI: 🔬 研究所タブにバックテストセクション) → ② Round 187: 第 3 層 本番/検証 AI シャドーモード (mansyuShadowWeights + 7-14 日後の昇格判定)。
 
 ## 🌐 本番URL
 

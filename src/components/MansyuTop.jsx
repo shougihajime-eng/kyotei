@@ -25,10 +25,12 @@ import {
 } from "../lib/mansyu.js";
 /* Phase 2: 見送りログ — 荒れスコア < 75 で見送ったレースを全件記録し、
    後で結果と突き合わせて 「見送って正解 / 万舟見逃し」 を測れるようにする。
-   Round 170: ユーザー画面の件数バッジは撤去 (SPEC §5)。 内部記録は学習用に残す。 */
+   Round 170: ユーザー画面の件数バッジは撤去 (SPEC §5)。 内部記録は学習用に残す。
+   Round 185: 買い目スナップショット保存 (SPEC §13.1) — attachBuyOrdersBatch を追加呼出。 */
 import {
   recordBatch as recordJudgementBatch,
   attachResultsBatch,
+  attachBuyOrdersBatch,
 } from "../lib/mansyuSkipLog.js";
 
 const STALE_AFTER_MS = 5 * 60 * 1000;      // 5 分超で古いデータ警告
@@ -76,6 +78,12 @@ export default function MansyuTop({
     try {
       recordJudgementBatch(races, scoreMansyu);
       attachResultsBatch(races);
+      // Round 185: show 判定レースの買い目スナップショットを記録 (バックテスト・virtualPnl 用)
+      attachBuyOrdersBatch(races, (race) => {
+        const sr = scoreMansyu(race);
+        if (!sr) return [];
+        return buildMansyuBuyOrders(race, sr);
+      });
     } catch (e) {
       // eslint-disable-next-line no-console
       console.warn("[MansyuTop] skip log update failed:", e);
