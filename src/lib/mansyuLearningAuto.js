@@ -41,12 +41,19 @@ import {
 } from "./mansyuWeights.js";
 import { getJudgementLog } from "./mansyuSkipLog.js";
 import { TARGET_VENUES } from "./mansyu.js";
+import { runBacktestWithWeights } from "./mansyuBacktest.js";
 
-/* === Round 187 (SPEC §13.3): シャドー昇格ルール ===
+/* === Round 187/187.5 (SPEC §13.3): シャドー昇格ルール ===
  * 学習結果は本番に即反映せず、 シャドーに保存。
- * SHADOW_PROMOTION_DAYS 日経過したら本番に昇格 (時間ベース・最低限版)。
- * 厳密なバックテスト比較による昇格は Round 187.5 で別途実装。 */
-const SHADOW_PROMOTION_DAYS = 7;
+ * 7 日経過後にバックテストで本番 vs シャドー の ROI を比較:
+ *   ・シャドー ROI ≥ 本番 ROI + 5pt → 昇格
+ *   ・シャドー ROI < 本番 ROI + 5pt → 破棄
+ *   ・サンプル不足 (< 5 件) → 14 日まで待機 → 14 日経過もダメなら時間ベース昇格 (フォールバック) */
+const SHADOW_PROMOTION_DAYS = 7;       // バックテスト評価の最短経過日数
+const SHADOW_FALLBACK_DAYS = 14;       // この日数経過 + サンプル不足ならフォールバック昇格
+const SHADOW_BACKTEST_DAYS = 14;       // バックテスト集計対象期間
+const SHADOW_MIN_SAMPLE = 5;           // バックテスト最低サンプル数
+const SHADOW_ROI_IMPROVEMENT = 0.05;   // ROI 5pt 以上改善で昇格
 const PROMOTE_CHECK_KEY = "mansyuShadowPromoteLastCheck";
 
 const HISTORY_KEY = "mansyuLearningHistory";
@@ -588,6 +595,43 @@ function setPromoteLastCheck(d) {
   }
 }
 
+/* Round 187.5: バックテストで本番 vs シャドー の ROI を比較し、 昇格 / 破棄 / 待機 を判定
+ * @param {object} opts.production  本番重み (現状)
+ * @param {object} opts.shadow      シャドー重み (試用中)
+ * @param {string|null} opts.jcd    場別なら jcd 指定、 全場共通なら null
+ * @returns {{ decision: "promote"|"reject"|"insufficient", productionROI, shadowROI, productionSample, shadowSample, message }}
+ */
+function evaluateShadowVsProduction(production, shadow, jcd = null) {
+  const prod = runBacktestWithWeights({ days: SHADOW_BACKTEST_DAYS, jcd, weights: production });
+  const sha  = runBacktestWithWeights({ days: SHADOW_BACKTEST_DAYS, jcd, weights: shadow });
+  const pSample = prod.showWithBuyCount || 0;
+  const sSample = sha.showWithBuyCount || 0;
+  if (pSample < SHADOW_MIN_SAMPLE || sSample < SHADOW_MIN_SAMPLE) {
+    return {
+      decision: "insufficient",
+      productionROI: prod.roi, shadowROI: sha.roi,
+      productionSample: pSample, shadowSample: sSample,
+      message: `サンプル不足 (本番 ${pSample} 件 / シャドー ${sSample} 件、 各 ${SHADOW_MIN_SAMPLE} 件待ち)`,
+    };
+  }
+  const pROI = prod.roi || 0;
+  const sROI = sha.roi || 0;
+  if (sROI >= pROI + SHADOW_ROI_IMPROVEMENT) {
+    return {
+      decision: "promote",
+      productionROI: pROI, shadowROI: sROI,
+      productionSample: pSample, shadowSample: sSample,
+      message: `シャドー ROI ${(sROI*100).toFixed(0)}% > 本番 ${(pROI*100).toFixed(0)}% (+${((sROI-pROI)*100).toFixed(0)}pt)`,
+    };
+  }
+  return {
+    decision: "reject",
+    productionROI: pROI, shadowROI: sROI,
+    productionSample: pSample, shadowSample: sSample,
+    message: `シャドー ROI ${(sROI*100).toFixed(0)}% ≤ 本番 ${(pROI*100).toFixed(0)}% (改善 +${((sROI-pROI)*100).toFixed(0)}pt < 必要 +${(SHADOW_ROI_IMPROVEMENT*100).toFixed(0)}pt)`,
+  };
+}
+
 export function checkAndPromoteShadows() {
   const today = new Date().toISOString().slice(0, 10);
   if (getPromoteLastCheck() === today) {
@@ -601,17 +645,46 @@ export function checkAndPromoteShadows() {
   if (shadow && shadow.savedDate) {
     const days = daysBetween(shadow.savedDate, today);
     if (days >= SHADOW_PROMOTION_DAYS) {
-      // 本番に昇格
-      saveMansyuWeights(shadow.weights);
-      clearShadowWeights();
-      const entry = {
-        ts: new Date().toISOString(),
-        kind: "shadow_promoted",
-        reason: `シャドー (${shadow.savedDate} 保存、 ${days} 日経過) を本番に昇格`,
-        promotedWeights: shadow.weights,
-      };
-      pushHistory(entry);
-      results.push({ scope: "all", kind: "promoted", days });
+      const production = loadMansyuWeights();
+      const evalResult = evaluateShadowVsProduction(production, shadow.weights, null);
+      if (evalResult.decision === "promote") {
+        // ROI 改善が確認 → 本番昇格
+        saveMansyuWeights(shadow.weights);
+        clearShadowWeights();
+        pushHistory({
+          ts: new Date().toISOString(),
+          kind: "shadow_promoted",
+          reason: `シャドー (${shadow.savedDate} 保存、 ${days} 日経過) を本番昇格 — ${evalResult.message}`,
+          promotedWeights: shadow.weights,
+          metrics: evalResult,
+        });
+        results.push({ scope: "all", kind: "promoted", days, metrics: evalResult });
+      } else if (evalResult.decision === "reject") {
+        // ROI 改善なし → 破棄
+        clearShadowWeights();
+        pushHistory({
+          ts: new Date().toISOString(),
+          kind: "shadow_rejected",
+          reason: `シャドー (${shadow.savedDate} 保存、 ${days} 日経過) を破棄 — ${evalResult.message}`,
+          rejectedWeights: shadow.weights,
+          metrics: evalResult,
+        });
+        results.push({ scope: "all", kind: "rejected", days, metrics: evalResult });
+      } else if (days >= SHADOW_FALLBACK_DAYS) {
+        // サンプル不足のまま 14 日経過 → 時間ベースで昇格 (フォールバック)
+        saveMansyuWeights(shadow.weights);
+        clearShadowWeights();
+        pushHistory({
+          ts: new Date().toISOString(),
+          kind: "shadow_promoted",
+          reason: `シャドー (${shadow.savedDate} 保存、 ${days} 日経過) を時間ベース昇格 — ${evalResult.message}`,
+          promotedWeights: shadow.weights,
+          metrics: evalResult,
+          fallback: true,
+        });
+        results.push({ scope: "all", kind: "promoted_fallback", days, metrics: evalResult });
+      }
+      // insufficient かつ < 14 日 → 何もしない (次回チェックまで待機)
     }
   }
 
@@ -620,22 +693,50 @@ export function checkAndPromoteShadows() {
   for (const [jcd, sv] of Object.entries(allShadowVenue || {})) {
     if (!sv?.savedDate) continue;
     const days = daysBetween(sv.savedDate, today);
-    if (days >= SHADOW_PROMOTION_DAYS) {
+    if (days < SHADOW_PROMOTION_DAYS) continue;
+
+    const production = loadVenueWeights(jcd);
+    const evalResult = evaluateShadowVsProduction(production, sv.weights, jcd);
+    if (evalResult.decision === "promote") {
       saveVenueWeights(jcd, sv.weights);
       clearShadowVenueWeights(jcd);
-      const entry = {
+      pushHistory({
         ts: new Date().toISOString(),
         jcd,
         kind: "venue_shadow_promoted",
-        reason: `[場別 ${jcd}] シャドー (${sv.savedDate} 保存、 ${days} 日経過) を本番に昇格`,
+        reason: `[場別 ${jcd}] シャドー昇格 (${days} 日経過) — ${evalResult.message}`,
         promotedWeights: sv.weights,
-      };
-      pushHistory(entry);
-      results.push({ scope: jcd, kind: "promoted", days });
+        metrics: evalResult,
+      });
+      results.push({ scope: jcd, kind: "promoted", days, metrics: evalResult });
+    } else if (evalResult.decision === "reject") {
+      clearShadowVenueWeights(jcd);
+      pushHistory({
+        ts: new Date().toISOString(),
+        jcd,
+        kind: "venue_shadow_rejected",
+        reason: `[場別 ${jcd}] シャドー破棄 (${days} 日経過) — ${evalResult.message}`,
+        rejectedWeights: sv.weights,
+        metrics: evalResult,
+      });
+      results.push({ scope: jcd, kind: "rejected", days, metrics: evalResult });
+    } else if (days >= SHADOW_FALLBACK_DAYS) {
+      saveVenueWeights(jcd, sv.weights);
+      clearShadowVenueWeights(jcd);
+      pushHistory({
+        ts: new Date().toISOString(),
+        jcd,
+        kind: "venue_shadow_promoted",
+        reason: `[場別 ${jcd}] 時間ベース昇格 (${days} 日経過) — ${evalResult.message}`,
+        promotedWeights: sv.weights,
+        metrics: evalResult,
+        fallback: true,
+      });
+      results.push({ scope: jcd, kind: "promoted_fallback", days, metrics: evalResult });
     }
   }
 
-  return { ran: true, kind: results.length > 0 ? "promoted" : "none", results };
+  return { ran: true, kind: results.length > 0 ? "decided" : "none", results };
 }
 
 function daysBetween(fromDateStr, toDateStr) {

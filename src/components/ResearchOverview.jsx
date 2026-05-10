@@ -135,13 +135,15 @@ const KIND_META = {
   kept:                   { icon: "👍", color: "#86EFAC", label: "効果検証 OK" },
   skipped:                { icon: "⏭", color: "#94A3B8", label: "スキップ" },
   stopped:                { icon: "⛔", color: "#FDE68A", label: "学習停止" },
-  /* Round 187: シャドーモード (SPEC §13.3) */
+  /* Round 187/187.5: シャドーモード (SPEC §13.3) */
   shadow_applied:         { icon: "🛡", color: "#A78BFA", label: "シャドー保存" },
   shadow_promoted:        { icon: "🎓", color: "#86EFAC", label: "本番昇格" },
+  shadow_rejected:        { icon: "🚫", color: "#FCA5A5", label: "シャドー破棄" },
   venue_applied:          { icon: "🗺", color: "#67E8F9", label: "場別自動適用" },
   venue_skipped:          { icon: "🗺⏭", color: "#94A3B8", label: "場別スキップ" },
   venue_shadow_applied:   { icon: "🗺🛡", color: "#A78BFA", label: "場別シャドー保存" },
   venue_shadow_promoted:  { icon: "🗺🎓", color: "#86EFAC", label: "場別本番昇格" },
+  venue_shadow_rejected:  { icon: "🗺🚫", color: "#FCA5A5", label: "場別シャドー破棄" },
 };
 
 /* ===== Coming soon カード ===== */
@@ -156,11 +158,6 @@ function ComingSoonCard() {
       icon: "🏅",
       title: "場別 選手 TOP10",
       desc: "ST/コース別/モーター相性/会場相性 を AI 評価したランキング — 「会場巧者」 を発見 (Round 180)",
-    },
-    {
-      icon: "📈",
-      title: "シャドー成績比較 (バックテスト連動)",
-      desc: "現在は時間ベースで 7 日後昇格。 厳密な「本番 vs 検証 のバックテスト ROI 比較」 で昇格判定する仕組み (Round 187.5)",
     },
     {
       icon: "🔭",

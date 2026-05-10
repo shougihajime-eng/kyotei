@@ -20,8 +20,31 @@
  */
 
 import { getJudgementLog } from "./mansyuSkipLog.js";
+import { scoreMansyu } from "./mansyu.js";
 
 const MIDROUGH_PAYOUT = 5000; // この配当以上で「中穴+」 扱い
+
+/* === Round 187.5: snapshot から擬似 race オブジェクトを再構築 ===
+ * scoreMansyu に渡せる形にする (シャドー重みでの再評価用)。 */
+export function rebuildRaceFromSnapshot(entry) {
+  if (!entry?.snapshot) return null;
+  const s = entry.snapshot;
+  return {
+    id: entry.key,
+    date: entry.date,
+    jcd: entry.jcd,
+    raceNo: entry.raceNo,
+    venue: entry.venue,
+    startTime: entry.startTime,
+    weather: s.weather,
+    wind: s.wind,
+    windDir: s.windDir,
+    wave: s.wave,
+    boats: s.boats || [],
+    apiOdds: s.apiOdds,
+    officialForecast: s.officialForecast,
+  };
+}
 
 /**
  * バックテスト集計を実行
@@ -143,4 +166,96 @@ function daysAgoString(days) {
   const d = new Date();
   d.setDate(d.getDate() - (days - 1));
   return d.toISOString().slice(0, 10);
+}
+
+/* ============================================================================
+ * Round 187.5: シャドー比較用バックテスト
+ * ----------------------------------------------------------------------------
+ * 任意の重み (weights) で過去 snapshot を再評価し、
+ * 「その重みなら show / skip 判定はどうだったか」 を再計算する。
+ * show 判定したエントリの virtualPnl (= 保存時の買い目に対する実払戻) を集計。
+ *
+ * 注意: virtualPnl は「保存時の buyOrders」 を使う (重みを変えても買い目自体は変わらない)。
+ *       完全な再シミュレーションではないが、 「どのレースを show と判定するか」 の
+ *       目利き能力の比較として十分。
+ * ============================================================================ */
+export function runBacktestWithWeights(opts = {}) {
+  const { days = 14, jcd = null, weights = null } = opts;
+  if (!weights) {
+    return { ...emptyResult({ days, jcd, message: "重み未指定" }), method: "shadow" };
+  }
+  const all = getJudgementLog();
+  const finalizedWithSnapshot = all.filter(
+    (e) => e.finalized && e.result && e.snapshot && e.virtualPnl
+  );
+  // 期間フィルタ
+  const cutoff = days === "all" ? null : daysAgoString(days);
+  const inRange = cutoff
+    ? finalizedWithSnapshot.filter((e) => (e.date || "") >= cutoff)
+    : finalizedWithSnapshot;
+  // 場別フィルタ
+  const filtered = jcd
+    ? inRange.filter((e) => String(e.jcd).padStart(2, "0") === String(jcd).padStart(2, "0"))
+    : inRange;
+
+  if (filtered.length === 0) {
+    return { ...emptyResult({ days, jcd, message: "snapshot 持ち確定データなし" }), method: "shadow" };
+  }
+
+  // 各エントリを weights で再評価 → show 判定だけ集計
+  let showCount = 0, hitCount = 0;
+  let totalStake = 0, totalReturn = 0, totalPnl = 0;
+  const showWithBuyEntries = [];
+
+  for (const entry of filtered) {
+    const race = rebuildRaceFromSnapshot(entry);
+    if (!race) continue;
+    const sr = scoreMansyu(race, weights);
+    if (!sr) continue;
+    const judgement = sr.score >= 75 ? "show" : "skip";
+    if (judgement !== "show") continue;
+    showCount++;
+    if ((entry.virtualPnl?.hits || 0) >= 1) hitCount++;
+    totalStake += entry.virtualPnl?.totalStake || 0;
+    totalReturn += entry.virtualPnl?.totalReturn || 0;
+    totalPnl += entry.virtualPnl?.pnl || 0;
+    showWithBuyEntries.push(entry);
+  }
+
+  const hitRate = showCount > 0 ? hitCount / showCount : null;
+  const roi = totalStake > 0 ? totalReturn / totalStake : null;
+  const avgPnl = showCount > 0 ? totalPnl / showCount : null;
+
+  // 最大連敗
+  const ordered = [...showWithBuyEntries].sort((a, b) => {
+    const ad = a.date + String(a.raceNo || "0").padStart(2, "0");
+    const bd = b.date + String(b.raceNo || "0").padStart(2, "0");
+    return ad.localeCompare(bd);
+  });
+  let curStreak = 0, maxStreak = 0;
+  for (const e of ordered) {
+    if ((e.virtualPnl?.hits || 0) === 0) {
+      curStreak += 1;
+      if (curStreak > maxStreak) maxStreak = curStreak;
+    } else {
+      curStreak = 0;
+    }
+  }
+
+  return {
+    method: "shadow",
+    ready: true,
+    days, jcd,
+    sampleSize: filtered.length,
+    showCount,
+    showWithBuyCount: showCount,
+    hitRate, hitCount,
+    roi,
+    totalStake, totalReturn,
+    totalPnl,
+    avgPnl,
+    maxLosingStreak: ordered.length > 0 ? maxStreak : null,
+    skipAccuracy: null, // skip 側の集計は省略 (シャドー比較では show 側だけ重要)
+    message: null,
+  };
 }
