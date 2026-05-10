@@ -3,53 +3,79 @@ import ReactDOM from "react-dom/client";
 import App from "./App.jsx";
 import "./index.css";
 
-/* === Round 117: 起動時に過去予想ログを完全に強制削除 (フラグ刷新版) ===
+/* === 万舟研究所 フレッシュスタート (旧競艇アプリのデータを完全消去) ===
    背景:
-     ・Round 115 で導入したバナー表示の dismiss / Round 116 の自動削除が
-       同じフラグ (kyoteiRound115CleanupDone) を共有していたため、
-       銀バナーを 「今は削除しない」 で閉じた人は自動削除がスキップされていた。
-     ・ユーザーから 「グラフにまだ古いデータが残ってる」 と判明 → 全員強制再削除。
+     ・旧アプリ「競艇 EV Assistant」 と新アプリ「万舟研究所」 はコンセプト・予想思想が完全に別物。
+     ・旧データ (予測 / 学習 / 検証ログ / 設定) を引き継ぐと新アプリの自己学習に悪影響。
+     ・以前の R117 クリーンアップは「設定だけは保持」だったが、 今回は設定も含めて全消去。
    仕様:
-     ・新フラグ kyoteiR117CleanupDone を使う (旧フラグの状態に関わらず必ず 1 回実行)
-     ・対象: 全予想ログ + 公開検証ログ + 学習履歴 + 旧バージョンキー
-     ・設定 (予算 / リスク感覚) は保持
-     ・実行件数を sessionStorage に記録 → App 起動後トーストで通知 (毎回必ず出す)
-   ※ クラウド (Supabase) 側の削除は App.jsx の useEffect で auth ロード後に実施。 */
-(function autoCleanupLegacyDataR117() {
+     ・新フラグ manfuneFreshStartDone — 旧 R117 フラグの状態に関わらず必ず 1 回実行
+     ・対象: localStorage の "kyotei" / "manfune" で始まる全キー + sessionStorage 全部
+     ・設定も含めて完全消去 (preserveSettings=false)
+     ・クラウド (Supabase predictions) 側の削除は App.jsx の useEffect で auth ロード後に実施 */
+(function manfuneFreshStart() {
   if (typeof localStorage === "undefined") return;
-  const FLAG = "kyoteiR117CleanupDone";
+  const FLAG = "manfuneFreshStartDone";
   try {
-    if (localStorage.getItem(FLAG) === "1") return; // R117 実行済
-    const KEY = "kyoteiAssistantV2";
-    const raw = localStorage.getItem(KEY);
-    let savedSettings = null;
+    if (localStorage.getItem(FLAG) === "1") return; // 実行済
+
+    // 既存データの件数を記録 (削除した手応えをユーザーに見せる)
     let predCount = 0;
-    if (raw) {
-      try {
+    let publicLogCount = 0;
+    let learningLogCount = 0;
+    try {
+      const raw = localStorage.getItem("kyoteiAssistantV2");
+      if (raw) {
         const obj = JSON.parse(raw);
-        savedSettings = obj?.settings || null;
         predCount = obj?.predictions ? Object.keys(obj.predictions).length : 0;
-      } catch {}
+      }
+      const pubRaw = localStorage.getItem("kyoteiPublicLog");
+      if (pubRaw) {
+        const arr = JSON.parse(pubRaw);
+        if (Array.isArray(arr)) publicLogCount = arr.length;
+      }
+      const learnRaw = localStorage.getItem("kyoteiLearningLog");
+      if (learnRaw) {
+        const arr = JSON.parse(learnRaw);
+        if (Array.isArray(arr)) learningLogCount = arr.length;
+      }
+    } catch {}
+
+    // localStorage の kyotei* / manfune* キーを全削除 (将来追加されても自動で対象)
+    const keysToRemove = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k) continue;
+      if (k.startsWith("kyotei") || k.startsWith("manfune")) {
+        keysToRemove.push(k);
+      }
     }
-    // 必ず 1 回は削除を実行 (無条件) — predCount 0 でも検証 / 学習ログがあるかもしれない
-    localStorage.removeItem(KEY);
-    localStorage.removeItem("kyoteiPublicLog");
-    localStorage.removeItem("kyoteiLearningLog");
-    localStorage.removeItem("kyoteiAssistantStateV3");
-    localStorage.removeItem("kyoteiAssistantStateV2");
-    // 旧 R115 フラグも消す (混乱防止)
-    localStorage.removeItem("kyoteiRound115CleanupDone");
-    if (savedSettings) {
-      localStorage.setItem(KEY, JSON.stringify({ settings: savedSettings, predictions: {} }));
+    for (const k of keysToRemove) {
+      localStorage.removeItem(k);
     }
+
+    // sessionStorage も完全クリア (キャッシュ・一時状態)
+    try {
+      if (typeof sessionStorage !== "undefined") {
+        sessionStorage.clear();
+      }
+    } catch {}
+
+    // フレッシュスタートのフラグだけ立てる (これより後の予想は新規データ)
     localStorage.setItem(FLAG, "1");
-    // ユーザーへ完了通知用フラグ
-    sessionStorage.setItem("kyoteiCleanupJustDone", JSON.stringify({ predCount, round: 117 }));
+    sessionStorage.setItem(
+      "manfuneFreshStartJustDone",
+      JSON.stringify({ predCount, publicLogCount, learningLogCount })
+    );
     // eslint-disable-next-line no-console
-    console.log(`[R117 auto-cleanup] cleared ${predCount} predictions + public/learning logs`);
+    console.log(
+      `[万舟研究所 フレッシュスタート] 旧アプリのデータを全消去: ` +
+      `予測 ${predCount} 件 / 公開ログ ${publicLogCount} 件 / 学習ログ ${learningLogCount} 件 / ` +
+      `localStorage キー ${keysToRemove.length} 個`
+    );
   } catch (e) {
     // eslint-disable-next-line no-console
-    console.warn("[R117 auto-cleanup] failed:", e);
+    console.warn("[万舟研究所 フレッシュスタート] failed:", e);
   }
 })();
 

@@ -51,7 +51,18 @@ import { computeDailyTrend } from "./lib/dailyTrend.js";
 import { defaultSettings, summarizeToday, perRaceCap } from "./lib/money.js";
 import { todayDate, todayKey, startEpoch } from "./lib/format.js";
 import { generateSampleRaces, buildRacesFromSchedule, mergeProgram, mergeOdds, mergeBeforeInfo } from "./lib/sample.js";
-import { sendBuyNotification, sendResultNotification, primeSentResults } from "./lib/notifyBuy.js";
+import { isTargetVenue, scoreMansyu, buildMansyuBuyOrders, buildMansyuReason, TARGET_VENUES } from "./lib/mansyu.js";
+import {
+  sendBuyNotification,
+  sendResultNotification,
+  primeSentResults,
+  // Round 161: 通知 4 種追加
+  sendStormAlert,
+  sendCloseSoon10,
+  sendCloseSoon3,
+  sendBigHitNotification,
+  primeSentBigHits,
+} from "./lib/notifyBuy.js";
 
 const REFRESH_COOLDOWN_MS = 15 * 1000; // Round 112: 60→15 秒に短縮 (連打したい時のストレスを除去)
 
@@ -209,31 +220,32 @@ export default function App() {
     showToast("ログアウトしました — ローカル保存は継続", "info");
   }, [showToast]);
 
-  /* Round 117: クラウドクリーンアップ済フラグ (R115/R116 とは別フラグ — 全員強制再実行)
-     ・main.jsx で local は強制削除済
-     ・cloud は authUser ロード後に削除する必要がある (削除前に fullSync が走ると古い cloud → local に戻る)
+  /* 万舟研究所 フレッシュスタート: クラウド側 (Supabase predictions) のクリーンアップ完了フラグ。
+     ・main.jsx で localStorage / sessionStorage は既に強制削除済
+     ・cloud は authUser がロードされた後に 1 回だけ削除する
+       (削除前に fullSync が走ると古い cloud → local に戻ってしまうため)
      ・cloudCleanupDone=false の間は fullSync / lightSync を停止 */
   const [cloudCleanupDone, setCloudCleanupDone] = useState(() => {
-    try { return localStorage.getItem("kyoteiR117CloudCleanupDone") === "1"; }
+    try { return localStorage.getItem("manfuneCloudFreshStartDone") === "1"; }
     catch { return true; }
   });
 
-  /* Round 117: 起動時 1 回だけ、 main.jsx でクリアした旨をトーストで知らせる (R117 実行直後だけ) */
+  /* main.jsx でローカルをクリアした件数をトーストで通知 (1 回だけ) */
   useEffect(() => {
     try {
-      const raw = sessionStorage.getItem("kyoteiCleanupJustDone");
+      const raw = sessionStorage.getItem("manfuneFreshStartJustDone");
       if (!raw) return;
-      sessionStorage.removeItem("kyoteiCleanupJustDone");
-      const { predCount } = JSON.parse(raw) || {};
-      const msg = predCount > 0
-        ? `✅ 過去予想 ${predCount} 件 + 検証 / 学習ログを削除しました`
-        : `✅ 過去ログを完全リセットしました`;
-      // showToast 関数は宣言済 (line ~141) なので即時呼べる
+      sessionStorage.removeItem("manfuneFreshStartJustDone");
+      const { predCount = 0, publicLogCount = 0, learningLogCount = 0 } = JSON.parse(raw) || {};
+      const totalRemoved = predCount + publicLogCount + learningLogCount;
+      const msg = totalRemoved > 0
+        ? `🧹 万舟研究所 フレッシュスタート — 旧データ ${totalRemoved} 件を完全消去しました`
+        : `🧹 万舟研究所 フレッシュスタート — 旧データはありませんでした`;
       setTimeout(() => showToast(msg, "ok"), 300);
     } catch {}
   }, [showToast]);
 
-  /* Round 117: authUser がロードされたら 1 回だけクラウド側も強制削除 */
+  /* authUser がロードされたら 1 回だけクラウド側 (Supabase predictions) も強制削除 */
   useEffect(() => {
     if (cloudCleanupDone) return;
     if (!authUser) return; // 未ログインなら cloud 削除は不要 (次回ログイン時に削除)
@@ -243,16 +255,14 @@ export default function App() {
         const res = await deleteCloudData(authUser.id);
         if (cancelled) return;
         if (res.ok) {
-          try { localStorage.setItem("kyoteiR117CloudCleanupDone", "1"); } catch {}
-          // 旧 R115 cloud フラグも消す (混乱防止)
-          try { localStorage.removeItem("kyoteiR115CloudCleanupDone"); } catch {}
-          showToast(`☁️ クラウド ${res.deleted} 件を削除しました`, "ok");
+          try { localStorage.setItem("manfuneCloudFreshStartDone", "1"); } catch {}
+          showToast(`☁️ クラウドの旧データ ${res.deleted} 件を削除しました`, "ok");
           setCloudCleanupDone(true);
         } else {
           showToast(`⚠️ クラウド削除失敗: ${res.error} — 次回再試行します`, "neg");
         }
       } catch (e) {
-        console.error("[r117 cloud cleanup] failed:", e);
+        console.error("[manfune cloud fresh-start] failed:", e);
       }
     })();
     return () => { cancelled = true; };
@@ -954,6 +964,9 @@ export default function App() {
       baseRaces = generateSampleRaces();
       setIsSampleMode(true);   // Round 74: 仮データ動作中フラグ
     }
+    /* 万舟研究所 Phase 1: 対象 5 場 (戸田/江戸川/平和島/鳴門/桐生) のみに絞る。
+       他場のレースは取得・予想・表示しない (= 荒れやすい場だけを研究する)。 */
+    baseRaces = baseRaces.filter((r) => isTargetVenue(r.jcd));
     /* Round 112: ここで即 races を画面に出す → ユーザーは "更新が反応した" と感じられる
        詳細 (program/odds/before/result) は ② 以降で並列に追記される */
     setRaces(baseRaces);
@@ -1300,7 +1313,8 @@ export default function App() {
      ・recommendations が更新されるたびに、 各レースの decision を確認
      ・"buy" になっていて (まだ通知してない) なら 1 回だけ通知
      ・タブが見えている時 / 通知 OFF / 締切後 は通知しない (notifyBuy.js 内で判定)
-     ・締切後 (minutesToStart ≤ 0) のレースは通知しない */
+     ・締切後 (minutesToStart ≤ 0) のレースは通知しない
+     Round 161: 激荒れ警報 / 締切 10 分前 / 締切 3 分前 もここで発火 */
   useEffect(() => {
     if (!races || races.length === 0 || !recommendations) return;
     const now = nowTick;
@@ -1308,13 +1322,41 @@ export default function App() {
       const e = startEpoch(r.date, r.startTime);
       if (e == null) continue;
       const minutesToStart = (e - now) / 60000;
-      if (minutesToStart <= 0 || minutesToStart > ODDS_STABLE_MINUTES) continue;
+      if (minutesToStart <= 0) continue;
       const rec = recommendations[r.id];
-      if (rec?.decision === "buy") {
+
+      // (a) 買い判定通知 — 直前 (15 分以内) で buy のとき
+      if (minutesToStart <= ODDS_STABLE_MINUTES && rec?.decision === "buy") {
         sendBuyNotification(r, rec, minutesToStart);
       }
+
+      // (b) Round 161: 激荒れ警報 — 直前 (15 分以内) で 暴荒れ / 高 EV 候補
+      if (minutesToStart <= ODDS_STABLE_MINUTES) {
+        const ev = evals?.[r.id];
+        const stormScore = ev?.accident?.severity ?? 0;
+        const inProb = ev?.probs?.[0] ?? 1;
+        const expectedTrifecta = rec?.main?.odds && rec?.main?.kind === "3連単"
+          ? Math.round(rec.main.odds * 100) : 0;
+        // 激荒れ: severity ≥ 60 もしくは inProb ≤ 0.30 (1号艇崩壊濃厚)
+        const isStorm = stormScore >= 60 || inProb <= 0.30;
+        if (isStorm) {
+          const reason = stormScore >= 60
+            ? `事故/転覆リスク ${stormScore}/100`
+            : `1号艇 1 着率 ${(inProb * 100).toFixed(0)}% — 荒れ濃厚`;
+          sendStormAlert(r, { stormScore, expectedTrifecta, reason });
+        }
+      }
+
+      // (c) Round 161: 締切 10 分前
+      if (minutesToStart >= 9 && minutesToStart <= 10.5) {
+        sendCloseSoon10(r);
+      }
+      // (d) Round 161: 締切 3 分前
+      if (minutesToStart >= 2 && minutesToStart <= 3.5) {
+        sendCloseSoon3(r);
+      }
     }
-  }, [recommendations, races, nowTick]);
+  }, [recommendations, races, evals, nowTick]);
 
   /* Round 118 Task 2: 起動時に既存 finalize 済予想を 「通知済」 にしておく
      (古い結果を起動の度に再通知しない) — 1 回だけ実行 */
