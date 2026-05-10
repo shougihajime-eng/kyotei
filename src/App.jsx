@@ -58,6 +58,8 @@ import { defaultSettings, summarizeToday, perRaceCap } from "./lib/money.js";
 import { todayDate, todayKey, startEpoch } from "./lib/format.js";
 import { generateSampleRaces, buildRacesFromSchedule, mergeProgram, mergeOdds, mergeBeforeInfo } from "./lib/sample.js";
 import { isTargetVenue, scoreMansyu, buildMansyuBuyOrders, buildMansyuReason, TARGET_VENUES, setMansyuWeights } from "./lib/mansyu.js";
+// Round 172: AI 進化 段階 A — 自動学習サイクル (1 日 1 回)
+import { runLearningCycle } from "./lib/mansyuLearningAuto.js";
 import { loadMansyuWeights } from "./lib/mansyuWeights.js";
 // 起動時に 1 回だけ「現在の重み」 をモジュールに反映 (以降は MansyuLab の useEffect で都度更新)
 setMansyuWeights(loadMansyuWeights());
@@ -428,6 +430,28 @@ export default function App() {
       setPublicLogTick((t) => t + 1);  // パネル強制再描画
     }
   }, [predictions]);
+
+  /* === Round 172 (SPEC §12 段階 A): 自動学習サイクル ===
+     races / predictions が更新されるたびに runLearningCycle を呼ぶ。
+     内部の shouldRunLearning が「今日まだ実行していない」 をチェックするので
+     実際の学習は 1 日 1 回だけ走る。 適用された場合のみトースト通知。 */
+  useEffect(() => {
+    if (!Array.isArray(races) || races.length === 0) return;
+    try {
+      const result = runLearningCycle(predictions, races);
+      if (!result.ran) return;
+      if (result.kind === "applied") {
+        // 重みが変わったので mansyu モジュールに即時反映
+        setMansyuWeights(loadMansyuWeights());
+        showToast(`🤖 学習が動きました — ${result.message}`, "ok");
+      } else if (result.kind === "stopped") {
+        showToast(`⚠️ 学習停止: ${result.message}`, "info");
+      }
+      // skipped は静かに進む (毎日チェックされるが通知しない)
+    } catch (e) {
+      console.warn("[mansyuLearningAuto] runLearningCycle failed:", e);
+    }
+  }, [races, predictions, showToast]);
 
   /* === Compute evals + recommendations for all races === */
   const today = useMemo(() => summarizeToday(visiblePredictions), [visiblePredictions]);
