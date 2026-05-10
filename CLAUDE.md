@@ -29,9 +29,10 @@
 - ✅ Round 182 — **AI 進化 段階 B 場別重み学習実装** (SPEC §12 段階 B)。 5 場が独立重みを持つ、 場別学習サイクル、 scoreMansyu の場別重み優先。
 - ✅ Round 183 — **PC 最適化** (SPEC §8)。 maxWidth 920→1280、 CardGrid 1/2/3 列自動切替。
 - ✅ Round 184 — **SPEC §13 安全設計 3 層 追記** (shoug 必須要件)。 自己学習 AI に必須の 3 層を仕様化: ① 学習データ完全保存 (Round 185) ② バックテスト機能 (Round 186) ③ 本番/検証 AI シャドーモード (Round 187)。 §9 ロードマップに Round 184-187 追加。 コード変更なし。
-- ✅ Round 185 — **第 1 層: 学習データ完全保存実装** (SPEC §13.1)。 ① mansyuSkipLog.js の `entryFromScore` に `snapshot` フィールド追加 — `boats[]` (6艇分のフルスナップショット: racer/class/winRate/localWinRate/motor2/boat2/ST/exTime/exhibitionNote/partsExchange)、 `weather/wind/wave/windDir`、 `apiOdds` (3連単+単勝)、 `reasons[]` (判断理由テキスト最大8件)、 `officialForecast`。 ② 新関数 `attachBuyOrders(race, buyOrders)` / `attachBuyOrdersBatch(races, getBuyOrders)` — show 判定レースの買い目を後付け保存。 ③ `attachResult` に `virtualPnl` 計算追加 — buyOrders から「5,000 円買って何円になったか」 を 3連単/2連単/単勝対応で算出 (totalStake / totalReturn / pnl / hits)。 ④ MansyuTop.jsx の useEffect に `attachBuyOrdersBatch` 呼出追加。 これで予想時点のすべての情報が保存され、 後から完全に再現可能 (Round 186 バックテストの基盤)。 既存ストレージ容量 30 日 200 件で 1-2 MB を想定 (5 MB 制限内)。
+- ✅ Round 185 — **第 1 層: 学習データ完全保存実装** (SPEC §13.1)。 mansyuSkipLog に snapshot (boats/apiOdds/weather/reasons/buyOrders) + virtualPnl 追加。
+- ✅ Round 186 — **第 2 層: バックテスト機能実装** (SPEC §13.2)。 ① `src/lib/mansyuBacktest.js` 新規 — `runBacktest({days, jcd})` で 5 指標を集計: 的中率 (showWithBuy のうち hits>=1 の割合) / 回収率 (totalReturn ÷ totalStake) / 期待値 (1 レース平均 pnl) / 最大連敗 (時系列で連続 hits=0 の最大) / 見送り精度 (skip で配当 < 5000 の割合)、 期間 7d/14d/30d/全期間 切替、 場別 jcd フィルタ、 sampleSize や buyOrders スナップショット欠落時のメッセージ含む。 ② `src/components/BacktestPanel.jsx` 新規 — 5 指標を 5 つのカードで並列表示、 期間切替タブ、 ROI 1.0 以上は緑/未満は赤、 連敗 5+ は赤、 サンプル情報 + 思想説明。 ③ ResearchOverview.jsx に組込 (学習履歴の下、 Coming soon の上)、 Coming soon の「細粒度学習」 を「シャドーモード (Round 187)」 に置換。 これで「感覚で良くなった」 を排除し客観評価可能 (= shoug 必須要件)。
 - 🟡 進行中: なし
-- 🔜 次の一歩: **SPEC §13 ロードマップに従って Round 186 から実装**。 ① Round 186: 第 2 層 バックテスト機能 (過去 mansyuSkipLog の snapshot から scoreMansyu 再計算 / 的中率・回収率・期待値・最大連敗・見送り精度 の 5 指標 / UI: 🔬 研究所タブにバックテストセクション) → ② Round 187: 第 3 層 本番/検証 AI シャドーモード (mansyuShadowWeights + 7-14 日後の昇格判定)。
+- 🔜 次の一歩: **SPEC §13.3 に従って Round 187 を実装**。 ① Round 187: 第 3 層 本番/検証 AI シャドーモード (mansyuShadowWeights / mansyuShadowVenueWeights / mansyuShadowHistory 新規ストレージ、 学習結果は本番に即反映せずシャドーに保存、 7-14 日後にバックテスト指標で本番と比較し検証 ≥ 本番 +5% で昇格、 同等以下なら破棄)。
 
 ## 🌐 本番URL
 

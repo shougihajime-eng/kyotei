@@ -10,6 +10,7 @@
  */
 import { useEffect, useState } from "react";
 import { getLearningHistory } from "../lib/mansyuLearningAuto.js";
+import BacktestPanel from "./BacktestPanel.jsx";
 
 export default function ResearchOverview() {
   const [history, setHistory] = useState([]);
@@ -39,7 +40,10 @@ export default function ResearchOverview() {
       {/* ② 学習履歴カード (Round 172/172.5) */}
       <LearningHistoryCard history={history} />
 
-      {/* ③ Coming soon 予告 */}
+      {/* ③ バックテスト (Round 186 / SPEC §13.2) */}
+      <BacktestPanel />
+
+      {/* ④ Coming soon 予告 */}
       <ComingSoonCard />
 
     </div>
@@ -147,9 +151,9 @@ function ComingSoonCard() {
       desc: "ST/コース別/モーター相性/会場相性 を AI 評価したランキング — 「会場巧者」 を発見 (Round 180)",
     },
     {
-      icon: "🧠",
-      title: "細粒度学習 (場別/モーター別/選手別)",
-      desc: "全データ 1 セットの重みから、 場・モーター・選手ごとの個別重みへ進化 (Round 182)",
+      icon: "🛡",
+      title: "本番AI / 検証AI シャドーモード",
+      desc: "学習結果を即本番反映せず、 検証AIで 7-14 日試して成績OKなら昇格 (Round 187)",
     },
     {
       icon: "🔭",
