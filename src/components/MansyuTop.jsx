@@ -17,7 +17,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   scoreMansyu,
   buildMansyuBuyOrders,
-  buildMansyuReason,
+  buildMansyuReasonLines,
   minutesToClose,
   formatMinutesToClose,
   levelLabel,
@@ -119,16 +119,10 @@ export default function MansyuTop({
           />
         </div>
 
-        {/* === 件数サマリ (SPEC §5: 監視中 / 見送り / 万舟見逃し は撤去、 内部記録は残す) === */}
-        <div style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(2, 1fr)",
-          gap: 8,
-          marginTop: 10,
-        }}>
-          <SumBox label="🚨 激荒れ警報" value={alarms.length} color="#FCA5A5" emphasis={alarms.length > 0} />
-          <SumBox label="⚠️ 荒れ注意" value={warns.length} color="#FDE68A" emphasis={warns.length > 0} />
-        </div>
+        {/* === ヒーロー表現 (Round 175 / SPEC §0.1, §8): 「今日の勝負あり / なし」 を 1 秒で ===
+           勝負ありなら大きい数字 + 「件」 表記、 内訳 (激荒れ / 荒れ注意) はサブで小さく。
+           勝負なしなら控えめに「現時点で勝負なし」 (派手にしない)。 */}
+        <Hero alarms={alarms.length} warns={warns.length} />
 
         {/* === 更新状態 === */}
         <UpdateStatus
@@ -288,18 +282,63 @@ function formatSeconds(s) {
   return `${m} 分 ${sec.toString().padStart(2, "0")} 秒`;
 }
 
-function SumBox({ label, value, color, emphasis, sub }) {
+/* Round 175: ヒーロー表現 — 「今日の勝負あり/なし」 を 1 秒で。
+   旧 SumBox (Round 170 で 5→2 個に削減) は Hero に統合して廃止。 */
+function Hero({ alarms, warns }) {
+  const total = alarms + warns;
+  if (total === 0) {
+    return (
+      <div style={{
+        marginTop: 10, padding: "12px 14px", borderRadius: 10,
+        background: "rgba(255,255,255,0.03)",
+        border: "1px solid rgba(148, 163, 184, 0.20)",
+        color: "#94A3B8", fontSize: 13, textAlign: "center",
+        letterSpacing: "0.02em", fontWeight: 600,
+      }}>
+        🌙 現時点で勝負レースなし
+      </div>
+    );
+  }
+  const hasAlarm = alarms > 0;
   return (
     <div style={{
-      padding: "12px 14px",
-      borderRadius: 12,
-      background: emphasis ? `linear-gradient(135deg, ${color}22 0%, rgba(0,0,0,0.20) 100%)` : "rgba(255,255,255,0.03)",
-      border: `1.5px solid ${emphasis ? color + "70" : "rgba(148, 163, 184, 0.25)"}`,
-      textAlign: "center",
+      marginTop: 10,
+      padding: "16px 18px",
+      borderRadius: 14,
+      background: hasAlarm
+        ? "linear-gradient(135deg, rgba(220, 38, 38, 0.22) 0%, rgba(15, 23, 42, 0.85) 100%)"
+        : "linear-gradient(135deg, rgba(245, 158, 11, 0.18) 0%, rgba(15, 23, 42, 0.85) 100%)",
+      border: `2px solid ${hasAlarm ? "rgba(220, 38, 38, 0.55)" : "rgba(245, 158, 11, 0.55)"}`,
+      boxShadow: hasAlarm
+        ? "0 0 18px rgba(220, 38, 38, 0.32)"
+        : "0 0 14px rgba(245, 158, 11, 0.25)",
+      display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap",
     }}>
-      <div style={{ fontSize: 12, color: "#cbd5e1", fontWeight: 700, letterSpacing: "0.04em" }}>{label}</div>
-      <div style={{ fontSize: 30, fontWeight: 800, color, lineHeight: 1.0, marginTop: 4 }}>
-        {value}<span style={{ fontSize: 13, opacity: 0.75, marginLeft: 3 }}>{sub || "件"}</span>
+      <div style={{ fontSize: 38, lineHeight: 1 }}>{hasAlarm ? "🚨" : "⚠️"}</div>
+      <div style={{ flex: 1, minWidth: 140 }}>
+        <div style={{ fontSize: 12.5, color: "#cbd5e1", fontWeight: 700, letterSpacing: "0.06em", marginBottom: 2 }}>
+          今日の勝負
+        </div>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+          <span style={{
+            fontSize: 44, fontWeight: 800,
+            color: hasAlarm ? "#FCA5A5" : "#FDE68A",
+            lineHeight: 1, letterSpacing: "-0.02em",
+          }} className="num">{total}</span>
+          <span style={{ fontSize: 18, color: "#cbd5e1", fontWeight: 700 }}>レース</span>
+        </div>
+        <div style={{ fontSize: 11.5, color: "#94A3B8", marginTop: 6, fontWeight: 600 }}>
+          {hasAlarm && <>🚨 激荒れ <b style={{ color: "#FCA5A5" }} className="num">{alarms}</b></>}
+          {hasAlarm && warns > 0 && " ／ "}
+          {warns > 0 && <>⚠️ 荒れ注意 <b style={{ color: "#FDE68A" }} className="num">{warns}</b></>}
+        </div>
+      </div>
+      <div style={{
+        fontSize: 11, color: "#cbd5e1", textAlign: "right",
+        letterSpacing: "0.02em", opacity: 0.85, fontWeight: 600,
+      }}>
+        ↓ 下にスクロール<br/>
+        して買い目を確認
       </div>
     </div>
   );
@@ -375,7 +414,7 @@ function RaceCard({ race, result, close, onPickRace }) {
   const color = levelColor(result.level);
   const label = levelLabel(result.level);
   const buyOrders = useMemo(() => buildMansyuBuyOrders(race, result), [race, result]);
-  const reasonText = useMemo(() => buildMansyuReason(race, result), [race, result]);
+  const reasonLines = useMemo(() => buildMansyuReasonLines(result, 3), [result]);
   const isAlarm = result.level === "alarm";
   const closeText = formatMinutesToClose(close);
   const closeBg = close == null ? "#475569" : close <= 5 ? "#DC2626" : close <= 15 ? "#F59E0B" : close <= 60 ? "#2563EB" : "#475569";
@@ -462,15 +501,27 @@ function RaceCard({ race, result, close, onPickRace }) {
         )}
       </div>
 
-      {/* === 理由コメント === */}
+      {/* === 理由 3 行 (Round 175 / SPEC §4 「折りたたまずに常時表示」) === */}
       <div style={{
         margin: "0 16px 12px 16px", padding: "12px 14px",
         borderRadius: 10,
         background: "rgba(0,0,0,0.35)",
         borderLeft: `4px solid ${color}`,
-        fontSize: 14.5, color: "#e2e8f0", lineHeight: 1.55, fontWeight: 500,
       }}>
-        💡 {reasonText}
+        <div style={{ fontSize: 11.5, color: "#cbd5e1", marginBottom: 6, fontWeight: 700, letterSpacing: "0.04em" }}>
+          💡 なぜこのレースか
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          {reasonLines.map((line, i) => (
+            <div key={i} style={{
+              fontSize: 14, color: "#e2e8f0", lineHeight: 1.5, fontWeight: 500,
+              display: "flex", gap: 8, alignItems: "baseline",
+            }}>
+              <span style={{ color, fontWeight: 800, flex: "0 0 auto" }}>•</span>
+              <span style={{ flex: 1 }}>{line}</span>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* === 買い目 (Round 173: 5,000 円配分) === */}

@@ -385,12 +385,20 @@ export function buildMansyuBuyOrders(race, scoreResult) {
 /* 買い目配分定数 (UI 表示や合計計算で参照) */
 export const MANSYU_STAKE = MANSYU_TOTAL_STAKE;
 
-/** 理由コメント (簡潔1〜3行) */
+/** 理由コメント (1 行・スラッシュ連結) — 後方互換用 */
 export function buildMansyuReason(race, scoreResult) {
   if (!scoreResult) return "";
   const top = scoreResult.reasons.slice(0, 3);
   if (top.length === 0) return `荒れスコア${scoreResult.score}点`;
   return top.join(" / ");
+}
+
+/** Round 175: 理由を配列で返す (最大 3 行・SPEC §4 「理由 3 行」 用) */
+export function buildMansyuReasonLines(scoreResult, max = 3) {
+  if (!scoreResult) return [];
+  const top = scoreResult.reasons.slice(0, max);
+  if (top.length === 0) return [`荒れスコア ${scoreResult.score} 点`];
+  return top;
 }
 
 /** 締切までの残り時間 (分) — 締切は発走時刻ちょうどとして扱う */
