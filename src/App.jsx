@@ -12,6 +12,8 @@ const Stats = lazy(() => import("./components/Stats.jsx"));
 const LossAnalysis = lazy(() => import("./components/LossAnalysis.jsx"));
 // Round 164 (Phase 2): 「研究所」 タブ — 万舟向け学習 + 取りこぼし分析
 const MansyuLab = lazy(() => import("./components/MansyuLab.jsx"));
+// Round 176: 研究所タブの概要・案内 (上級者向けバナー / 学習履歴 / Coming soon)
+const ResearchOverview = lazy(() => import("./components/ResearchOverview.jsx"));
 // Round 166 (Phase 2.5): 1 レース深掘り画面 (荒れスコアのレーダーチャート)
 const MansyuDetail = lazy(() => import("./components/MansyuDetail.jsx"));
 const Settings = lazy(() => import("./components/Settings.jsx"));
@@ -2155,10 +2157,11 @@ export default function App() {
         )}
         {tab === "analysis" && (
           <Suspense fallback={<LazyFallback />}>
-            {/* Round 164: 「分析」 タブを 「研究所」 に切り替え。
-                万舟向け学習 (荒れスコア精度・見送り正答率・取りこぼし) を最上段に出し、
-                その下に既存 LossAnalysis (敗因 8 分類 / 学習ログ) を残す。
-                LossAnalysis は競艇 EV ベースだが、 旧来の検証情報も役立つので残置。 */}
+            {/* Round 176: 研究所タブの並びを SPEC §6.1 に整理。
+                ① ResearchOverview (上級者向けバナー / 学習履歴 / Coming soon)
+                ② MansyuLab (万舟向け学習詳細 — 既存)
+                ③ LossAnalysis (敗因 8 分類 — 旧 EV ベースだが参考に残置) */}
+            <ResearchOverview />
             <MansyuLab predictions={visibleData.predictions} races={races} />
             <LossAnalysis predictions={visibleData.predictions}
               visibleData={visibleData} races={races} />
