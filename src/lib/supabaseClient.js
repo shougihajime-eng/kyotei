@@ -1,7 +1,10 @@
 /**
  * Supabase クライアント (lazy init + 設定なしフォールバック)
  *
- * Round 45: クラウド同期を任意機能として実装。
+ * 万舟研究所 — Phase 1: 専用スキーマ manfune_lab に切り替え。
+ *   ・他プロジェクト (hissatsu / keiba / hajime_shogi 等) のスキーマには絶対触らない
+ *   ・旧 kyotei_app スキーマは DROP 済 (フレッシュスタート完了)
+ *
  * 環境変数 (VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY) が未設定なら
  * cloudEnabled() === false。 アプリはローカル保存のみで通常動作する。
  *
@@ -19,6 +22,9 @@ const _env = (typeof import.meta !== "undefined" && import.meta.env) ? import.me
 const SUPABASE_URL = _env.VITE_SUPABASE_URL || "";
 const SUPABASE_ANON_KEY = _env.VITE_SUPABASE_ANON_KEY || "";
 
+/* 万舟研究所 専用スキーマ — 共有 Supabase プロジェクトを他アプリと共用するための分離。 */
+export const APP_SCHEMA = "manfune_lab";
+
 let _client = null;
 
 export function cloudEnabled() {
@@ -29,9 +35,10 @@ export function getSupabase() {
   if (!cloudEnabled()) return null;
   if (!_client) {
     _client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      db: { schema: APP_SCHEMA },         // ← manfune_lab スキーマだけを参照
       auth: {
         // Username-only flow なので email 確認は使わない
-        // (signUp の email は username@kyotei.local の擬似形)
+        // (signUp の email は username@kyotei.local の擬似形 — 既存ユーザー互換のため変更しない)
         persistSession: true,
         autoRefreshToken: true,
         detectSessionInUrl: false,
