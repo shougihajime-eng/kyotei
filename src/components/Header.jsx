@@ -8,13 +8,13 @@ import { memo } from "react";
 import { yen } from "../lib/format.js";
 import { cloudEnabled } from "../lib/supabaseClient.js";
 
+/* 万舟研究所 Phase 2.5: タブを 4 つに絞る (検証 / グラフ は研究所タブに集約された + EV 時代の遺物)
+   旧タブ ("verify", "stats") はキー自体は残してあるので URL や旧 setTab 呼び出しは壊れない。 */
 const TABS = [
-  { k: "home",     label: "ホーム",  icon: "🏠" },
-  { k: "list",     label: "一覧",    icon: "📋" },
-  { k: "verify",   label: "検証",    icon: "📅" },
-  { k: "stats",    label: "グラフ",  icon: "📈" },
-  { k: "analysis", label: "研究所",  icon: "🔬" },
-  { k: "settings", label: "設定",    icon: "⚙️" },
+  { k: "home",     label: "ホーム",   icon: "🏠" },
+  { k: "list",     label: "一覧",     icon: "📋" },
+  { k: "analysis", label: "研究所",   icon: "🔬" },
+  { k: "settings", label: "設定",     icon: "⚙️" },
 ];
 
 const PROFILE_INFO = {

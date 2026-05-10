@@ -731,3 +731,29 @@ a[href]:active {
     transform: none;
   }
 }
+
+/* =====================================================================
+ * 万舟研究所 Phase 2.5 — アニメーション
+ *   ・mansyu-pulse: 激荒れ警報バッジを脈動 (危険感)
+ *   ・mansyu-blink: 締切 5 分以内のピル (緊急感)
+ *   ・mansyu-glow:  スコアバッジの淡い発光
+ *   ・reduced-motion ユーザーはすべて停止
+ * ===================================================================== */
+@keyframes mansyu-pulse {
+  0%, 100% { transform: scale(1.0); box-shadow: 0 0 16px rgba(220, 38, 38, 0.55); }
+  50%      { transform: scale(1.05); box-shadow: 0 0 22px rgba(220, 38, 38, 0.95); }
+}
+@keyframes mansyu-blink {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.55; }
+}
+@keyframes mansyu-glow {
+  0%, 100% { box-shadow: 0 0 8px rgba(251, 191, 36, 0.18); }
+  50%      { box-shadow: 0 0 18px rgba(251, 191, 36, 0.40); }
+}
+.mansyu-pulse { animation: mansyu-pulse 1.4s ease-in-out infinite; }
+.mansyu-blink { animation: mansyu-blink 0.9s ease-in-out infinite; }
+.mansyu-glow  { animation: mansyu-glow  2.2s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .mansyu-pulse, .mansyu-blink, .mansyu-glow { animation: none; }
+}

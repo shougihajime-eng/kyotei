@@ -178,23 +178,23 @@ export default function MansyuTop({
       {scored.length === 0 && (
         <div style={{
           marginTop: 24,
-          padding: "32px 16px",
+          padding: "36px 20px",
           textAlign: "center",
           borderRadius: 14,
-          background: "rgba(255,255,255,0.02)",
-          border: "1px dashed rgba(148, 163, 184, 0.25)",
-          color: "#94a3b8",
+          background: "linear-gradient(180deg, rgba(34, 211, 238, 0.04) 0%, rgba(0,0,0,0.20) 100%)",
+          border: "1px dashed rgba(103, 232, 249, 0.30)",
+          color: "#cbd5e1",
         }}>
-          <div style={{ fontSize: 40, marginBottom: 10 }}>😴</div>
-          <div style={{ fontSize: 16, fontWeight: 700, color: "#cbd5e1", marginBottom: 6 }}>
-            今日は荒れそうなレースなし
+          <div style={{ fontSize: 44, marginBottom: 12 }}>🌙</div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: "#e2e8f0", marginBottom: 8, letterSpacing: "0.02em" }}>
+            今は荒れそうなレースなし
           </div>
-          <div style={{ fontSize: 12, lineHeight: 1.6 }}>
+          <div style={{ fontSize: 13, lineHeight: 1.7, color: "#cbd5e1" }}>
             {Array.isArray(races) && races.length > 0
-              ? `5場で ${races.length} レース監視中ですが、荒れスコア 75 以上はまだありません。`
-              : "更新を押して、今日の対象 5 場を取得してください。"}
-            <br />
-            無理に予想せず、 条件が揃ったレースだけ通知されます。
+              ? <>5場で <b className="num" style={{ color: "#67E8F9" }}>{races.length}</b> レース監視中ですが、 <br />荒れスコア 75 以上はまだ出ていません。</>
+              : "「今すぐ更新」 を押して、 今日の対象 5 場を取得してください。"}
+            <br /><br />
+            <span style={{ fontSize: 12, opacity: 0.85 }}>無理に予想せず、 条件が揃ったレースだけ通知されます。</span>
           </div>
         </div>
       )}
@@ -413,31 +413,36 @@ function RaceCard({ race, result, close, onPickRace }) {
             発走 {race.startTime || "—"}
           </div>
         </div>
-        <div style={{
-          padding: "8px 14px", borderRadius: 999,
-          background: closeBg, color: "#fff",
-          fontSize: 15, fontWeight: 800, lineHeight: 1.1,
-          boxShadow: close != null && close <= 5 ? "0 0 10px rgba(220, 38, 38, 0.55)" : "none",
-        }}>
+        <div
+          className={close != null && close <= 5 && close >= -1 ? "mansyu-blink" : ""}
+          style={{
+            padding: "8px 14px", borderRadius: 999,
+            background: closeBg, color: "#fff",
+            fontSize: 15, fontWeight: 800, lineHeight: 1.1,
+            boxShadow: close != null && close <= 5 ? "0 0 10px rgba(220, 38, 38, 0.55)" : "none",
+          }}>
           ⏱ {closeText}
         </div>
         <div style={{ flex: "1 1 0", minWidth: 4 }} />
-        <div style={{
-          padding: "8px 16px", borderRadius: 12,
-          background: color, color: "#fff",
-          fontSize: 14, fontWeight: 800, letterSpacing: "0.04em",
-          boxShadow: isAlarm ? `0 0 16px ${color}90` : "none",
-          lineHeight: 1.1,
-        }}>
+        <div
+          className={isAlarm ? "mansyu-pulse" : ""}
+          style={{
+            padding: "8px 16px", borderRadius: 12,
+            background: color, color: "#fff",
+            fontSize: 14, fontWeight: 800, letterSpacing: "0.04em",
+            lineHeight: 1.1,
+          }}>
           {isAlarm ? "🚨 " : "⚠️ "}{label}
         </div>
-        <div style={{
-          padding: "8px 14px", borderRadius: 12,
-          background: "rgba(0,0,0,0.40)",
-          border: `2px solid ${color}77`,
-          color: "#fff",
-          display: "flex", alignItems: "baseline", gap: 3,
-        }}>
+        <div
+          className={isAlarm ? "mansyu-glow" : ""}
+          style={{
+            padding: "8px 14px", borderRadius: 12,
+            background: "rgba(0,0,0,0.40)",
+            border: `2px solid ${color}77`,
+            color: "#fff",
+            display: "flex", alignItems: "baseline", gap: 3,
+          }}>
           <span style={{ color, fontSize: 36, fontWeight: 800, lineHeight: 1.0 }}>{result.score}</span>
           <span style={{ fontSize: 13, opacity: 0.75 }}>/100</span>
         </div>
