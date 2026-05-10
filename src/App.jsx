@@ -14,6 +14,8 @@ const LossAnalysis = lazy(() => import("./components/LossAnalysis.jsx"));
 const MansyuLab = lazy(() => import("./components/MansyuLab.jsx"));
 // Round 176: 研究所タブの概要・案内 (上級者向けバナー / 学習履歴 / Coming soon)
 const ResearchOverview = lazy(() => import("./components/ResearchOverview.jsx"));
+// Round 180: 場別ランキング (モーター TOP10 / 選手 TOP10 は Round 181)
+const VenueRankings = lazy(() => import("./components/VenueRankings.jsx"));
 // Round 166 (Phase 2.5): 1 レース深掘り画面 (荒れスコアのレーダーチャート)
 const MansyuDetail = lazy(() => import("./components/MansyuDetail.jsx"));
 const Settings = lazy(() => import("./components/Settings.jsx"));
@@ -2184,11 +2186,15 @@ export default function App() {
         )}
         {tab === "analysis" && (
           <Suspense fallback={<LazyFallback />}>
-            {/* Round 176: 研究所タブの並びを SPEC §6.1 に整理。
+            {/* Round 176-180: 研究所タブの並びを SPEC §6.1 に整理。
                 ① ResearchOverview (上級者向けバナー / 学習履歴 / Coming soon)
-                ② MansyuLab (万舟向け学習詳細 — 既存)
-                ③ LossAnalysis (敗因 8 分類 — 旧 EV ベースだが参考に残置) */}
+                ② VenueRankings (場別 モーター TOP10 — Round 180、 選手 TOP10 は Round 181)
+                ③ MansyuLab (万舟向け学習詳細 — 既存)
+                ④ LossAnalysis (敗因 8 分類 — 旧 EV ベースだが参考に残置) */}
             <ResearchOverview />
+            <div style={{ maxWidth: 920, margin: "0 auto", padding: "0 clamp(8px, 3vw, 16px)" }}>
+              <VenueRankings races={races} />
+            </div>
             <MansyuLab predictions={visibleData.predictions} races={races} />
             <LossAnalysis predictions={visibleData.predictions}
               visibleData={visibleData} races={races} />

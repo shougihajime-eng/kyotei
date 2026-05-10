@@ -23,9 +23,10 @@
 - ✅ Round 176 — **「🔬 研究所」 タブ整理** (SPEC §6.1)。 新規コンポーネント `src/components/ResearchOverview.jsx` 作成、 タブの最上段に配置。 構成: ① 上級者向け注意バナー ② 学習履歴カード ③ Coming soon 予告。
 - ✅ Round 177 — **通知システム土台** (SPEC §6.2)。 既存の `notifyBuy.js` を再利用、 トグル ↔ ブラウザ許可連動 + 激荒れ自動検出。
 - ✅ Round 178 — **スマホ最適化 第 1 弾 (タップ領域 + アニメ)** (SPEC §8)。 タブ minHeight 40→48、 padding 拡大、 折りたたみアニメ (max-height トランジション)、 ▶ アイコン回転。
-- ✅ Round 179 — **場別ランキング機能 設計フェーズ** (SPEC §6.1.2)。 新規 `docs/RANKING-DESIGN.md` 起案 (8 章構成)。 既存 API の戻り値構造を実機調査 (program.js / racer.js / racer-recent.js / beforeinfo.js)、 制約事項 (モーター ID 取得不可 / toban 取得不可) を明示。 モーター TOP10 / 選手 TOP10 のスコア式 (重み配分含む)、 一言タグ生成ルール (優先順位付き 5-6 種)、 UI 設計 (場切替タブ + 1 行 1 件の表)、 コンポーネント構成 (`VenueRankings.jsx` + `MotorRankingTable.jsx` + `RacerRankingTable.jsx` + `lib/venueRanking.js`)、 実装ステップ (Round 180=モーター / Round 181=選手) を確定。 コード変更なし、 ドキュメントのみ。
+- ✅ Round 179 — **場別ランキング機能 設計フェーズ** (SPEC §6.1.2)。 新規 `docs/RANKING-DESIGN.md` 起案 (8 章 / 約 285 行)。 既存 API 実機調査、 スコア式・タグ生成ルール・UI 設計を確定。
+- ✅ Round 180 — **場別 モーター TOP10 実装** (SPEC §6.1.2 / docs/RANKING-DESIGN.md)。 新規 3 ファイル: ① `src/lib/venueRanking.js` — `computeMotorRanking(races, jcd)` (TARGET_VENUES から動的フィルタ、 同レース他艇平均から展示偏差計算、 タグ優先順位 4 種、 motor2 60% + boat2 25% + 展示 15% スコア) ② `src/components/MotorRankingTable.jsx` — 1 行 1 モーター (順位 / R + 艇番 / 選手名 + タグ / スコア + motor2 / タグ理由) ③ `src/components/VenueRankings.jsx` — 親 (場切替タブ動的生成 / 開催状況「休」 マーク / 開催中の場を初期選択 / 評価軸説明 + 選手 TOP10 予告)。 App.jsx の analysis ブロックに統合 (ResearchOverview の下、 MansyuLab の上)。
 - 🟡 進行中: なし
-- 🔜 次の一歩: **`docs/RANKING-DESIGN.md` に従って Round 180 を実装**。 ① Round 180: モーター TOP10 実装 (venueRanking.js + MotorRankingTable.jsx + VenueRankings.jsx 新規 / 場切替タブ / TARGET_VENUES 動的参照) → ② Round 181: 選手 TOP10 実装 → ③ Round 182: AI 段階 B 細粒度学習 → ④ Round 183: PC 最適化。
+- 🔜 次の一歩: **`docs/RANKING-DESIGN.md` §4 に従って Round 181 を実装**。 ① Round 181: 場別 選手 TOP10 (会場相性 30% / 全国勝率 20% / クラスボーナス 15% / ST 15% / モーター相性 10% / 直近 10% — RacerRankingTable.jsx 新規 + venueRanking.js に computeRacerRanking 追加 + VenueRankings.jsx に組込) → ② Round 182: AI 段階 B 細粒度学習 → ③ Round 183: PC 最適化。
 
 ## 🌐 本番URL
 
