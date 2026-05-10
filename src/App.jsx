@@ -58,8 +58,8 @@ import { defaultSettings, summarizeToday, perRaceCap } from "./lib/money.js";
 import { todayDate, todayKey, startEpoch } from "./lib/format.js";
 import { generateSampleRaces, buildRacesFromSchedule, mergeProgram, mergeOdds, mergeBeforeInfo } from "./lib/sample.js";
 import { isTargetVenue, scoreMansyu, buildMansyuBuyOrders, buildMansyuReason, TARGET_VENUES, setMansyuWeights } from "./lib/mansyu.js";
-// Round 172: AI 進化 段階 A — 自動学習サイクル (1 日 1 回)
-import { runLearningCycle } from "./lib/mansyuLearningAuto.js";
+// Round 172/172.5: AI 進化 段階 A — 自動学習サイクル + 自動ロールバック
+import { runLearningCycle, checkAndRollback } from "./lib/mansyuLearningAuto.js";
 import { loadMansyuWeights } from "./lib/mansyuWeights.js";
 // 起動時に 1 回だけ「現在の重み」 をモジュールに反映 (以降は MansyuLab の useEffect で都度更新)
 setMansyuWeights(loadMansyuWeights());
@@ -431,25 +431,44 @@ export default function App() {
     }
   }, [predictions]);
 
-  /* === Round 172 (SPEC §12 段階 A): 自動学習サイクル ===
-     races / predictions が更新されるたびに runLearningCycle を呼ぶ。
-     内部の shouldRunLearning が「今日まだ実行していない」 をチェックするので
-     実際の学習は 1 日 1 回だけ走る。 適用された場合のみトースト通知。 */
+  /* === Round 172 / 172.5 (SPEC §12 段階 A): 自動学習サイクル + 自動ロールバック ===
+     races / predictions が更新されるたびに 2 つの処理をチェック:
+       ① runLearningCycle: 1 日 1 回、 安全条件を満たせば重みを自動適用
+       ② checkAndRollback: 適用後 7-14 日で効果検証、 悪化していたら前重みに自動復元
+     どちらも内部で「今日まだ実行していない」 を判定するので、 走るのは 1 日 1 回ずつ。 */
   useEffect(() => {
     if (!Array.isArray(races) || races.length === 0) return;
     try {
       const result = runLearningCycle(predictions, races);
-      if (!result.ran) return;
-      if (result.kind === "applied") {
-        // 重みが変わったので mansyu モジュールに即時反映
-        setMansyuWeights(loadMansyuWeights());
-        showToast(`🤖 学習が動きました — ${result.message}`, "ok");
-      } else if (result.kind === "stopped") {
-        showToast(`⚠️ 学習停止: ${result.message}`, "info");
+      if (result.ran) {
+        if (result.kind === "applied") {
+          // 重みが変わったので mansyu モジュールに即時反映
+          setMansyuWeights(loadMansyuWeights());
+          showToast(`🤖 学習が動きました — ${result.message}`, "ok");
+        } else if (result.kind === "stopped") {
+          showToast(`⚠️ 学習停止: ${result.message}`, "info");
+        }
+        // skipped は静かに進む (毎日チェックされるが通知しない)
       }
-      // skipped は静かに進む (毎日チェックされるが通知しない)
     } catch (e) {
       console.warn("[mansyuLearningAuto] runLearningCycle failed:", e);
+    }
+
+    // ロールバックチェック
+    try {
+      const rb = checkAndRollback();
+      if (rb.ran) {
+        if (rb.kind === "rolledback") {
+          // 前重みに復元されたので mansyu モジュールに即時反映
+          setMansyuWeights(loadMansyuWeights());
+          showToast(`🔄 自動ロールバック: ${rb.message}`, "neg");
+        } else if (rb.kind === "kept") {
+          showToast(`✅ 学習効果 OK — ${rb.message}`, "ok");
+        }
+        // too_early / no_target / insufficient_post_sample は静かに進む
+      }
+    } catch (e) {
+      console.warn("[mansyuLearningAuto] checkAndRollback failed:", e);
     }
   }, [races, predictions, showToast]);
 

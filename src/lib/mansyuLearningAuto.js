@@ -30,12 +30,20 @@ import {
   saveMansyuWeights,
   applyAllRecommendations,
 } from "./mansyuWeights.js";
+import { getJudgementLog } from "./mansyuSkipLog.js";
 
 const HISTORY_KEY = "mansyuLearningHistory";
 const LAST_RUN_KEY = "mansyuLearningLastRun";
+const ROLLBACK_CHECK_KEY = "mansyuLearningRollbackLastCheck";
 const MAX_HISTORY = 30;
 const MIN_SAMPLE = 10;
 const STOP_THRESHOLD = 3; // 同じ recommendation を 3 回連続却下で停止
+
+/* === Round 172.5: 自動ロールバック設定 === */
+const ROLLBACK_MIN_DAYS = 7;            // 適用後 7 日経過してから判定
+const ROLLBACK_MAX_DAYS = 14;           // 適用後 14 日まで判定対象 (それ以降は時効)
+const ROLLBACK_MIN_POST_SAMPLE = 5;     // 適用後の確定済データが 5 件未満なら判定保留
+const ROLLBACK_DEGRADATION = 0.05;      // 5% 以上悪化したらロールバック
 
 /* === 履歴の読み書き === */
 export function getLearningHistory() {
@@ -184,15 +192,216 @@ export function runLearningCycle(predictions, races = []) {
   setLastRunDate(today);
   const entry = {
     ts: new Date().toISOString(),
+    appliedDate: today, // ロールバック計算用 (today = YYYY-MM-DD)
     kind: "applied",
     reason: `${recs.length} 件の提案を自動適用 (サンプル ${analysis.sampleSize} 件)`,
     sampleSize: analysis.sampleSize,
     before,
     after,
     recommendations: recs,
+    /* Round 172.5: ロールバック判定用ベースライン
+       適用後 7-14 日でこの数値と再集計値を比較する */
+    baseline: {
+      skipCorrectRate: analysis.skipCorrectRate,
+      overHitRate: analysis.overHitRate,
+      sampleSize: analysis.sampleSize,
+    },
   };
   pushHistory(entry);
   return { ran: true, kind: "applied", message: entry.reason, history: entry };
+}
+
+/* ============================================================================
+ * Round 172.5: 自動ロールバック
+ * ----------------------------------------------------------------------------
+ * 直近の applied エントリから 7-14 日経過した時に、 適用後の見送り正答率 /
+ * 見立て正答率 を再集計し、 baseline と比較。 5% 以上悪化していたら前重みに
+ * 自動復元する。
+ * ============================================================================ */
+
+/* skipLog エントリから「荒れたか」 を判定 (mansyuLearning と同じロジック) */
+function isRoughEntry(entry) {
+  const r = entry?.result;
+  if (!r) return null;
+  const payout = r.payout || 0;
+  return {
+    leaderFlipped: r.first !== 1,
+    isMidRough: payout >= 5000,
+    isMansyu: payout >= 10000,
+    trifectaPayout: payout,
+  };
+}
+
+/** 指定日以降の skipLog finalized エントリで正答率を再集計 */
+function recomputeRatesAfter(sinceDateStr) {
+  const all = getJudgementLog().filter((e) => e.finalized && e.result);
+  // entry.date が sinceDateStr 以降のもの (= 適用後に判定されたレース)
+  const post = all.filter((e) => (e.date || "") > sinceDateStr);
+  if (post.length === 0) {
+    return { sampleSize: 0, skipCorrectRate: null, overHitRate: null };
+  }
+  let underScored = 0, correctSkip = 0;
+  let overScored = 0, overScoredAndRough = 0;
+  for (const entry of post) {
+    const result = isRoughEntry(entry);
+    if (!result) continue;
+    const score = entry.score || 0;
+    if (score < 75) {
+      underScored++;
+      if (!result.isMidRough && !result.leaderFlipped) correctSkip++;
+    } else {
+      overScored++;
+      if (result.isMidRough) overScoredAndRough++;
+    }
+  }
+  return {
+    sampleSize: post.length,
+    skipCorrectRate: underScored > 0 ? correctSkip / underScored : null,
+    overHitRate: overScored > 0 ? overScoredAndRough / overScored : null,
+  };
+}
+
+/** 経過日数 (today から sinceDateStr まで何日) */
+function daysSince(sinceDateStr) {
+  if (!sinceDateStr) return null;
+  const since = new Date(`${sinceDateStr}T00:00:00`);
+  const now = new Date();
+  const diffMs = now - since;
+  return Math.floor(diffMs / (1000 * 60 * 60 * 24));
+}
+
+/* 今日もうロールバックチェックを走らせたか */
+function getLastRollbackCheck() {
+  try {
+    return localStorage.getItem(ROLLBACK_CHECK_KEY) || null;
+  } catch {
+    return null;
+  }
+}
+function setLastRollbackCheck(dateStr) {
+  try {
+    localStorage.setItem(ROLLBACK_CHECK_KEY, dateStr);
+  } catch {
+    // ignore
+  }
+}
+
+/**
+ * ロールバックチェックを 1 回実行
+ *
+ * 呼び出し側: App.jsx の useEffect で 1 日 1 回 (runLearningCycle と並走)
+ *
+ * @returns {object} { ran: boolean, kind: string, message: string, history?: entry }
+ */
+export function checkAndRollback() {
+  const today = new Date().toISOString().slice(0, 10);
+  if (getLastRollbackCheck() === today) {
+    return { ran: false, kind: "already_checked_today", message: "今日は既にチェック済み" };
+  }
+  setLastRollbackCheck(today);
+
+  // 直近の applied エントリを探す (rolledback 済はスキップ)
+  const history = getLearningHistory();
+  const lastApplied = history.find((h) => h.kind === "applied" && !h.rolledBackAt);
+  if (!lastApplied) {
+    return { ran: true, kind: "no_target", message: "ロールバック対象の applied 履歴なし" };
+  }
+
+  const days = daysSince(lastApplied.appliedDate);
+  if (days == null) {
+    return { ran: true, kind: "invalid_date", message: "applied 日が不明" };
+  }
+  if (days < ROLLBACK_MIN_DAYS) {
+    return { ran: true, kind: "too_early", message: `適用から ${days} 日 (${ROLLBACK_MIN_DAYS} 日待ち)` };
+  }
+  if (days > ROLLBACK_MAX_DAYS) {
+    return { ran: true, kind: "expired", message: `適用から ${days} 日 (${ROLLBACK_MAX_DAYS} 日経過 = 時効)` };
+  }
+
+  // 適用後の正答率を再集計
+  const post = recomputeRatesAfter(lastApplied.appliedDate);
+  if (post.sampleSize < ROLLBACK_MIN_POST_SAMPLE) {
+    return {
+      ran: true,
+      kind: "insufficient_post_sample",
+      message: `適用後データ ${post.sampleSize} 件 (${ROLLBACK_MIN_POST_SAMPLE} 件待ち)`,
+    };
+  }
+
+  const baseline = lastApplied.baseline || {};
+  const baseSkip = baseline.skipCorrectRate;
+  const baseOver = baseline.overHitRate;
+
+  // どちらかが 5% 以上悪化していればロールバック
+  const skipDiff = (baseSkip != null && post.skipCorrectRate != null)
+    ? post.skipCorrectRate - baseSkip : null;
+  const overDiff = (baseOver != null && post.overHitRate != null)
+    ? post.overHitRate - baseOver : null;
+
+  const skipBad = skipDiff != null && skipDiff <= -ROLLBACK_DEGRADATION;
+  const overBad = overDiff != null && overDiff <= -ROLLBACK_DEGRADATION;
+
+  if (!skipBad && !overBad) {
+    // 効果は維持または改善 → 継続
+    const entry = {
+      ts: new Date().toISOString(),
+      kind: "kept",
+      reason: `適用後 ${days} 日 / ${post.sampleSize} 件で効果検証 OK ` +
+        `(見送り正答率 ${formatPct(baseSkip)} → ${formatPct(post.skipCorrectRate)} / ` +
+        `見立て正答率 ${formatPct(baseOver)} → ${formatPct(post.overHitRate)})`,
+      sampleSize: post.sampleSize,
+      appliedRef: lastApplied.ts,
+      baseline,
+      post,
+    };
+    pushHistory(entry);
+    return { ran: true, kind: "kept", message: entry.reason, history: entry };
+  }
+
+  // ロールバック実行
+  saveMansyuWeights(lastApplied.before);
+  // applied エントリに rolledBackAt をマーク (再判定防止)
+  markRolledBack(lastApplied.ts);
+
+  const reasons = [];
+  if (skipBad) reasons.push(`見送り正答率 ${formatPct(baseSkip)} → ${formatPct(post.skipCorrectRate)} (${formatPctDiff(skipDiff)})`);
+  if (overBad) reasons.push(`見立て正答率 ${formatPct(baseOver)} → ${formatPct(post.overHitRate)} (${formatPctDiff(overDiff)})`);
+  const entry = {
+    ts: new Date().toISOString(),
+    kind: "rolledback",
+    reason: `効果悪化のため前重みに自動復元 (${reasons.join(" / ")})`,
+    sampleSize: post.sampleSize,
+    appliedRef: lastApplied.ts,
+    baseline,
+    post,
+    restoredWeights: lastApplied.before,
+  };
+  pushHistory(entry);
+  return { ran: true, kind: "rolledback", message: entry.reason, history: entry };
+}
+
+/* applied エントリに rolledBackAt をセット (重複ロールバック防止) */
+function markRolledBack(appliedTs) {
+  try {
+    if (typeof localStorage === "undefined") return;
+    const list = getLearningHistory();
+    const idx = list.findIndex((h) => h.ts === appliedTs);
+    if (idx < 0) return;
+    list[idx] = { ...list[idx], rolledBackAt: new Date().toISOString() };
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(list.slice(0, MAX_HISTORY)));
+  } catch {
+    // ignore
+  }
+}
+
+function formatPct(v) {
+  if (v == null) return "—";
+  return `${(v * 100).toFixed(0)}%`;
+}
+function formatPctDiff(v) {
+  if (v == null) return "—";
+  const sign = v >= 0 ? "+" : "";
+  return `${sign}${(v * 100).toFixed(0)}pt`;
 }
 
 /* === ユーザー画面用: 直近の状態を 1 行で取得 === */
