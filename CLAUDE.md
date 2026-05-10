@@ -21,9 +21,10 @@
 - ✅ Round 174 — **「⚙️ 設定」 タブ全面刷新 (4 項目化)** (SPEC §6.2)。 Settings.jsx を 442 行 → 約 200 行に削減。 SPEC 通り 4 項目のみ: ① ログイン (Supabase) ② ログアウト ③ データ削除 (フレッシュスタート) ④ 通知 ON/OFF (将来通知機能の土台 — 大きなトグルスイッチ UI)。 削除: 「🧪 購入モード エア/リアル切替」 / 「🆕 バージョン管理 v2/legacy」 / 「💾 保存ステータス」 / 「✏️ 手動記録 件数」 / VersionCompareTable / Stat 関数。 settings.notificationsEnabled (boolean) を localStorage に保存。 通知の実体は Round 177 で実装予定。
 - ✅ Round 175 — **ホーム強化 (ヒーロー表現 + 理由 3 行)** (SPEC §0.1, §4, §8)。 ① ブランドバナー直下の 2 個の SumBox (激荒れ/荒れ注意) を Hero コンポーネントに統合。 「今日の勝負」 を超大文字 (44px) で表示、 アラーム時は赤グラデ + glow 18px、 注意時は橙、 0 件は控えめに「🌙 現時点で勝負レースなし」。 ② RaceCard の理由表示を 1 行スラッシュ連結 → 3 行リスト (各行頭に色付き •) に。 「💡 なぜこのレースか」 のラベル付き。
 - ✅ Round 176 — **「🔬 研究所」 タブ整理** (SPEC §6.1)。 新規コンポーネント `src/components/ResearchOverview.jsx` 作成、 タブの最上段に配置。 構成: ① 上級者向け注意バナー ② 学習履歴カード ③ Coming soon 予告。
-- ✅ Round 177 — **通知システム土台** (SPEC §6.2)。 既存の `notifyBuy.js` (8 関数 / Round 114-161 で実装済) を再利用。 ① Settings.jsx の通知トグルを `enableNotifications` / `disableNotifications` と連動 — トグル ON 時にブラウザ通知許可リクエスト、 拒否されたら自動で OFF に戻す。 通知許可状態 (granted / denied / default / unsupported) を 4 種テキストで案内表示。 ② App.jsx に新 useEffect 追加 — races 更新時に荒れスコア 85 点以上 (alarm) のレースを検出し `sendStormAlert()` を呼出。 終了済 (発走 +5 分超) と 1 時間以上先のレースは除外。 内部の `sentStormIds` で 1 レース 1 回に制限。
+- ✅ Round 177 — **通知システム土台** (SPEC §6.2)。 既存の `notifyBuy.js` を再利用、 トグル ↔ ブラウザ許可連動 + 激荒れ自動検出。
+- ✅ Round 178 — **スマホ最適化 第 1 弾 (タップ領域 + アニメ)** (SPEC §8)。 ① Header.jsx タブ minHeight 40 → 48 (Apple HIG / Material 推奨)、 padding 9/14 → 12/18、 fontSize 13 → 14、 WebkitTapHighlightColor: transparent + touchAction: manipulation 追加。 ② MansyuTop.jsx の RaceCard 折りたたみ詳細を max-height トランジションでスムーズに開閉 (cubic-bezier 0.32s)、 ▶ アイコンは rotate 90deg で動く、 ボタン minHeight 48 → 56 (片手親指ゾーン最適)、 aria-expanded 追加でアクセシビリティ改善。 タブナビ下部固定化と PC 別レイアウトは Round 178.5 以降に分けて実装。
 - 🟡 進行中: なし
-- 🔜 次の一歩: **SPEC §9 ロードマップに従って Round 178 から実装**。 ① Round 178: スマホ最適化 (片手 / 親指ゾーン) → ② **Round 179-181: 場別ランキング機能 (信頼感の中核)** → ③ Round 182: AI 段階 B 細粒度学習 → ④ Round 183: PC 最適化。
+- 🔜 次の一歩: **SPEC §9 ロードマップに従って Round 179 から実装**。 ① **Round 179-181: 場別ランキング機能 (信頼感の中核)** — モーター TOP10 / 選手 TOP10 → ② Round 182: AI 段階 B 細粒度学習 → ③ Round 183: PC 最適化。
 
 ## 🌐 本番URL
 

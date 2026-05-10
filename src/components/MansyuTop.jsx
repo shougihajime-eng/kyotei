@@ -575,12 +575,13 @@ function RaceCard({ race, result, close, onPickRace }) {
         </div>
       )}
 
-      {/* === 折りたたみ詳細 === */}
+      {/* === 折りたたみ詳細 (Round 178: タップ領域 + アニメ強化) === */}
       <div style={{ borderTop: "1px solid rgba(148, 163, 184, 0.20)" }}>
         <button
           onClick={() => setOpen(!open)}
+          aria-expanded={open}
           style={{
-            width: "100%", padding: "14px 16px", minHeight: 48,
+            width: "100%", padding: "16px 16px", minHeight: 56, // 48 → 56 (片手親指最適)
             background: "transparent", border: 0,
             color: "#cbd5e1", fontSize: 14, fontWeight: 700,
             cursor: "pointer", textAlign: "left",
@@ -588,10 +589,19 @@ function RaceCard({ race, result, close, onPickRace }) {
             WebkitTapHighlightColor: "transparent",
             touchAction: "manipulation",
           }}>
-          <span style={{ fontSize: 16 }}>{open ? "▼" : "▶"}</span>
+          <span style={{
+            fontSize: 16,
+            display: "inline-block",
+            transition: "transform 0.22s cubic-bezier(0.4, 0, 0.2, 1)",
+            transform: open ? "rotate(90deg)" : "rotate(0deg)",
+          }}>▶</span>
           <span>詳しい荒れ条件 (スコア内訳・気象・外部リンク)</span>
         </button>
-        {open && (
+        <div style={{
+          maxHeight: open ? 2000 : 0,
+          overflow: "hidden",
+          transition: "max-height 0.32s cubic-bezier(0.4, 0, 0.2, 1)",
+        }}>
           <div style={{ padding: "0 16px 14px 16px" }}>
             <ScoreBreakdown parts={result.parts} boost={result.boost} />
             <div style={{ marginTop: 12, padding: "10px 12px", borderRadius: 10, background: "rgba(0,0,0,0.25)" }}>
@@ -624,7 +634,7 @@ function RaceCard({ race, result, close, onPickRace }) {
               )}
             </div>
           </div>
-        )}
+        </div>
       </div>
     </div>
   );

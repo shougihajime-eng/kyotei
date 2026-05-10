@@ -174,11 +174,11 @@ function HeaderImpl({ tab, setTab, today, settings, setSettings, switchProfile, 
                 style={{
                   flex: "0 0 auto",
                   scrollSnapAlign: "start",
-                  padding: "9px 14px",
+                  padding: "12px 18px", // Round 178: タップ領域拡大 (9/14 → 12/18)
                   borderRadius: 10,
                   background: active ? "linear-gradient(180deg, var(--brand) 0%, var(--brand-hover) 100%)" : "transparent",
                   color: active ? "#021824" : "var(--text-tertiary)",
-                  fontSize: 13,
+                  fontSize: 14, // Round 178: 13 → 14 (スマホ視認性)
                   fontWeight: active ? 700 : 600,
                   border: "1px solid " + (active ? "transparent" : "transparent"),
                   cursor: "pointer",
@@ -188,7 +188,9 @@ function HeaderImpl({ tab, setTab, today, settings, setSettings, switchProfile, 
                   alignItems: "center",
                   gap: 6,
                   boxShadow: active ? "0 1px 0 rgba(255,255,255,0.20) inset, 0 4px 14px rgba(34, 211, 238, 0.25)" : "none",
-                  minHeight: 40,
+                  minHeight: 48, // Round 178: 40 → 48 (Apple HIG / Material 推奨タップ領域)
+                  WebkitTapHighlightColor: "transparent",
+                  touchAction: "manipulation",
                   position: "relative",
                 }}
                 onMouseEnter={(e) => {
