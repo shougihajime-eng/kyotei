@@ -119,53 +119,8 @@ export default function Settings({ settings, setSettings, switchVirtualMode, swi
         </div>
       </section>
 
-      <section className="card" style={{ padding: 18 }}>
-        <h2 style={{ fontSize: 15, fontWeight: 700, marginBottom: 4, letterSpacing: "0.01em" }}>🎯 戦略 (買い目の方向性)</h2>
-        <div style={{ fontSize: 11.5, color: "var(--text-tertiary)", marginBottom: 12, lineHeight: 1.5 }}>
-          3 パターンから選択 — 買い目の券種と本数が変わります
-        </div>
-        <div className="grid grid-cols-3 gap-2">
-          {[
-            { k: "steady",     icon: "🛡️", title: "安定型",   desc: "的中率特化",   color: "#3B82F6" },
-            { k: "balanced",   icon: "⚖️", title: "バランス型", desc: "実戦最適",     color: "#F59E0B" },
-            { k: "aggressive", icon: "🎯", title: "攻め型",   desc: "高配当狙い",   color: "#EF4444" },
-          ].map((o) => {
-            const active = settings.riskProfile === o.k;
-            return (
-              <button key={o.k} type="button"
-                onClick={() => handleProfileChange(o.k)}
-                style={{
-                  minHeight: 96,
-                  padding: "12px 8px",
-                  borderRadius: 12,
-                  border: active ? `1.5px solid ${o.color}` : "1.5px solid var(--border-soft)",
-                  background: active
-                    ? `linear-gradient(180deg, ${o.color}18 0%, rgba(255,255,255,0.02) 100%)`
-                    : "rgba(255, 255, 255, 0.02)",
-                  color: active ? o.color : "var(--text-secondary)",
-                  cursor: "pointer",
-                  transition: "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
-                  display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
-                  boxShadow: active
-                    ? `0 0 0 1px ${o.color}40, 0 4px 16px ${o.color}25, inset 0 1px 0 rgba(255,255,255,0.06)`
-                    : "inset 0 1px 0 rgba(255,255,255,0.02)",
-                  transform: active ? "translateY(-1px)" : "translateY(0)",
-                }}>
-                <div style={{ fontSize: 22, lineHeight: 1 }}>{o.icon}</div>
-                <div style={{ fontSize: 13, fontWeight: 700, lineHeight: 1.1, letterSpacing: "0.01em" }}>{o.title}</div>
-                <div style={{ fontSize: 10, opacity: active ? 0.95 : 0.65, fontWeight: 500, letterSpacing: "0.04em" }}>
-                  {o.desc}
-                </div>
-                {active && (
-                  <div style={{ fontSize: 9, marginTop: 1, opacity: 0.85, fontWeight: 700, letterSpacing: "0.06em" }}>
-                    ✓ 選択中
-                  </div>
-                )}
-              </button>
-            );
-          })}
-        </div>
-      </section>
+      {/* 旧「🎯 戦略 (買い目の方向性)」セクション (3 択) は 2026-05-10 に非表示化。
+         内部は balanced 固定。 */}
 
       <section className="card" style={{ padding: 18 }}>
         <h2 style={{ fontSize: 15, fontWeight: 700, marginBottom: 4, letterSpacing: "0.01em" }}>🧪 購入モード (エア / リアル)</h2>

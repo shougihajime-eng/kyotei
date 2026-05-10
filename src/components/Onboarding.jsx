@@ -13,7 +13,8 @@ export default function Onboarding({ settings, setSettings, onClose }) {
   const [bankroll, setBankroll] = useState(settings.bankroll || 50000);
   const [dailyBudget, setDailyBudget] = useState(settings.dailyBudget || 2500);
   const [perRace, setPerRace] = useState(settings.perRaceLimit || 1000);
-  const [risk, setRisk] = useState(settings.riskProfile || "balanced");
+  // 2026-05-10: スタイル選択 UI 廃止。 常に balanced 固定。
+  const risk = "balanced";
   const [agreedAge, setAgreedAge] = useState(false);
   const [agreedNoGuarantee, setAgreedNoGuarantee] = useState(false);
 
@@ -77,8 +78,9 @@ export default function Onboarding({ settings, setSettings, onClose }) {
             marginTop: 14,
             letterSpacing: "-0.02em",
             lineHeight: 1.2,
+            color: "#FBBF24",
           }}>
-            競艇 EV アシスタント
+            🌊 万舟研究所
           </h2>
           <div style={{
             fontSize: 12,
@@ -87,7 +89,7 @@ export default function Onboarding({ settings, setSettings, onClose }) {
             letterSpacing: "0.04em",
             lineHeight: 1.5,
           }}>
-            最初に資金とスタイルを設定してください
+            5 場 (戸田・江戸川・平和島・鳴門・桐生) の荒れレースだけを監視します
           </div>
         </div>
 
@@ -106,54 +108,7 @@ export default function Onboarding({ settings, setSettings, onClose }) {
           />
         </div>
 
-        {/* === スタイル選択 (Header と同じデザイン) === */}
-        <div style={{ marginBottom: 18 }}>
-          <div style={{
-            fontSize: 11,
-            color: "var(--text-tertiary)",
-            marginBottom: 8,
-            letterSpacing: "0.06em",
-            fontWeight: 600,
-            textTransform: "uppercase",
-          }}>
-            予想スタイル
-          </div>
-          <div className="grid grid-cols-3 gap-2">
-            {[
-              { k: "steady",     icon: "🛡️", title: "安定型",   desc: "的中率特化",   color: "#3B82F6" },
-              { k: "balanced",   icon: "⚖️", title: "バランス型", desc: "実戦最適",     color: "#F59E0B" },
-              { k: "aggressive", icon: "🎯", title: "攻め型",   desc: "高配当狙い",   color: "#EF4444" },
-            ].map((o) => {
-              const active = risk === o.k;
-              return (
-                <button key={o.k} type="button" onClick={() => setRisk(o.k)}
-                  style={{
-                    minHeight: 88,
-                    padding: "12px 8px",
-                    borderRadius: 12,
-                    border: active ? `1.5px solid ${o.color}` : "1.5px solid var(--border-soft)",
-                    background: active
-                      ? `linear-gradient(180deg, ${o.color}1A 0%, rgba(255,255,255,0.02) 100%)`
-                      : "rgba(255, 255, 255, 0.02)",
-                    color: active ? o.color : "var(--text-secondary)",
-                    cursor: "pointer",
-                    transition: "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
-                    display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
-                    boxShadow: active
-                      ? `0 0 0 1px ${o.color}40, 0 4px 16px ${o.color}25`
-                      : "inset 0 1px 0 rgba(255, 255, 255, 0.02)",
-                    transform: active ? "translateY(-1px)" : "translateY(0)",
-                  }}>
-                  <div style={{ fontSize: 22, lineHeight: 1 }}>{o.icon}</div>
-                  <div style={{ fontSize: 13, fontWeight: 700, lineHeight: 1.1, letterSpacing: "0.01em" }}>{o.title}</div>
-                  <div style={{ fontSize: 10, opacity: active ? 0.95 : 0.65, fontWeight: 500, letterSpacing: "0.04em" }}>
-                    {o.desc}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </div>
+        {/* 旧「予想スタイル」 3 択は 2026-05-10 に廃止 — 常に balanced 固定。 */}
 
         {/* === 注意 (cyan info) === */}
         <div className="alert-info" style={{ fontSize: 11.5, marginBottom: 16, lineHeight: 1.55, padding: "10px 14px" }}>

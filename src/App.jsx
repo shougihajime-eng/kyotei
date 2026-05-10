@@ -124,7 +124,12 @@ export default function App() {
 
   /* === Persistent state === */
   const initial = loadState() || {};
-  const [settings, setSettings] = useState({ ...defaultSettings(), ...(initial.settings || {}) });
+  // 2026-05-10: スタイル選択 (steady/balanced/aggressive) UI を廃止。
+  // 既存ユーザーで steady / aggressive のまま保存されている場合に備え、起動時に balanced に強制矯正する。
+  const [settings, setSettings] = useState(() => {
+    const merged = { ...defaultSettings(), ...(initial.settings || {}) };
+    return { ...merged, riskProfile: "balanced" };
+  });
   // Round 43: 起動時に 90 日以上前の AI スナップショットを GC (手動記録は永続)
   const initialPredictions = useMemo(() => {
     const raw = initial.predictions || {};
@@ -2013,31 +2018,8 @@ export default function App() {
               >
                 {isVirtual ? "🧪 エア中" : "💰 リアル中"}
               </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const order = ["steady", "balanced", "aggressive"];
-                  const i = order.indexOf(settings.riskProfile);
-                  const next = order[(i + 1) % order.length];
-                  switchProfile(next);
-                }}
-                style={{
-                  minHeight: 36, padding: "6px 12px", borderRadius: 999,
-                  background: "rgba(34, 211, 238, 0.10)",
-                  border: "1.5px solid rgba(34, 211, 238, 0.40)",
-                  color: "#67E8F9",
-                  fontWeight: 700, fontSize: 11.5, cursor: "pointer",
-                  letterSpacing: "0.02em",
-                  WebkitTapHighlightColor: "transparent",
-                  touchAction: "manipulation",
-                  transition: "transform 0.06s ease, background 0.18s ease",
-                }}
-                onTouchStart={(e) => { e.currentTarget.style.transform = "scale(0.94)"; }}
-                onTouchEnd={(e) => { e.currentTarget.style.transform = "scale(1)"; }}
-                aria-label={`現在スタイル: ${styleLabel} (タップで切替)`}
-              >
-                {styleLabel}
-              </button>
+              {/* 旧 スタイル循環ボタン (steady/balanced/aggressive) は 2026-05-10 に廃止。
+                 内部は balanced 固定。 */}
             </div>
 
             {/* === 右: 次の対象レース === */}

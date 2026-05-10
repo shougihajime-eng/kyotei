@@ -9,7 +9,7 @@
 - ✅ Round 166 続き — Phase 2.5 完了: **🎬 MansyuDetail + Supabase 同期** — ① **`MansyuDetail.jsx` 新規** (1 レース深掘り画面: recharts レーダーチャート 6 成分 0-100% / 各成分の理由一覧 / 買い目 / 公式リンク 5 種 / 気象・水面)、② App.jsx の detail タブに上段 MansyuDetail / 下段 RaceDetail 併設、 MansyuTop の RaceCard に「🔬 詳しく見る」 ボタン追加、③ **Supabase 同期拡張**: `cloudSync.js` の details JSONB に `mansyuSnapshot` / `whatIfBuy` を追加 — `manfune_lab` スキーマで端末間共有可能。
 - ✅ Round 167 — **見送りログのクラウド同期** (Phase 2.5 補完): ① Supabase に `manfune_lab.skip_log` テーブル新規作成 (RLS 4 ポリシー / auth.users CASCADE / 19 カラム)、② `src/lib/skipLogSync.js` 新規 (toRow / fromRow / pushSkipLog / pullSkipLog / mergeSkipLogs / fullSyncSkipLog / lightPushSkipLog — finalized 行は cloud で上書きされない保護)、③ `mansyuSkipLog.js` に `replaceLog()` 追加 (cloud から merge 結果を localStorage に書き戻すための入口)、④ App.jsx に同期 useEffect 2 つ追加 (ログイン直後の fullSync / races 更新ごとの lightPush 1.5s debounce)、⑤ `findMissedRoughRaces` を skipLog 主データ化 (predictions だけだったバグも合わせて修正)。 → これで端末をまたいでも見送りログ・万舟見逃しが共有され、 学習データの母数が伸びる。
 - 🟡 進行中: なし
-- 🔜 次の一歩: 朝起きて本番で MansyuTop の 「🔬 詳しく見る」 → MansyuDetail のレーダーチャート確認 → 研究所で「重みを適用」 を押して荒れスコア計算が変わるか / Supabase ログインで端末間同期 (skip_log も含む) できるか試す → 必要なら Phase 3 (機械学習化 / 自動買い目記録 / 月次レポート)。
+- 🔜 次の一歩: **`docs/REDESIGN-ROADMAP.md` の Phase 0 (本番実物確認 + 動作仕分け) を最優先で消化**。 4 タブ (🏠/📋/🔬/⚙️) を本番で順番に開き、 10 項目チェックして「真っ白／予想されてない」 と感じる画面を特定する。 そこから Phase 1 (一覧タブのリデザイン) → Phase 2 (スマホ最適化) と順番に進める。
 
 ## 🌐 本番URL
 
@@ -26,6 +26,8 @@
 | `docs/manual-test-playbook.md` | 手動回帰テスト手順 |
 | `docs/cloud-sync-test-playbook.md` | Supabase 同期テスト手順 |
 | `docs/supabase-setup.md` | Supabase テーブル / 認証セットアップ |
+| `docs/ROADMAP-WORLD-CHAMPION.md` | 予想精度向上の中期計画 (Round 120-) |
+| `docs/REDESIGN-ROADMAP.md` | **デザイン刷新 + 動作信頼性のロードマップ (2026-05-10 起案)** |
 
 ## 🛠 技術構成
 

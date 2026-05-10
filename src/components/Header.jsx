@@ -176,14 +176,10 @@ function HeaderImpl({ tab, setTab, today, settings, setSettings, switchProfile, 
         )}
       </div>
 
-      {/* ===== 第二行: スタイルセレクタ (大きく一目で) ===== */}
-      {settings.onboardingDone && (
-        <div className="max-w-5xl mx-auto px-4 pb-2.5">
-          <BigStyleButtons current={settings.riskProfile} onChange={handleStyle} suggested={suggestedStyle} />
-        </div>
-      )}
+      {/* 旧: スタイルセレクタ (安定/バランス/攻め 3 択) は 2026-05-10 に非表示化。
+         内部は balanced 固定で予想ロジック温存 (App.jsx の switchProfile を介して切替不可)。 */}
 
-      {/* ===== 第三行: タブナビ (洗練された pill style — Round 108c で 現在地表示強化) ===== */}
+      {/* ===== タブナビ (洗練された pill style — Round 108c で 現在地表示強化) ===== */}
       <div className="max-w-5xl mx-auto px-4 pb-2" role="tablist" aria-label="メインメニュー">
         <div className="flex gap-1 overflow-x-auto scrollbar" style={{ scrollSnapType: "x proximity" }}>
           {TABS.map((t) => {
