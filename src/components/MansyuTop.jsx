@@ -24,12 +24,11 @@ import {
   levelColor,
 } from "../lib/mansyu.js";
 /* Phase 2: 見送りログ — 荒れスコア < 75 で見送ったレースを全件記録し、
-   後で結果と突き合わせて 「見送って正解 / 万舟見逃し」 を測れるようにする。 */
+   後で結果と突き合わせて 「見送って正解 / 万舟見逃し」 を測れるようにする。
+   Round 170: ユーザー画面の件数バッジは撤去 (SPEC §5)。 内部記録は学習用に残す。 */
 import {
   recordBatch as recordJudgementBatch,
   attachResultsBatch,
-  getTodaySkipCount,
-  getTodayMissedCount,
 } from "../lib/mansyuSkipLog.js";
 
 const STALE_AFTER_MS = 5 * 60 * 1000;      // 5 分超で古いデータ警告
@@ -68,19 +67,15 @@ export default function MansyuTop({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [races, tick]);
 
-  /* Phase 2: races が更新されるたびに見送りログを記録。
+  /* Phase 2: races が更新されるたびに見送りログを記録 (内部・学習データ用)。
      ① 全レースのスコアを記録 (75+ は 「show」 / 未満は 「skip」)
-     ② 結果が乗っているレースは万舟見逃し判定して finalized 化 */
-  const [logCounts, setLogCounts] = useState({ skip: 0, missed: 0 });
+     ② 結果が乗っているレースは万舟見逃し判定して finalized 化
+     SPEC §5/§7: ユーザー画面に件数バッジは出さない。 研究所タブで参照用。 */
   useEffect(() => {
     if (!Array.isArray(races) || races.length === 0) return;
     try {
       recordJudgementBatch(races, scoreMansyu);
       attachResultsBatch(races);
-      setLogCounts({
-        skip: getTodaySkipCount(),
-        missed: getTodayMissedCount(),
-      });
     } catch (e) {
       // eslint-disable-next-line no-console
       console.warn("[MansyuTop] skip log update failed:", e);
@@ -124,18 +119,15 @@ export default function MansyuTop({
           />
         </div>
 
-        {/* === 件数サマリ === */}
+        {/* === 件数サマリ (SPEC §5: 監視中 / 見送り / 万舟見逃し は撤去、 内部記録は残す) === */}
         <div style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))",
-          gap: 6,
+          gridTemplateColumns: "repeat(2, 1fr)",
+          gap: 8,
           marginTop: 10,
         }}>
-          <SumBox label="🚨 激荒れ" value={alarms.length} color="#FCA5A5" emphasis={alarms.length > 0} />
+          <SumBox label="🚨 激荒れ警報" value={alarms.length} color="#FCA5A5" emphasis={alarms.length > 0} />
           <SumBox label="⚠️ 荒れ注意" value={warns.length} color="#FDE68A" emphasis={warns.length > 0} />
-          <SumBox label="📡 監視中" value={Array.isArray(races) ? races.length : 0} color="#67E8F9" emphasis={false} sub="レース" />
-          <SumBox label="🤐 見送り" value={logCounts.skip} color="#94A3B8" emphasis={false} sub="件" />
-          <SumBox label="😱 万舟見逃し" value={logCounts.missed} color="#F87171" emphasis={logCounts.missed > 0} sub="件" />
         </div>
 
         {/* === 更新状態 === */}
@@ -191,7 +183,7 @@ export default function MansyuTop({
           </div>
           <div style={{ fontSize: 13, lineHeight: 1.7, color: "#cbd5e1" }}>
             {Array.isArray(races) && races.length > 0
-              ? <>5場で <b className="num" style={{ color: "#67E8F9" }}>{races.length}</b> レース監視中ですが、 <br />荒れスコア 75 以上はまだ出ていません。</>
+              ? <>5 場 (戸田・江戸川・平和島・鳴門・桐生) を監視しましたが、 <br />荒れスコア 75 以上はまだ出ていません。</>
               : "「今すぐ更新」 を押して、 今日の対象 5 場を取得してください。"}
             <br /><br />
             <span style={{ fontSize: 12, opacity: 0.85 }}>無理に予想せず、 条件が揃ったレースだけ通知されます。</span>

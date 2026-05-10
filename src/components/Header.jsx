@@ -75,57 +75,36 @@ function HeaderImpl({ tab, setTab, today, settings, setSettings, switchProfile, 
               </div>
             )}
           </div>
-          {/* Round 152: 買い件数バッジ常駐 — ヘッダにロゴ隣で常に「今日 N 件 buy」 を見せる */}
-          {settings.onboardingDone && buyCount > 0 && (
-            <div title={safetyBuyCount > 0 ? `通常 ${buyCount - safetyBuyCount} 件 + セーフティ ${safetyBuyCount} 件` : `通常 ${buyCount} 件`}
-              style={{
-                display: "inline-flex", alignItems: "center", gap: 4,
-                padding: "5px 10px", borderRadius: 999,
-                background: "linear-gradient(135deg, rgba(34,245,168,0.24) 0%, rgba(16,185,129,0.14) 100%)",
-                border: "1.5px solid rgba(34,245,168,0.55)",
-                color: "#6EE7B7", fontSize: 12, fontWeight: 800,
-                letterSpacing: "0.02em",
-                boxShadow: "0 0 14px rgba(34,245,168,0.30)",
-                marginLeft: 4,
-              }}>
-              💰 <span className="num">{buyCount}</span>件
-              {safetyBuyCount > 0 && (
-                <span style={{ fontSize: 10, opacity: 0.75 }}>(うち🛟{safetyBuyCount})</span>
-              )}
-            </div>
-          )}
+          {/* 旧 「💰 N 件 buy」件数バッジは Round 170 (SPEC §5) で撤去。
+             件数より「今日勝負あり/なし」 が大事。 */}
         </div>
 
         {/* スペーサー */}
         <div style={{ flex: "1 1 0", minWidth: 16 }} />
 
-        {/* 損益サマリ + モード切替 + ログイン + 更新 (右端固定) */}
+        {/* 損益サマリ + ログイン + 更新 (右端固定)
+           Round 170: 「リアル/エア 切替ボタン」 撤去 (SPEC §5)。 内部 virtualMode=true 固定で
+           今日の累計収支を単純表示 (クリック不可) のチップに置換。 */}
         {settings.onboardingDone && (
           <div className="flex items-center gap-2 flex-wrap" style={{ flex: "0 0 auto" }}>
-            {/* モード切替 (エア/リアル) */}
-            <button
-              type="button"
-              onClick={handleVirtualToggle}
-              aria-label={isVirtual ? "エア舟券モード" : "リアル舟券モード"}
-              title={isVirtual ? "🧪 エア中 — タップで リアルに" : "💰 リアル中 — タップで エアに"}
+            {/* 今日の累計収支 (5,000 円ベース) */}
+            <div
+              aria-label="今日の累計収支"
+              title="今日の累計収支 (1 レース 5,000 円ベース)"
               style={{
-                minHeight: 46, padding: "5px 12px",
+                minHeight: 46, padding: "5px 14px",
                 borderRadius: 12,
-                border: `1.5px solid ${isVirtual ? "rgba(34, 211, 238, 0.55)" : "rgba(245, 158, 11, 0.55)"}`,
-                background: isVirtual ? "rgba(34, 211, 238, 0.10)" : "rgba(245, 158, 11, 0.10)",
-                color: isVirtual ? "#67E8F9" : "#FCD34D",
-                fontWeight: 700, fontSize: 11.5, cursor: "pointer",
+                border: "1.5px solid rgba(148, 163, 184, 0.30)",
+                background: "rgba(255,255,255,0.03)",
                 display: "flex", flexDirection: "column", alignItems: "center", gap: 1,
-                transition: "all 0.18s ease",
                 lineHeight: 1.1,
                 letterSpacing: "0.01em",
-                boxShadow: "inset 0 1px 0 rgba(255,255,255,0.04)",
               }}>
-              <span style={{ fontSize: 12 }}>{isVirtual ? "🧪 エア" : "💰 リアル"}</span>
-              <b className={"num " + ((isVirtual ? air.pnl : real.pnl) >= 0 ? "text-pos" : "text-neg")} style={{ fontSize: 13 }}>
-                {isVirtual ? airLabel : realLabel}
+              <span style={{ fontSize: 11, color: "#cbd5e1", fontWeight: 600 }}>今日の収支</span>
+              <b className={"num " + (air.pnl >= 0 ? "text-pos" : "text-neg")} style={{ fontSize: 13 }}>
+                {airLabel}
               </b>
-            </button>
+            </div>
 
             {/* ログインボタン or ユーザー表示 */}
             {authUser ? (

@@ -1971,10 +1971,9 @@ export default function App() {
         </div>
       )}
 
-      {/* Round 105: 現在モード常時表示バー (画面下部固定) — premium polish */}
+      {/* Round 105: 現在モード常時表示バー (画面下部固定)
+         Round 170: モード切替・スタイル切替を撤去 (SPEC §5)。 「次の対象レース」 表示のみ残す。 */}
       {settings.onboardingDone && (() => {
-        const isVirtual = !!settings.virtualMode;
-        const styleLabel = { steady: "🛡️ 安定", balanced: "⚖️ バランス", aggressive: "🎯 攻め" }[settings.riskProfile] || settings.riskProfile;
         const now = Date.now();
         let nextTarget = null, minDiff = Infinity;
         for (const r of races || []) {
@@ -2004,31 +2003,9 @@ export default function App() {
             fontSize: 11,
             boxShadow: "0 -1px 0 rgba(255, 255, 255, 0.04) inset, 0 -8px 24px rgba(0, 0, 0, 0.30)",
           }}>
-            {/* === 左: モード + スタイル === */}
-            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-              <button
-                type="button"
-                onClick={() => switchVirtualMode()}
-                style={{
-                  minHeight: 36, padding: "6px 12px", borderRadius: 999,
-                  background: isVirtual ? "rgba(34, 211, 238, 0.14)" : "rgba(245, 158, 11, 0.14)",
-                  border: `1.5px solid ${isVirtual ? "rgba(34, 211, 238, 0.55)" : "rgba(245, 158, 11, 0.55)"}`,
-                  color: isVirtual ? "#67E8F9" : "#FCD34D",
-                  fontWeight: 700, fontSize: 11.5, cursor: "pointer",
-                  transition: "transform 0.06s ease, background 0.18s ease",
-                  letterSpacing: "0.02em",
-                  WebkitTapHighlightColor: "transparent",
-                  touchAction: "manipulation",
-                }}
-                onTouchStart={(e) => { e.currentTarget.style.transform = "scale(0.94)"; }}
-                onTouchEnd={(e) => { e.currentTarget.style.transform = "scale(1)"; }}
-                aria-label={isVirtual ? "現在: エアモード (タップでリアルに)" : "現在: リアルモード (タップでエアに)"}
-              >
-                {isVirtual ? "🧪 エア中" : "💰 リアル中"}
-              </button>
-              {/* 旧 スタイル循環ボタン (steady/balanced/aggressive) は 2026-05-10 に廃止。
-                 内部は balanced 固定。 */}
-            </div>
+            {/* 旧 「💰 リアル/🧪 エア」 切替 + スタイル循環ボタン は Round 168-170 で全廃止 (SPEC §5)。
+               左ゾーンは空 (右の「次の対象レース」 が右寄せのまま)。 */}
+            <div />
 
             {/* === 右: 次の対象レース === */}
             <div style={{ color: "var(--text-secondary)", textAlign: "right", lineHeight: 1.4, fontSize: 10.5, fontWeight: 500 }}>
