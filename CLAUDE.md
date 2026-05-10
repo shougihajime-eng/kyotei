@@ -17,8 +17,9 @@
 - ✅ Round 171.6 — SPEC §12 追記: **AI 進化ロードマップ** (使うほど賢くなる構造) を起案。 段階 A (自動ループ) / B (細粒度学習) / C (ディープラーニング) の 3 段階。 §9 ロードマップに Round 172/172.5 (段階 A) と Round 182/200 (段階 B/C) 追加。
 - ✅ Round 172 — **AI 進化 段階 A 前半: 自動学習ループ実装**。 新ライブラリ `src/lib/mansyuLearningAuto.js`。 1 日 1 回 analyzeMansyuLearning を自動実行 → 安定性チェック (確定済 ≥ 10 件 / 同提案 3 連続却下で停止) → 通れば applyAllRecommendations で重み自動適用 → mansyu モジュールに即時反映 → トースト通知。 履歴は `mansyuLearningHistory` (localStorage 直近 30 件) に保存。
 - ✅ Round 172.5 — **AI 進化 段階 A 後半: 自動ロールバック実装**。 `mansyuLearningAuto.js` に `checkAndRollback()` 追加。 直近の applied エントリから 7-14 日経過した時に、 適用後の skipLog 確定済 5 件以上で見送り正答率 / 見立て正答率を再集計 → baseline と比較 → どちらか 5pt 以上悪化していたら前重みに自動復元。 結果は履歴に kind: kept / rolledback として記録。 同じ applied は二度判定しない (rolledBackAt マーク)。 これで AI 進化 段階 A の閉ループが完成。
+- ✅ Round 173 — **買い目 5,000 円配分統一** (SPEC §3, §4)。 `mansyu.js` の `buildMansyuBuyOrders` に `distributeStake()` 追加 — 5,000 円を点数で均等配分、 100 円単位、 余りは最初 (一番強い) に上乗せ。 各買い目 order に `stake` 円を付与 (例: 5 点 → 各 1,000 円 / 4 点 → 1,400/1,200/1,200/1,200 / 3 点 → 1,700/1,700/1,600 / 2 点 → 各 2,500 円 / 1 点 → 5,000 円)。 MansyuTop で買い目右側に黄色金額チップを表示、 ヘッダーに「合計 5,000 円」 表示。 export `MANSYU_STAKE` 定数 = 5000 を追加 (将来の参照用)。
 - 🟡 進行中: なし
-- 🔜 次の一歩: **SPEC §9 ロードマップに従って Round 173 から実装**。 ① Round 173: 買い目 5,000 円配分統一 (sizing.js / styleAllocation.js 簡素化) → ② Round 174: 設定 4 項目化 → ③ Round 175: ホーム強化 → ④ Round 176: 研究所タブ整理 → ⑤ Round 177-178: 通知 / スマホ最適化 → ⑥ **Round 179-181: 場別ランキング機能** → ⑦ Round 182: AI 段階 B 細粒度学習。
+- 🔜 次の一歩: **SPEC §9 ロードマップに従って Round 174 から実装**。 ① Round 174: 「⚙️ 設定」 タブ 4 項目化 (ログイン/ログアウト/データ削除/通知 ON/OFF) + 「💼 資金」 「🎯 戦略」 関連コード一掃 → ② Round 175: ホーム強化 → ③ Round 176: 研究所タブ整理 → ④ Round 177-178: 通知 / スマホ最適化 → ⑤ **Round 179-181: 場別ランキング機能** → ⑥ Round 182: AI 段階 B 細粒度学習。
 
 ## 🌐 本番URL
 

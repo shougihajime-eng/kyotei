@@ -473,19 +473,28 @@ function RaceCard({ race, result, close, onPickRace }) {
         💡 {reasonText}
       </div>
 
-      {/* === 買い目 === */}
+      {/* === 買い目 (Round 173: 5,000 円配分) === */}
       {buyOrders.length > 0 && (
         <div style={{ margin: "0 16px 14px 16px" }}>
-          <div style={{ fontSize: 13, color: "#cbd5e1", marginBottom: 8, fontWeight: 700, letterSpacing: "0.04em" }}>
-            買い目 (最大 5 点・重複なし)
+          <div style={{
+            display: "flex", alignItems: "baseline", justifyContent: "space-between",
+            marginBottom: 8, gap: 8, flexWrap: "wrap",
+          }}>
+            <div style={{ fontSize: 13, color: "#cbd5e1", fontWeight: 700, letterSpacing: "0.04em" }}>
+              買い目 ({buyOrders.length} 点)
+            </div>
+            <div style={{ fontSize: 12.5, color: "#FCD34D", fontWeight: 800, letterSpacing: "0.02em" }}>
+              合計 <span className="num">5,000</span> 円
+            </div>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {buyOrders.map((o, i) => (
               <div key={i} style={{
-                display: "flex", alignItems: "center", gap: 12,
+                display: "flex", alignItems: "center", gap: 10,
                 padding: "12px 14px", borderRadius: 10,
                 background: "rgba(34, 211, 238, 0.10)",
                 border: "1.5px solid rgba(34, 211, 238, 0.32)",
+                flexWrap: "wrap",
               }}>
                 <div style={{ fontSize: 22, fontWeight: 800, color: "#67E8F9", letterSpacing: "0.06em", lineHeight: 1.0 }}>
                   {o.combo.join("-")}
@@ -495,7 +504,18 @@ function RaceCard({ race, result, close, onPickRace }) {
                   padding: "2px 8px", borderRadius: 999,
                   background: "rgba(255,255,255,0.06)",
                 }}>{o.kind}</div>
-                <div style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: "#cbd5e1", textAlign: "right", lineHeight: 1.4 }}>
+                {o.stake != null && (
+                  <div style={{
+                    fontSize: 14, color: "#FCD34D", fontWeight: 800,
+                    padding: "2px 10px", borderRadius: 999,
+                    background: "rgba(251, 191, 36, 0.14)",
+                    border: "1px solid rgba(251, 191, 36, 0.40)",
+                    letterSpacing: "0.02em",
+                  }}>
+                    <span className="num">{o.stake.toLocaleString("ja-JP")}</span> 円
+                  </div>
+                )}
+                <div style={{ flex: 1, minWidth: 120, fontSize: 12.5, color: "#cbd5e1", textAlign: "right", lineHeight: 1.4 }}>
                   {o.reason}
                 </div>
               </div>

@@ -322,10 +322,25 @@ export function levelColor(level) {
   return "#64748B";                         // グレー
 }
 
-/* === 買い目生成 (最大 5 点) ===
+/* === 買い目生成 (最大 5 点) + 5,000 円配分 (Round 173 / SPEC §3) ===
  * 注目艇 (focus) を頭に置いた3連単。
  * 1号艇は頭から外し、相手枠と3着流しに絡める。
- * 重複禁止。 */
+ * 重複禁止。 各買い目に stake (円) を付与: 5,000 円を点数で均等配分し、
+ * 余り (100 円単位) は最初 (一番強い) に上乗せ。 */
+const MANSYU_TOTAL_STAKE = 5000;
+const STAKE_UNIT = 100;
+
+function distributeStake(points, total = MANSYU_TOTAL_STAKE) {
+  if (!points || points <= 0) return [];
+  const perPoint = Math.floor(total / points / STAKE_UNIT) * STAKE_UNIT;
+  const used = perPoint * points;
+  const remainder = total - used;
+  const stakes = new Array(points).fill(perPoint);
+  // 余りは最初 (一番強い買い目) に上乗せ
+  if (remainder > 0) stakes[0] += remainder;
+  return stakes;
+}
+
 export function buildMansyuBuyOrders(race, scoreResult) {
   if (!race || !scoreResult) return [];
   const focus = scoreResult.focus || [];
@@ -362,8 +377,13 @@ export function buildMansyuBuyOrders(race, scoreResult) {
       add([heads[0], 1, longShot], "3連単", `穴狙い ${heads[0]}-1-${longShot}`);
     }
   }
-  return orders.slice(0, 5);
+  const trimmed = orders.slice(0, 5);
+  const stakes = distributeStake(trimmed.length);
+  return trimmed.map((o, i) => ({ ...o, stake: stakes[i] }));
 }
+
+/* 買い目配分定数 (UI 表示や合計計算で参照) */
+export const MANSYU_STAKE = MANSYU_TOTAL_STAKE;
 
 /** 理由コメント (簡潔1〜3行) */
 export function buildMansyuReason(race, scoreResult) {
