@@ -32,6 +32,8 @@ import { loadState, saveState, saveAndVerify, verifyVisible, clearState, clearAl
 import { cloudEnabled } from "./lib/supabaseClient.js";
 import { getCurrentUser, onAuthChange, signOut as authSignOut } from "./lib/auth.js";
 import { fullSync, lightSync, deleteCloudData } from "./lib/cloudSync.js";
+import { fullSyncSkipLog, lightPushSkipLog } from "./lib/skipLogSync.js";
+import { getJudgementLog as getSkipLog, replaceLog as replaceSkipLog } from "./lib/mansyuSkipLog.js";
 import { setRateLimitListener, clearApiCaches } from "./lib/api.js";
 import LoginModal from "./components/LoginModal.jsx";
 import { fetchTodaySchedule, fetchRaceProgram, fetchRaceOdds, fetchRaceResult, fetchBeforeInfo, fetchRacerCourse, fetchRacerRecent, fetchRaceForecast } from "./lib/api.js";
@@ -330,6 +332,52 @@ export default function App() {
     }, 1000);   // Round 95: 5000 → 1000ms (即時同期に近づける)
     return () => clearTimeout(lightSyncTimerRef.current);
   }, [predictions, authUser, cloudCleanupDone]);
+
+  /* Phase 2.5: 見送りログ (mansyuSkipLog) のクラウド同期。
+     ① ログイン直後 1 回 fullSyncSkipLog (cloud → merge → push)
+     ② races 更新ごとに lightPushSkipLog (recordBatch 直後の最新ログを push)
+     ③ クラウドクリーンアップが終わるまでは止める */
+  const skipLogSyncedForUser = useRef(null);
+  useEffect(() => {
+    if (!authUser || !cloudCleanupDone) { skipLogSyncedForUser.current = null; return; }
+    if (skipLogSyncedForUser.current === authUser.id) return;
+    skipLogSyncedForUser.current = authUser.id;
+    let cancelled = false;
+    (async () => {
+      const local = getSkipLog();
+      const res = await fullSyncSkipLog(authUser.id, local);
+      if (cancelled) return;
+      if (res.merged) {
+        replaceSkipLog(res.merged);
+      }
+      if (!res.ok && !res.partialOk) {
+        // eslint-disable-next-line no-console
+        console.warn("[skipLogSync] full sync failed:", res.error);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [authUser, cloudCleanupDone]);
+
+  /* races が変わるたびに skipLog の差分を push (debounce 1.5s) */
+  const skipLogPushTimerRef = useRef(null);
+  useEffect(() => {
+    if (!authUser || !cloudCleanupDone) return;
+    if (!Array.isArray(races) || races.length === 0) return;
+    if (skipLogPushTimerRef.current) clearTimeout(skipLogPushTimerRef.current);
+    skipLogPushTimerRef.current = setTimeout(() => {
+      const local = getSkipLog();
+      if (local.length === 0) return;
+      lightPushSkipLog(authUser.id, local).then((res) => {
+        if (!res.ok) {
+          // eslint-disable-next-line no-console
+          console.warn("[skipLogSync] light push failed:", res.error);
+        }
+      });
+    }, 1500);
+    return () => {
+      if (skipLogPushTimerRef.current) clearTimeout(skipLogPushTimerRef.current);
+    };
+  }, [races, authUser, cloudCleanupDone]);
   /* スタイル切替の差分通知用 ref。switchProfile / useEffect は recommendations 定義後に作る (TDZ 回避) */
   const lastSwitchInfo = useRef(null);
   /* recommendations の最新値を ref に保持 (switchProfile が hoisted で参照できるようにする) */

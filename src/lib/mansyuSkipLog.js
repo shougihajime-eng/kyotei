@@ -247,4 +247,13 @@ export function clearSkipLog() {
   }
 }
 
+/* === Phase 2.5: クラウド同期 (skipLogSync) からマージ済みログを書き戻すための入口 ===
+   ・cloud から pull → merge した結果を localStorage に上書きする時に使う
+   ・配列以外を渡されたら何もしない (誤って null/undefined で消えないように) */
+export function replaceLog(newLog) {
+  if (!Array.isArray(newLog)) return false;
+  // 30 日 GC は維持
+  return saveLog(pruneOld(newLog));
+}
+
 export const _internals = { SKIP_LOG_KEY, MAX_LOG_DAYS, MANSYU_PAYOUT_THRESHOLD };
