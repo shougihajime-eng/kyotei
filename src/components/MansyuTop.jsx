@@ -1,14 +1,19 @@
 /**
- * 万舟研究所 — トップ画面 (Phase 1)
+ * 万舟研究所 — トップ画面 (Phase 1.5)
  *
  * 「荒れる時だけ」表示する。
  * - 荒れスコア 85+: 激荒れ警報 (赤)
  * - 荒れスコア 75-84: 荒れ注意 (黄)
  * - それ以外: 表示しない
  *
- * 詳細 (展示/モーター/オッズ/水面) はカードを開いて見る。
+ * Phase 1.5 追加:
+ * - 次回自動更新カウントダウン
+ * - 更新失敗バナー (失敗時刻 + 原因)
+ * - 古いデータ警告 (5 分以上経過)
+ * - ボタン・カードにタップ反応 (scale + tap-highlight 除去)
+ * - PC は 2 列、 スマホは 1 列のレスポンシブグリッド
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   scoreMansyu,
   buildMansyuBuyOrders,
@@ -17,11 +22,30 @@ import {
   formatMinutesToClose,
   levelLabel,
   levelColor,
-  TARGET_VENUES,
 } from "../lib/mansyu.js";
 
-export default function MansyuTop({ races, refreshing, refreshMsg, lastRefreshAt, onRefresh, onPickRace, isSampleMode }) {
+const STALE_AFTER_MS = 5 * 60 * 1000;      // 5 分超で古いデータ警告
+const VERY_STALE_MS  = 15 * 60 * 1000;     // 15 分超で強警告
+
+export default function MansyuTop({
+  races,
+  refreshing,
+  refreshMsg,
+  lastRefreshAt,
+  nextRefreshAt,
+  refreshError,
+  onRefresh,
+  onPickRace,
+  isSampleMode,
+}) {
+  // 1 秒ごとに再描画 (カウントダウン用)
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
   const now = Date.now();
+
   // スコア計算 + 75 点以上 + 未終了のみ
   const scored = useMemo(() => {
     if (!Array.isArray(races)) return [];
@@ -33,13 +57,21 @@ export default function MansyuTop({ races, refreshing, refreshMsg, lastRefreshAt
       })
       .filter((x) => x.result && x.result.score >= 75 && x.close != null && x.close >= -5)
       .sort((a, b) => a.close - b.close);
-  }, [races, now]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [races, tick]);
 
   const alarms = scored.filter((x) => x.result.level === "alarm");
   const warns  = scored.filter((x) => x.result.level === "warn");
 
+  const lastRefreshMs = lastRefreshAt ? new Date(lastRefreshAt).getTime() : null;
+  const ageMs = lastRefreshMs ? now - lastRefreshMs : null;
+  const isStale = ageMs != null && ageMs >= STALE_AFTER_MS;
+  const isVeryStale = ageMs != null && ageMs >= VERY_STALE_MS;
+  const nextRefreshMs = nextRefreshAt ? new Date(nextRefreshAt).getTime() : null;
+  const secondsToNext = nextRefreshMs ? Math.max(0, Math.round((nextRefreshMs - now) / 1000)) : null;
+
   return (
-    <div className="max-w-3xl mx-auto px-3 mt-3">
+    <div style={{ maxWidth: 920, margin: "0 auto", padding: "12px clamp(8px, 3vw, 16px) 0" }}>
       {/* ===== ブランドバナー ===== */}
       <div style={{
         background: "linear-gradient(135deg, #0a0e1a 0%, #15172a 100%)",
@@ -49,62 +81,67 @@ export default function MansyuTop({ races, refreshing, refreshMsg, lastRefreshAt
         marginBottom: 12,
         boxShadow: "0 2px 14px rgba(220, 38, 38, 0.15)",
       }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
-          <span style={{ fontSize: 22 }}>🌊</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 24 }}>🌊</span>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 18, fontWeight: 800, color: "#FBBF24", letterSpacing: "0.02em" }}>万舟研究所</div>
+            <div style={{ fontSize: 19, fontWeight: 800, color: "#FBBF24", letterSpacing: "0.02em" }}>万舟研究所</div>
             <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>
-              荒れる時だけお知らせ — 戸田・江戸川・平和島・鳴門・桐生の5場限定
+              荒れる時だけお知らせ — 5場限定 (戸田・江戸川・平和島・鳴門・桐生)
             </div>
           </div>
-          <button
+          <TapButton
             onClick={onRefresh}
             disabled={refreshing}
-            style={{
-              padding: "8px 14px",
-              borderRadius: 10,
-              border: "1.5px solid rgba(251, 191, 36, 0.45)",
-              background: refreshing ? "rgba(251, 191, 36, 0.06)" : "rgba(251, 191, 36, 0.14)",
-              color: "#FBBF24",
-              fontWeight: 700,
-              fontSize: 13,
-              cursor: refreshing ? "not-allowed" : "pointer",
-            }}>
-            {refreshing ? "🔄 更新中…" : "🔄 更新"}
-          </button>
+            primary
+            label={refreshing ? "🔄 更新中…" : "🔄 今すぐ更新"}
+          />
         </div>
-        <div style={{ display: "flex", gap: 16, marginTop: 8, fontSize: 12, color: "#cbd5e1" }}>
-          <div>🚨 激荒れ <b style={{ color: "#FCA5A5", fontSize: 14 }}>{alarms.length}</b> 件</div>
-          <div>⚠️ 荒れ注意 <b style={{ color: "#FDE68A", fontSize: 14 }}>{warns.length}</b> 件</div>
-          <div style={{ marginLeft: "auto", color: "#94a3b8" }}>
-            {lastRefreshAt ? `最終更新: ${new Date(lastRefreshAt).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })}` : "未更新"}
-          </div>
+
+        {/* === 件数サマリ === */}
+        <div style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))",
+          gap: 6,
+          marginTop: 10,
+        }}>
+          <SumBox label="🚨 激荒れ" value={alarms.length} color="#FCA5A5" emphasis={alarms.length > 0} />
+          <SumBox label="⚠️ 荒れ注意" value={warns.length} color="#FDE68A" emphasis={warns.length > 0} />
+          <SumBox label="📡 監視中" value={Array.isArray(races) ? races.length : 0} color="#67E8F9" emphasis={false} sub="レース" />
         </div>
-        {refreshMsg && (
-          <div style={{ marginTop: 8, fontSize: 12, color: "#67E8F9" }}>{refreshMsg}</div>
-        )}
-        {isSampleMode && (
-          <div style={{ marginTop: 8, padding: "6px 10px", borderRadius: 8, background: "rgba(245, 158, 11, 0.10)", border: "1px solid rgba(245, 158, 11, 0.30)", color: "#FCD34D", fontSize: 11 }}>
-            ⚠️ サンプルデータ表示中 (実 API 取得失敗)
-          </div>
-        )}
+
+        {/* === 更新状態 === */}
+        <UpdateStatus
+          refreshing={refreshing}
+          refreshMsg={refreshMsg}
+          lastRefreshMs={lastRefreshMs}
+          ageMs={ageMs}
+          isStale={isStale}
+          isVeryStale={isVeryStale}
+          secondsToNext={secondsToNext}
+          refreshError={refreshError}
+          isSampleMode={isSampleMode}
+        />
       </div>
 
       {/* ===== 激荒れ警報 ===== */}
       {alarms.length > 0 && (
         <Section title="🚨 激荒れ警報" subtitle="荒れスコア 85 以上 — 万舟濃厚">
-          {alarms.map((x) => (
-            <RaceCard key={x.race.id} race={x.race} result={x.result} close={x.close} onPickRace={onPickRace} />
-          ))}
+          <CardGrid>
+            {alarms.map((x) => (
+              <RaceCard key={x.race.id} race={x.race} result={x.result} close={x.close} onPickRace={onPickRace} />
+            ))}
+          </CardGrid>
         </Section>
       )}
 
       {/* ===== 荒れ注意 ===== */}
       {warns.length > 0 && (
         <Section title="⚠️ 荒れ注意" subtitle="荒れスコア 75-84 — 1号艇に黄色信号">
-          {warns.map((x) => (
-            <RaceCard key={x.race.id} race={x.race} result={x.result} close={x.close} onPickRace={onPickRace} />
-          ))}
+          <CardGrid>
+            {warns.map((x) => (
+              <RaceCard key={x.race.id} race={x.race} result={x.result} close={x.close} onPickRace={onPickRace} />
+            ))}
+          </CardGrid>
         </Section>
       )}
 
@@ -119,13 +156,13 @@ export default function MansyuTop({ races, refreshing, refreshMsg, lastRefreshAt
           border: "1px dashed rgba(148, 163, 184, 0.25)",
           color: "#94a3b8",
         }}>
-          <div style={{ fontSize: 36, marginBottom: 10 }}>😴</div>
-          <div style={{ fontSize: 15, fontWeight: 700, color: "#cbd5e1", marginBottom: 6 }}>
+          <div style={{ fontSize: 40, marginBottom: 10 }}>😴</div>
+          <div style={{ fontSize: 16, fontWeight: 700, color: "#cbd5e1", marginBottom: 6 }}>
             今日は荒れそうなレースなし
           </div>
           <div style={{ fontSize: 12, lineHeight: 1.6 }}>
-            {races.length > 0
-              ? `5場で ${races.length} レース監視中ですが、荒れスコア 75 以上のレースはまだありません。`
+            {Array.isArray(races) && races.length > 0
+              ? `5場で ${races.length} レース監視中ですが、荒れスコア 75 以上はまだありません。`
               : "更新を押して、今日の対象 5 場を取得してください。"}
             <br />
             無理に予想せず、 条件が揃ったレースだけ通知されます。
@@ -136,20 +173,184 @@ export default function MansyuTop({ races, refreshing, refreshMsg, lastRefreshAt
   );
 }
 
-function Section({ title, subtitle, children }) {
+/* ===== 更新ステータス ===== */
+function UpdateStatus({ refreshing, refreshMsg, lastRefreshMs, ageMs, isStale, isVeryStale, secondsToNext, refreshError, isSampleMode }) {
+  const lastTimeStr = lastRefreshMs
+    ? new Date(lastRefreshMs).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+    : "未取得";
+  const ageStr = ageMs == null ? "" : ageMs < 60_000 ? `${Math.round(ageMs / 1000)}秒前` : `${Math.round(ageMs / 60_000)}分前`;
   return (
-    <div style={{ marginBottom: 16 }}>
-      <div style={{ marginBottom: 8, padding: "0 4px" }}>
-        <div style={{ fontSize: 15, fontWeight: 800, color: "#e2e8f0", letterSpacing: "0.02em" }}>{title}</div>
-        <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>{subtitle}</div>
+    <div style={{ marginTop: 10 }}>
+      {/* 進行中メッセージ */}
+      {refreshMsg && (
+        <div style={{
+          padding: "8px 12px", borderRadius: 8,
+          background: refreshMsg.startsWith("⚠") ? "rgba(245, 158, 11, 0.12)" : "rgba(34, 211, 238, 0.10)",
+          color: refreshMsg.startsWith("⚠") ? "#FCD34D" : "#67E8F9",
+          fontSize: 12, lineHeight: 1.5,
+          marginBottom: 6,
+        }}>
+          {refreshMsg}
+        </div>
+      )}
+
+      {/* 失敗バナー (refreshError があるとき常時表示) */}
+      {refreshError && (
+        <div style={{
+          padding: "10px 12px", borderRadius: 8,
+          background: "rgba(220, 38, 38, 0.14)",
+          border: "1.5px solid rgba(220, 38, 38, 0.45)",
+          color: "#FCA5A5",
+          fontSize: 12, lineHeight: 1.5,
+          marginBottom: 6,
+        }}>
+          <div style={{ fontWeight: 800, marginBottom: 2 }}>❌ 更新失敗</div>
+          <div style={{ color: "#FECACA" }}>
+            最終失敗: {new Date(refreshError.at).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })} / 原因: {refreshError.message}
+          </div>
+        </div>
+      )}
+
+      {/* サンプル警告 */}
+      {isSampleMode && (
+        <div style={{
+          padding: "8px 12px", borderRadius: 8,
+          background: "rgba(245, 158, 11, 0.12)",
+          border: "1px solid rgba(245, 158, 11, 0.40)",
+          color: "#FCD34D", fontSize: 12, marginBottom: 6,
+        }}>
+          ⚠️ サンプルデータ表示中 — 実 API 取得失敗
+        </div>
+      )}
+
+      {/* 最終更新 + 次回更新 (常時表示) */}
+      <div style={{
+        display: "flex", alignItems: "center", flexWrap: "wrap", gap: 10,
+        fontSize: 11.5, color: isVeryStale ? "#FCA5A5" : isStale ? "#FCD34D" : "#94a3b8",
+      }}>
+        <div>
+          {isVeryStale ? "🔴 古い情報" : isStale ? "🟡 やや古い" : "🟢 最新"}
+          : <b style={{ color: "#cbd5e1" }}>{lastTimeStr}</b>
+          {ageStr && <span style={{ marginLeft: 4, opacity: 0.85 }}>({ageStr})</span>}
+        </div>
+        {secondsToNext != null && !refreshing && (
+          <div style={{ marginLeft: "auto" }}>
+            🔄 次回自動更新まで <b className="num" style={{ color: "#67E8F9" }}>{formatSeconds(secondsToNext)}</b>
+          </div>
+        )}
+        {refreshing && (
+          <div style={{ marginLeft: "auto", color: "#67E8F9" }}>🔄 更新中…</div>
+        )}
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>{children}</div>
+
+      {/* 古いデータ警告 (経過 5 分以上) */}
+      {isVeryStale && (
+        <div style={{
+          marginTop: 8,
+          padding: "8px 12px", borderRadius: 8,
+          background: "rgba(220, 38, 38, 0.10)",
+          border: "1px solid rgba(220, 38, 38, 0.30)",
+          color: "#FCA5A5", fontSize: 11.5,
+        }}>
+          ⚠️ 15 分以上更新がありません。「今すぐ更新」 を押すか ネットワークを確認してください。
+        </div>
+      )}
     </div>
   );
 }
 
+function formatSeconds(s) {
+  if (s == null) return "—";
+  if (s < 60) return `${s} 秒`;
+  const m = Math.floor(s / 60);
+  const sec = s % 60;
+  return `${m} 分 ${sec.toString().padStart(2, "0")} 秒`;
+}
+
+function SumBox({ label, value, color, emphasis, sub }) {
+  return (
+    <div style={{
+      padding: "8px 10px",
+      borderRadius: 10,
+      background: emphasis ? `linear-gradient(135deg, ${color}22 0%, rgba(0,0,0,0.20) 100%)` : "rgba(255,255,255,0.03)",
+      border: `1px solid ${emphasis ? color + "55" : "rgba(148, 163, 184, 0.20)"}`,
+      textAlign: "center",
+    }}>
+      <div style={{ fontSize: 11, color: "#94a3b8", fontWeight: 600, letterSpacing: "0.04em" }}>{label}</div>
+      <div style={{ fontSize: 22, fontWeight: 800, color, lineHeight: 1.1, marginTop: 2 }}>
+        {value}<span style={{ fontSize: 11, opacity: 0.7, marginLeft: 2 }}>{sub || "件"}</span>
+      </div>
+    </div>
+  );
+}
+
+function Section({ title, subtitle, children }) {
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ marginBottom: 8, padding: "0 4px" }}>
+        <div style={{ fontSize: 16, fontWeight: 800, color: "#e2e8f0", letterSpacing: "0.02em" }}>{title}</div>
+        <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>{subtitle}</div>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function CardGrid({ children }) {
+  return (
+    <div style={{
+      display: "grid",
+      gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 420px), 1fr))",
+      gap: 10,
+    }}>
+      {children}
+    </div>
+  );
+}
+
+/* ===== タップ反応付き共通ボタン ===== */
+function TapButton({ onClick, disabled, primary, label, ariaLabel }) {
+  const [pressed, setPressed] = useState(false);
+  return (
+    <button
+      onClick={(e) => { if (!disabled) onClick && onClick(e); }}
+      onTouchStart={() => !disabled && setPressed(true)}
+      onTouchEnd={() => setPressed(false)}
+      onMouseDown={() => !disabled && setPressed(true)}
+      onMouseUp={() => setPressed(false)}
+      onMouseLeave={() => setPressed(false)}
+      disabled={disabled}
+      aria-label={ariaLabel || label}
+      style={{
+        minHeight: 44,
+        padding: "10px 16px",
+        borderRadius: 12,
+        border: primary ? "1.5px solid rgba(251, 191, 36, 0.55)" : "1.5px solid rgba(148, 163, 184, 0.30)",
+        background: disabled
+          ? "rgba(255,255,255,0.04)"
+          : primary
+            ? (pressed ? "rgba(251, 191, 36, 0.30)" : "rgba(251, 191, 36, 0.16)")
+            : (pressed ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.03)"),
+        color: disabled ? "#64748B" : primary ? "#FBBF24" : "#cbd5e1",
+        fontWeight: 800,
+        fontSize: 13,
+        letterSpacing: "0.02em",
+        cursor: disabled ? "not-allowed" : "pointer",
+        transform: pressed ? "scale(0.96)" : "scale(1)",
+        transition: "transform 0.08s ease, background 0.18s ease",
+        WebkitTapHighlightColor: "transparent",
+        touchAction: "manipulation",
+        boxShadow: primary && !disabled ? "0 2px 10px rgba(251, 191, 36, 0.22)" : "none",
+      }}>
+      {label}
+    </button>
+  );
+}
+
+/* ===== レースカード ===== */
 function RaceCard({ race, result, close, onPickRace }) {
   const [open, setOpen] = useState(false);
+  const [pressed, setPressed] = useState(false);
   const color = levelColor(result.level);
   const label = levelLabel(result.level);
   const buyOrders = useMemo(() => buildMansyuBuyOrders(race, result), [race, result]);
@@ -167,58 +368,63 @@ function RaceCard({ race, result, close, onPickRace }) {
       border: `1.5px solid ${color}55`,
       boxShadow: isAlarm ? `0 0 16px ${color}40` : "none",
       overflow: "hidden",
-    }}>
+      transform: pressed ? "scale(0.985)" : "scale(1)",
+      transition: "transform 0.08s ease",
+      WebkitTapHighlightColor: "transparent",
+    }}
+    onTouchStart={() => setPressed(true)}
+    onTouchEnd={() => setPressed(false)}>
       {/* === 上段: 場名 + R番 + 締切 + スコア === */}
-      <div style={{ padding: "12px 14px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+      <div style={{ padding: "12px 14px", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
         <div style={{ flex: "0 0 auto" }}>
-          <div style={{ fontSize: 17, fontWeight: 800, color: "#f1f5f9" }}>
-            {race.venue} <span style={{ fontSize: 19, color }}>{race.raceNo}R</span>
+          <div style={{ fontSize: 18, fontWeight: 800, color: "#f1f5f9", lineHeight: 1.1 }}>
+            {race.venue} <span style={{ fontSize: 22, color }}>{race.raceNo}R</span>
           </div>
-          <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>
+          <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 3 }}>
             発走 {race.startTime || "—"}
           </div>
         </div>
         <div style={{
-          padding: "4px 10px", borderRadius: 999,
+          padding: "5px 10px", borderRadius: 999,
           background: closeBg, color: "#fff",
-          fontSize: 12, fontWeight: 800,
+          fontSize: 12, fontWeight: 800, lineHeight: 1.1,
         }}>
           ⏱ {closeText}
         </div>
-        <div style={{ flex: "1 1 0" }} />
-        {/* 警報バッジ */}
+        <div style={{ flex: "1 1 0", minWidth: 4 }} />
         <div style={{
           padding: "5px 12px", borderRadius: 10,
           background: color, color: "#fff",
           fontSize: 12, fontWeight: 800, letterSpacing: "0.04em",
           boxShadow: isAlarm ? `0 0 14px ${color}80` : "none",
+          lineHeight: 1.1,
         }}>
           {isAlarm ? "🚨 " : "⚠️ "}{label}
         </div>
-        {/* スコア */}
         <div style={{
           padding: "5px 10px", borderRadius: 10,
           background: "rgba(0,0,0,0.30)",
           border: `1px solid ${color}55`,
-          color: "#fff", fontSize: 14, fontWeight: 800,
+          color: "#fff",
+          display: "flex", alignItems: "baseline", gap: 2,
         }}>
-          <span style={{ color, fontSize: 18 }}>{result.score}</span>
+          <span style={{ color, fontSize: 22, fontWeight: 800 }}>{result.score}</span>
           <span style={{ fontSize: 11, opacity: 0.7 }}>/100</span>
         </div>
       </div>
 
       {/* === 万舟期待度 + 注目艇 === */}
-      <div style={{ padding: "0 14px 10px 14px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+      <div style={{ padding: "0 14px 10px 14px", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
         <div style={{ fontSize: 12, color: "#94a3b8" }}>万舟期待度</div>
-        <div style={{ fontSize: 14, color: "#FBBF24", letterSpacing: "0.10em" }}>{result.mansyuRating}</div>
+        <div style={{ fontSize: 15, color: "#FBBF24", letterSpacing: "0.10em", fontWeight: 700 }}>{result.mansyuRating}</div>
         {result.focus.length > 0 && (
           <>
             <div style={{ width: 1, height: 14, background: "rgba(148, 163, 184, 0.30)" }} />
             <div style={{ fontSize: 12, color: "#94a3b8" }}>注目</div>
             {result.focus.slice(0, 3).map((f) => (
               <span key={f.boatNo} style={{
-                padding: "2px 8px", borderRadius: 999,
-                background: "rgba(34, 211, 238, 0.10)",
+                padding: "3px 9px", borderRadius: 999,
+                background: "rgba(34, 211, 238, 0.12)",
                 border: "1px solid rgba(34, 211, 238, 0.40)",
                 color: "#67E8F9", fontSize: 12, fontWeight: 700,
               }}>
@@ -231,11 +437,11 @@ function RaceCard({ race, result, close, onPickRace }) {
 
       {/* === 理由コメント === */}
       <div style={{
-        margin: "0 14px 10px 14px", padding: "8px 10px",
+        margin: "0 14px 10px 14px", padding: "9px 11px",
         borderRadius: 8,
-        background: "rgba(0,0,0,0.25)",
+        background: "rgba(0,0,0,0.30)",
         borderLeft: `3px solid ${color}`,
-        fontSize: 12, color: "#cbd5e1", lineHeight: 1.5,
+        fontSize: 12.5, color: "#cbd5e1", lineHeight: 1.5,
       }}>
         💡 {reasonText}
       </div>
@@ -244,17 +450,17 @@ function RaceCard({ race, result, close, onPickRace }) {
       {buyOrders.length > 0 && (
         <div style={{ margin: "0 14px 12px 14px" }}>
           <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 6, fontWeight: 700, letterSpacing: "0.04em" }}>
-            買い目 (最大 5 点)
+            買い目 (最大 5 点・重複なし)
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
             {buyOrders.map((o, i) => (
               <div key={i} style={{
-                display: "flex", alignItems: "center", gap: 8,
-                padding: "6px 10px", borderRadius: 8,
-                background: "rgba(34, 211, 238, 0.06)",
-                border: "1px solid rgba(34, 211, 238, 0.20)",
+                display: "flex", alignItems: "center", gap: 10,
+                padding: "7px 10px", borderRadius: 8,
+                background: "rgba(34, 211, 238, 0.07)",
+                border: "1px solid rgba(34, 211, 238, 0.22)",
               }}>
-                <div style={{ fontSize: 14, fontWeight: 800, color: "#67E8F9", letterSpacing: "0.05em" }}>
+                <div style={{ fontSize: 16, fontWeight: 800, color: "#67E8F9", letterSpacing: "0.05em" }}>
                   {o.combo.join("-")}
                 </div>
                 <div style={{ fontSize: 10, color: "#94a3b8" }}>{o.kind}</div>
@@ -272,26 +478,26 @@ function RaceCard({ race, result, close, onPickRace }) {
         <button
           onClick={() => setOpen(!open)}
           style={{
-            width: "100%", padding: "8px 14px",
+            width: "100%", padding: "10px 14px",
             background: "transparent", border: 0,
             color: "#94a3b8", fontSize: 12, fontWeight: 700,
             cursor: "pointer", textAlign: "left",
             display: "flex", alignItems: "center", gap: 6,
+            WebkitTapHighlightColor: "transparent",
+            touchAction: "manipulation",
           }}>
           <span>{open ? "▼" : "▶"}</span>
-          <span>詳しい荒れ条件 (スコア内訳)</span>
+          <span>詳しい荒れ条件 (スコア内訳・気象・外部リンク)</span>
         </button>
         {open && (
           <div style={{ padding: "0 14px 12px 14px" }}>
             <ScoreBreakdown parts={result.parts} boost={result.boost} />
-            {race.boats && (
-              <div style={{ marginTop: 10, padding: "8px 10px", borderRadius: 8, background: "rgba(0,0,0,0.2)" }}>
-                <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 4 }}>気象 / 水面</div>
-                <div style={{ fontSize: 12, color: "#cbd5e1" }}>
-                  {race.weather || "—"} / 風 {race.wind ?? "—"}m{race.windDir ? ` (${race.windDir})` : ""} / 波 {race.wave ?? "—"}cm
-                </div>
+            <div style={{ marginTop: 10, padding: "8px 10px", borderRadius: 8, background: "rgba(0,0,0,0.2)" }}>
+              <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 4 }}>気象 / 水面</div>
+              <div style={{ fontSize: 12, color: "#cbd5e1" }}>
+                {race.weather || "—"} / 風 {race.wind ?? "—"}m{race.windDir ? ` (${race.windDir})` : ""} / 波 {race.wave ?? "—"}cm
               </div>
-            )}
+            </div>
             <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
               <DetailLink label="📋 出走表" race={race} kind="program" />
               <DetailLink label="💰 オッズ" race={race} kind="odds" />
@@ -299,13 +505,15 @@ function RaceCard({ race, result, close, onPickRace }) {
               <DetailLink label="🏁 結果" race={race} kind="result" />
               {onPickRace && (
                 <button
-                  onClick={() => { onPickRace("list"); }}
+                  onClick={() => onPickRace("list")}
                   style={{
-                    padding: "5px 10px", borderRadius: 8,
-                    background: "rgba(34, 211, 238, 0.08)",
-                    border: "1px solid rgba(34, 211, 238, 0.30)",
+                    padding: "6px 12px", borderRadius: 8,
+                    background: "rgba(34, 211, 238, 0.10)",
+                    border: "1px solid rgba(34, 211, 238, 0.34)",
                     color: "#67E8F9", fontSize: 11, fontWeight: 700,
                     cursor: "pointer",
+                    WebkitTapHighlightColor: "transparent",
+                    touchAction: "manipulation",
                   }}>
                   📊 一覧で見る
                 </button>
@@ -331,13 +539,13 @@ function ScoreBreakdown({ parts, boost }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
       {rows.map((r) => (
         <div key={r.label} style={{
-          padding: "6px 10px", borderRadius: 8,
+          padding: "7px 10px", borderRadius: 8,
           background: "rgba(0,0,0,0.20)",
         }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: r.reasons.length ? 4 : 0 }}>
             <div style={{ flex: 1, fontSize: 12, color: "#cbd5e1", fontWeight: 700 }}>{r.label}</div>
             <div style={{
-              padding: "1px 8px", borderRadius: 999,
+              padding: "2px 9px", borderRadius: 999,
               background: r.score === 0 ? "#475569" : r.score >= r.max * 0.7 ? "#DC2626" : "#F59E0B",
               color: "#fff", fontSize: 11, fontWeight: 800,
             }}>
@@ -345,7 +553,7 @@ function ScoreBreakdown({ parts, boost }) {
             </div>
           </div>
           {r.reasons.length > 0 && (
-            <div style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.5 }}>
+            <div style={{ fontSize: 11.5, color: "#94a3b8", lineHeight: 1.5 }}>
               {r.reasons.join(" / ")}
             </div>
           )}
@@ -353,7 +561,7 @@ function ScoreBreakdown({ parts, boost }) {
       ))}
       {boost > 0 && (
         <div style={{
-          padding: "6px 10px", borderRadius: 8,
+          padding: "7px 10px", borderRadius: 8,
           background: "rgba(220, 38, 38, 0.15)",
           border: "1px solid rgba(220, 38, 38, 0.40)",
         }}>
@@ -371,18 +579,21 @@ function DetailLink({ label, race, kind }) {
   const jcd = race?.jcd;
   const rno = race?.raceNo;
   if (!jcd || !rno || !dateK) return null;
-  const url = `https://www.boatrace.jp/owpc/pc/race/${kind === "program" ? "racelist" : kind}?rno=${rno}&jcd=${jcd}&hd=${dateK}`;
+  const path = kind === "program" ? "racelist" : kind;
+  const url = `https://www.boatrace.jp/owpc/pc/race/${path}?rno=${rno}&jcd=${jcd}&hd=${dateK}`;
   return (
     <a
       href={url}
       target="_blank"
       rel="noopener noreferrer"
       style={{
-        padding: "5px 10px", borderRadius: 8,
+        padding: "6px 12px", borderRadius: 8,
         background: "rgba(255,255,255,0.04)",
         border: "1px solid rgba(148, 163, 184, 0.25)",
         color: "#cbd5e1", fontSize: 11, fontWeight: 700,
         textDecoration: "none",
+        WebkitTapHighlightColor: "transparent",
+        touchAction: "manipulation",
       }}>
       {label}
     </a>

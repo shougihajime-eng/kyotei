@@ -177,6 +177,18 @@ export default function App() {
   const [refreshing, setRefreshing] = useState(false);
   const [refreshMsg, setRefreshMsg] = useState("");
   const [lastRefreshAt, setLastRefreshAt] = useState(null);
+  // Round 163 (Phase 1.5): 更新失敗を常時表示するための state
+  //   - lastSuccessAt: 直近の成功時刻 (ms)
+  //   - lastFailureAt: 直近の失敗時刻 (ms)
+  //   - lastFailureReason: 失敗原因 (str)
+  //   - refreshFailureCount: 連続失敗回数 (リセットは成功時)
+  const [lastSuccessAt, setLastSuccessAt] = useState(null);
+  const [lastFailureAt, setLastFailureAt] = useState(null);
+  const [lastFailureReason, setLastFailureReason] = useState(null);
+  const [refreshFailureCount, setRefreshFailureCount] = useState(0);
+  /* Phase 1.5: 更新失敗の状態を MansyuTop に常時表示する。
+     成功時は null にクリアし、 失敗時は { at, message } を保持する。 */
+  const [refreshError, setRefreshError] = useState(null);
   /* Round 113: 1 分ごとの時刻 tick — -15 分ゲートが時間経過で自動的に開く */
   const [nowTick, setNowTick] = useState(() => Date.now());
   // Round 74: 仮データ動作中フラグ (実 API 失敗 → サンプル fallback の可視化)
@@ -1135,14 +1147,20 @@ export default function App() {
        ユーザーが見えている画面 (今日のレース一覧 + 候補の最新情報) は既にこの時点で完成。 */
     const ts = new Date().toISOString();
     setLastRefreshAt(ts);
+    // Round 163: 成功フック — 失敗カウントをリセット
+    setLastSuccessAt(Date.now());
+    setLastFailureReason(null);
+    setRefreshFailureCount(0);
     if (sched?.ok) {
       const extras = [];
       if (fastTargets.length > 0) extras.push(`直前オッズ ${fastTargets.length}件`);
       extras.push("過去予想の結果");
       const tail = extras.length > 0 ? ` / ${extras.join(" + ")}は裏で追い更新` : "";
       setRefreshMsg(`✅ 更新しました (${sched.total_venues}会場 / ${sched.total_races}レース / 全 ${candidates.length} レースの出走表取得${tail})`);
+      setRefreshError(null); // 成功 → 過去のエラーをクリア
     } else {
       setRefreshMsg(`⚠️ 一時的に取得できません。少し時間を空けて再実行してください — サンプル動作中`);
+      setRefreshError({ at: ts, message: "boatrace.jp からスケジュールを取得できません (サンプル動作中)" });
     }
     setRefreshing(false); // ← Round 111: ボタンを早期解放 (Round 112: backfill も裏化したのでさらに早く)
     setTimeout(() => setRefreshMsg(""), 5000);
@@ -1214,6 +1232,14 @@ export default function App() {
       // 例外時は前回データを保持し、UI を壊さない
       console.error("[refreshAll] error:", err);
       setRefreshMsg("⚠️ 一時的に混雑しています。少し時間を空けて再実行してください");
+      // Round 163: 失敗フック — 失敗時刻と原因を保持
+      setLastFailureAt(Date.now());
+      setLastFailureReason(String(err?.message || err || "通信エラー"));
+      setRefreshFailureCount((c) => c + 1);
+      setRefreshError({
+        at: new Date().toISOString(),
+        message: String(err?.message || err || "ネットワーク不調"),
+      });
       setTimeout(() => setRefreshMsg(""), 5000);
       setRefreshing(false);
     }
@@ -1444,7 +1470,7 @@ export default function App() {
     }
     // 起動 30 秒後に 1 回 + 3 分ごと
     const initialId = setTimeout(runAutoBackfill, 30_000);
-    const intervalId = setInterval(runAutoBackfill, 3 * 60 * 1000);
+    const intervalId = setInterval(runAutoBackfill, 60 * 1000); // Round 163: 3 分 → 60 秒
     return () => { cancelled = true; clearTimeout(initialId); clearInterval(intervalId); };
     // 注: predictions を deps に入れると無限ループの恐れあり。 関数内で snapshot 取得する設計。
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1581,9 +1607,12 @@ export default function App() {
 
   useEffect(() => {
     if (!settings.onboardingDone) return;
-    // Round 145 → 159: 12 → 5 → 3 分に段階短縮 (直前のオッズ変動をもっと拾う)。
-    // Vercel エッジキャッシュ (s-maxage) で同一 URL は上流に届かないので boatrace.jp 負荷は限定的。
-    const BG_INTERVAL_MS = 3 * 60 * 1000; // 3 分
+    // Round 145 → 159 → 163: 12 → 5 → 3 → 0.5 分に段階短縮。
+    //   ・Phase 1.5 (Round 163): 30 秒間隔の自動バックグラウンド更新
+    //   ・直前 1 分のオッズ変動 / 進入読み を拾うために高頻度化
+    //   ・Vercel エッジキャッシュ (s-maxage) で同一 URL は上流に届かないので boatrace.jp への直撃は限定的
+    //   ・タブ非アクティブ時は visibility/focus イベントで再開時のみ tick
+    const BG_INTERVAL_MS = 30 * 1000; // 30 秒 (Round 163)
     function isRaceWindow() {
       const h = new Date().getHours();
       return h >= 8 && h < 22;
@@ -2006,6 +2035,8 @@ export default function App() {
             refreshing={refreshing}
             refreshMsg={refreshMsg}
             lastRefreshAt={lastRefreshAt}
+            nextRefreshAt={nextRefreshAt}
+            refreshError={refreshError}
             onRefresh={refreshAll}
             isSampleMode={isSampleMode}
             onPickRace={(t) => {
