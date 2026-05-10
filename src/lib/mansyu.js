@@ -206,6 +206,15 @@ function scoreOddsBias(race) {
   return { score: Math.min(10, s), reasons };
 }
 
+/** Round 166: 重み係数を成分スコアに掛けるヘルパー
+ *   ・係数 1.0 で no-op、 0.5〜1.5 の範囲外は丸める
+ *   ・focus / reasons は維持、 score だけ補正 */
+function applyWeight(part, w) {
+  const factor = (typeof w === "number" && isFinite(w)) ? Math.max(0.5, Math.min(1.5, w)) : 1;
+  if (factor === 1 || !part) return part;
+  return { ...part, score: Math.round((part.score || 0) * factor) };
+}
+
 /** 強制激荒れブースト — 複数条件が重なった時だけ追加点 */
 function forcedStormBoost(race, parts) {
   let boost = 0;
@@ -229,21 +238,44 @@ function forcedStormBoost(race, parts) {
   return { boost, reasons };
 }
 
-/** メイン: race を受け取り 荒れスコア + 詳細を返す */
-export function scoreMansyu(race) {
+/** Round 166: 「現在の重み」 をモジュール内に保持 (App.jsx の起動時にロード)。
+ *  scoreMansyu が weights 引数を受け取らない時はこの値を使う。
+ *  デフォルトは全 1.0 (補正なし) なので、 setMansyuWeights を呼ばなければ従来通り動く。 */
+let _currentMansyuWeights = null;
+export function setMansyuWeights(weights) {
+  if (!weights) { _currentMansyuWeights = null; return; }
+  _currentMansyuWeights = {
+    entry:      typeof weights.entry      === "number" ? weights.entry      : 1,
+    weather:    typeof weights.weather    === "number" ? weights.weather    : 1,
+    leader:     typeof weights.leader     === "number" ? weights.leader     : 1,
+    attackers:  typeof weights.attackers  === "number" ? weights.attackers  : 1,
+    exhibition: typeof weights.exhibition === "number" ? weights.exhibition : 1,
+    odds:       typeof weights.odds       === "number" ? weights.odds       : 1,
+  };
+}
+export function getMansyuWeights() {
+  return _currentMansyuWeights || { entry: 1, weather: 1, leader: 1, attackers: 1, exhibition: 1, odds: 1 };
+}
+
+/** メイン: race を受け取り 荒れスコア + 詳細を返す
+ *  Round 166: 学習補正係数 weights を反映 (各成分スコアに 0.5〜1.5 の係数を掛ける)
+ *  weights が省略された場合は setMansyuWeights() で設定した現在値を使う。
+ *  まだ何も設定されていなければ 全 1.0 (補正なし) で動作 — 既存呼び出しは無修正で OK */
+export function scoreMansyu(race, weights) {
   if (!race) return null;
-  const entry      = scoreEntry(race);
-  const weather    = scoreWeather(race);
-  const leader     = scoreLeaderRisk(race);
-  const attackers  = scoreAttackers(race);
-  const exhibition = scoreExhibition(race);
-  const odds       = scoreOddsBias(race);
+  const w = weights || _currentMansyuWeights || { entry: 1, weather: 1, leader: 1, attackers: 1, exhibition: 1, odds: 1 };
+  const entry      = applyWeight(scoreEntry(race),      w.entry);
+  const weather    = applyWeight(scoreWeather(race),    w.weather);
+  const leader     = applyWeight(scoreLeaderRisk(race), w.leader);
+  const attackers  = applyWeight(scoreAttackers(race),  w.attackers);
+  const exhibition = applyWeight(scoreExhibition(race), w.exhibition);
+  const odds       = applyWeight(scoreOddsBias(race),   w.odds);
   const parts = { entry, weather, leader, attackers, exhibition, odds };
   const baseScore =
     entry.score + weather.score + leader.score +
     attackers.score + exhibition.score + odds.score;
   const { boost, reasons: boostReasons } = forcedStormBoost(race, parts);
-  const score = Math.min(100, baseScore + boost);
+  const score = Math.min(100, Math.round(baseScore + boost));
   const level =
     score >= 85 ? "alarm" :   // 激荒れ警報
     score >= 75 ? "warn"  :   // 荒れ注意

@@ -6,12 +6,39 @@
  * ・各成分 (進入/風/1号艇/攻め手/展示/オッズ) の効きを集計
  * ・重み補正の提案を表示 (実装は研究者 = ユーザー判断、自動補正は別途)
  */
-import { useMemo } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { analyzeMansyuLearning, findMissedRoughRaces } from "../lib/mansyuLearning.js";
+import {
+  loadMansyuWeights, saveMansyuWeights, resetMansyuWeights,
+  applyRecommendation, applyAllRecommendations,
+  MANSYU_WEIGHT_DEFAULTS,
+} from "../lib/mansyuWeights.js";
+import { setMansyuWeights } from "../lib/mansyu.js";
 
 export default function MansyuLab({ predictions, races }) {
   const learning = useMemo(() => analyzeMansyuLearning(predictions, races), [predictions, races]);
   const missed = useMemo(() => findMissedRoughRaces(predictions, races), [predictions, races]);
+  const [weights, setWeights] = useState(() => loadMansyuWeights());
+
+  function handleApplyOne(rec) {
+    const next = applyRecommendation(rec, weights);
+    setWeights(next);
+    saveMansyuWeights(next);
+    setMansyuWeights(next);
+  }
+  function handleApplyAll() {
+    const next = applyAllRecommendations(learning.recommendations || [], weights);
+    setWeights(next);
+    saveMansyuWeights(next);
+    setMansyuWeights(next);
+  }
+  function handleReset() {
+    resetMansyuWeights();
+    setWeights({ ...MANSYU_WEIGHT_DEFAULTS });
+    setMansyuWeights({ ...MANSYU_WEIGHT_DEFAULTS });
+  }
+  // 重みは scoreMansyu のグローバル現在値にも反映する (App 起動時に load 済の想定)
+  useEffect(() => { setMansyuWeights(weights); }, [weights]);
 
   return (
     <div style={{ maxWidth: 920, margin: "0 auto", padding: "12px clamp(8px, 3vw, 16px) 0" }}>
@@ -86,9 +113,63 @@ export default function MansyuLab({ predictions, races }) {
         </div>
       )}
 
+      {/* ===== 現在の重み + リセット ===== */}
+      <Section
+        title="⚙️ 現在の重み係数"
+        subtitle="既定 1.0 / 範囲 0.5〜1.5 / 補正後は荒れスコア計算に即座に反映"
+      >
+        <div style={{
+          padding: "10px 12px", borderRadius: 10,
+          background: "rgba(255,255,255,0.02)",
+          border: "1px solid rgba(148, 163, 184, 0.20)",
+        }}>
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
+            gap: 6,
+          }}>
+            {[
+              { k: "entry",      label: "進入不安" },
+              { k: "weather",    label: "強風・波" },
+              { k: "leader",     label: "1号艇不安" },
+              { k: "attackers",  label: "攻め手存在" },
+              { k: "exhibition", label: "展示異変" },
+              { k: "odds",       label: "オッズ妙味" },
+            ].map((x) => {
+              const v = weights[x.k] || 1;
+              const isUp = v > 1.001;
+              const isDown = v < 0.999;
+              const color = isUp ? "#22F5A8" : isDown ? "#F87171" : "#94a3b8";
+              return (
+                <div key={x.k} style={{
+                  padding: "6px 8px", borderRadius: 8,
+                  background: "rgba(0,0,0,0.20)",
+                  border: `1px solid ${color}30`,
+                }}>
+                  <div style={{ fontSize: 11, color: "#cbd5e1", fontWeight: 700 }}>{x.label}</div>
+                  <div className="num" style={{ fontSize: 16, fontWeight: 800, color, marginTop: 2 }}>
+                    {isUp ? "🔼 " : isDown ? "🔽 " : ""}×{v.toFixed(2)}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ display: "flex", gap: 8, marginTop: 10, justifyContent: "flex-end" }}>
+            <button onClick={handleReset} style={{
+              padding: "6px 14px", borderRadius: 8,
+              background: "rgba(148, 163, 184, 0.10)",
+              border: "1px solid rgba(148, 163, 184, 0.40)",
+              color: "#cbd5e1", fontSize: 12, fontWeight: 700, cursor: "pointer",
+            }}>
+              ⟲ デフォルトに戻す
+            </button>
+          </div>
+        </div>
+      </Section>
+
       {/* ===== 重み補正の提案 ===== */}
       {learning.ready && learning.recommendations.length > 0 && (
-        <Section title="🎚️ 重み補正の提案" subtitle="各成分が「効いてるか」 を集計し、 補正案を出します">
+        <Section title="🎚️ 重み補正の提案" subtitle="各成分が「効いてるか」 を集計し、 補正案を出します。 「適用」 で即座に反映">
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {learning.recommendations.map((r, i) => (
               <div key={i} style={{
@@ -103,14 +184,37 @@ export default function MansyuLab({ predictions, races }) {
                      : r.kind === "reduce" ? "#FDE68A"
                      : "#FECACA",
                 fontSize: 12.5, lineHeight: 1.6,
+                display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
               }}>
-                {r.kind === "boost" ? "🔼 " : r.kind === "reduce" ? "🔽 " : "↩️ "}
-                {r.message}
+                <span style={{ flex: "1 1 240px" }}>
+                  {r.kind === "boost" ? "🔼 " : r.kind === "reduce" ? "🔽 " : "↩️ "}
+                  {r.message}
+                </span>
+                <button onClick={() => handleApplyOne(r)} style={{
+                  padding: "5px 12px", borderRadius: 8,
+                  background: "rgba(255,255,255,0.10)",
+                  border: "1px solid rgba(255,255,255,0.30)",
+                  color: "inherit", fontSize: 11, fontWeight: 700, cursor: "pointer",
+                  whiteSpace: "nowrap",
+                }}>
+                  ✅ 適用
+                </button>
               </div>
             ))}
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 4 }}>
+              <button onClick={handleApplyAll} style={{
+                padding: "7px 16px", borderRadius: 10,
+                background: "linear-gradient(180deg, #FBBF24 0%, #F59E0B 100%)",
+                border: "1px solid rgba(251, 191, 36, 0.50)",
+                color: "#451A03", fontSize: 12.5, fontWeight: 800, cursor: "pointer",
+                boxShadow: "0 2px 8px rgba(251, 191, 36, 0.25)",
+              }}>
+                🎯 全て適用
+              </button>
+            </div>
             <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 4, paddingLeft: 4 }}>
-              ※ 提案は <code>src/lib/mansyu.js</code> の各 score 関数の重み (max 値) を手動で調整する目安です。
-              自動補正は次の Phase 2.5 で実装予定。
+              ※ 適用すると localStorage に保存され、 次回以降の荒れスコア計算に反映されます。
+              「デフォルトに戻す」 でいつでも元に戻せます。
             </div>
           </div>
         </Section>

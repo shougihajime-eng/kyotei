@@ -1,46 +1,57 @@
 /**
- * 万舟研究所 — 万舟向け学習ロジック (Round 164 / Phase 2)
+ * 万舟研究所 — 万舟向け学習ロジック (Round 164 / Phase 2 / Round 166 fix)
  *
- * 過去の確定済み predictions から:
- *   ① 荒れスコア (mansyu) の各成分が「実際の荒れ」 と相関するか集計
- *   ② 見送りログ: 荒れスコアが低かったレースで実際は荒れたか / 万舟出たか
- *   ③ スコア重み補正の提案: 各成分の「効いてるか」 / 「効いてないか」 を判定
+ * Round 166: データソースを mansyuSkipLog に切替。
+ *   旧実装は predictions.mansyuSnapshot を読んでいたが、 これは保存されないため
+ *   永久に「データ 0 件」 になる致命バグがあった。
+ *   mansyuSkipLog は MansyuTop が races を見るたびに自動で全件記録しているので
+ *   そこから読めば 1 日目から学習が回る。
+ *
+ * 集計対象:
+ *   ① 荒れスコア (mansyu) の各成分 × 「実際の荒れ」 の相関
+ *   ② 見送りログ: 荒れスコアが低かったレースで実際に荒れたか
+ *   ③ スコア重み補正の提案
  *
  * 「荒れ」 の定義:
- *   ・1号艇が 1 着でない (= 本命飛び)
+ *   ・1 号艇が 1 着でない (= 本命飛び)
  *   ・3 連単配当 ≥ 5,000 円 (中穴以上)
  *   ・万舟 = 3 連単配当 ≥ 10,000 円
- *
- * 入力:
- *   predictions: localStorage の予想記録
- *   races: 現在のレース一覧 (scoreMansyu 再計算用、 オプショナル)
- *
- * 出力 (analyzeMansyuLearning):
- *   { ready, sampleSize, components, skipAnalysis, recommendations }
  */
 
 import { scoreMansyu } from "./mansyu.js";
+import { getJudgementLog } from "./mansyuSkipLog.js";
 
-/* === 「荒れた」 判定 === */
+/* === skip log エントリから「荒れたか」 を判定 === */
+function isRoughEntry(entry) {
+  const r = entry?.result;
+  if (!r) return null; // 結果未確定
+  const payout = r.payout || 0;
+  return {
+    leaderFlipped: r.first !== 1,
+    isMidRough: payout >= 5000,
+    isMansyu: payout >= 10000,
+    isMegaMansyu: payout >= 50000,
+    trifectaPayout: payout,
+  };
+}
+
+/* === 旧 predictions ベースの judge (互換用) ===
+   レガシー予想が混ざっている場合のフォールバック。 */
 function isRoughResult(prediction) {
   const r = prediction?.result;
-  if (!r?.first) return null;        // 結果未確定
+  if (!r?.first) return null;
   const trifectaPayout = (r.payouts?.trifecta && r.payouts.trifecta[`${r.first}-${r.second}-${r.third}`]) || 0;
   return {
-    leaderFlipped: r.first !== 1,                       // 1号艇 1 着失敗
-    isMidRough: trifectaPayout >= 5000,                  // 中穴以上
-    isMansyu: trifectaPayout >= 10000,                   // 万舟
-    isMegaMansyu: trifectaPayout >= 50000,               // 超万舟
+    leaderFlipped: r.first !== 1,
+    isMidRough: trifectaPayout >= 5000,
+    isMansyu: trifectaPayout >= 10000,
+    isMegaMansyu: trifectaPayout >= 50000,
     trifectaPayout,
   };
 }
 
-/* === predictions から scoreMansyu を取り出す ===
-   ・prediction.mansyuSnapshot があればそれを使う (Round 164 で保存予定)
-   ・無ければ prediction の boats / weather / odds スナップショットから再計算 */
 function extractMansyuScore(prediction, racesById) {
   if (prediction?.mansyuSnapshot) return prediction.mansyuSnapshot;
-  // race 情報があれば再計算
   const race = racesById?.[prediction.raceId] || prediction.raceSnapshot;
   if (!race) return null;
   return scoreMansyu(race);
@@ -49,29 +60,37 @@ function extractMansyuScore(prediction, racesById) {
 /**
  * メイン: 万舟学習結果を分析
  *
- * @param {object} predictions
- * @param {Array} races (optional) — scoreMansyu 再計算用
+ * Round 166: 主データソースを mansyuSkipLog の確定済エントリに変更。
+ * 旧 predictions も 1 件だけある場合は補助的に統合 (互換)。
+ *
+ * @param {object} predictions  互換用 (使わないが API は残す)
+ * @param {Array}  races        互換用 (使わないが API は残す)
  * @returns {object}
  */
 export function analyzeMansyuLearning(predictions, races = []) {
+  // 主データソース: mansyuSkipLog の finalized エントリ
+  const allLog = getJudgementLog();
+  const finalizedLog = allLog.filter((e) => e.finalized && e.result);
+  const totalLog = allLog.length;
+
+  // 補助: 旧 predictions も読み込み (mansyuSnapshot がある場合のみ集計対象に入れる)
   const racesById = {};
   for (const r of races || []) {
     if (r?.id) racesById[r.id] = r;
   }
-
-  // 確定済の予想 (skip + buy 両方)
-  const settled = Object.values(predictions || {})
+  const legacySettled = Object.values(predictions || {})
     .filter((p) => p?.result?.first);
 
-  if (settled.length < 5) {
+  if (finalizedLog.length < 5) {
     return {
       ready: false,
-      sampleSize: settled.length,
-      remaining: 5 - settled.length,
+      sampleSize: finalizedLog.length,
+      totalLogged: totalLog,
+      remaining: Math.max(0, 5 - finalizedLog.length),
       components: null,
       skipAnalysis: null,
       recommendations: [],
-      summary: `データが ${settled.length} 件 (10 件で安定した分析、 5 件以上で簡易分析)`,
+      summary: `分析待ち: 結果確定 ${finalizedLog.length} 件 / 監視中 ${totalLog} 件 (5 件以上で簡易分析、 10 件以上で安定)`,
     };
   }
 
@@ -82,34 +101,59 @@ export function analyzeMansyuLearning(predictions, races = []) {
     components[key] = {
       label: COMPONENT_LABELS[key],
       max: COMPONENT_MAX[key],
-      // 高 (>= 70%) / 中 (40〜69%) / 低 (< 40%) の 3 階級で集計
       high: { count: 0, rough: 0, mansyu: 0 },
       mid:  { count: 0, rough: 0, mansyu: 0 },
       low:  { count: 0, rough: 0, mansyu: 0 },
     };
   }
 
-  // ② 見送り分析 (荒れスコア < 75 のレースで実際は荒れたか)
   const skipAnalysis = {
-    underScored: 0,         // スコア < 75 だったレース数
-    underScoredButRough: 0, // そのうち実際に荒れた (誤って見送った)
-    underScoredButMansyu: 0,// そのうち万舟が出た
-    correctSkip: 0,         // スコア < 75 で実際も荒れず (見送り正解)
-    overScored: 0,          // スコア >= 75 で表示したレース数
-    overScoredAndRough: 0,  // そのうち実際に荒れた (見立て正解)
-    overScoredButCalm: 0,   // そのうち荒れなかった (見立てミス)
+    underScored: 0,
+    underScoredButRough: 0,
+    underScoredButMansyu: 0,
+    correctSkip: 0,
+    overScored: 0,
+    overScoredAndRough: 0,
+    overScoredButCalm: 0,
   };
 
   let totalAnalyzed = 0;
 
-  for (const p of settled) {
+  // 主ループ: skip log の finalized エントリを集計
+  for (const entry of finalizedLog) {
+    const result = isRoughEntry(entry);
+    if (!result) continue;
+    totalAnalyzed++;
+    const parts = entry.parts || {};
+    for (const key of COMPONENT_KEYS) {
+      const partScore = parts[key] ?? 0;
+      const max = COMPONENT_MAX[key];
+      const ratio = max > 0 ? partScore / max : 0;
+      const tier = ratio >= 0.70 ? "high" : ratio >= 0.40 ? "mid" : "low";
+      components[key][tier].count++;
+      if (result.isMidRough) components[key][tier].rough++;
+      if (result.isMansyu)   components[key][tier].mansyu++;
+    }
+    const score = entry.score || 0;
+    if (score < 75) {
+      skipAnalysis.underScored++;
+      if (result.isMidRough) skipAnalysis.underScoredButRough++;
+      if (result.isMansyu)   skipAnalysis.underScoredButMansyu++;
+      if (!result.isMidRough && !result.leaderFlipped) skipAnalysis.correctSkip++;
+    } else {
+      skipAnalysis.overScored++;
+      if (result.isMidRough) skipAnalysis.overScoredAndRough++;
+      else                   skipAnalysis.overScoredButCalm++;
+    }
+  }
+
+  // 補助ループ: 旧 predictions も統合 (mansyuSnapshot 経由)
+  for (const p of legacySettled) {
     const mansyu = extractMansyuScore(p, racesById);
     if (!mansyu) continue;
     const result = isRoughResult(p);
     if (!result) continue;
     totalAnalyzed++;
-
-    // 各成分の階級別集計
     for (const key of COMPONENT_KEYS) {
       const partScore = mansyu.parts?.[key]?.score ?? 0;
       const max = COMPONENT_MAX[key];
@@ -119,8 +163,6 @@ export function analyzeMansyuLearning(predictions, races = []) {
       if (result.isMidRough) components[key][tier].rough++;
       if (result.isMansyu)   components[key][tier].mansyu++;
     }
-
-    // 見送り判定
     const score = mansyu.score || 0;
     if (score < 75) {
       skipAnalysis.underScored++;
