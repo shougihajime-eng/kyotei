@@ -265,7 +265,13 @@ function buildSummary({ sampleSize, skipAnalysis, skipCorrectRate, overHitRate }
 /**
  * 見送り研究データ: 荒れスコア < 75 だったが実際は荒れたレースを抽出
  *
+ * Round 166-fix: 主データソースを mansyuSkipLog に切替 (analyzeMansyuLearning と統合)。
+ * 旧 predictions も mansyuSnapshot がある場合は補助的に統合。
+ *
  * @returns {Array<{ prediction, mansyu, result }>}
+ *   ・prediction: { date, jcd, raceNo, venue, startTime, result: { first, second, third } }
+ *   ・mansyu:     { score, parts: { entry: {score}, ... } }
+ *   ・result:     { leaderFlipped, isMidRough, isMansyu, isMegaMansyu, trifectaPayout }
  */
 export function findMissedRoughRaces(predictions, races = []) {
   const racesById = {};
@@ -273,16 +279,61 @@ export function findMissedRoughRaces(predictions, races = []) {
     if (r?.id) racesById[r.id] = r;
   }
   const out = [];
+  const seen = new Set();   // (date, jcd, raceNo) の重複排除
+
+  // ① 主: mansyuSkipLog の確定済 + 75 未満 + 中穴以上
+  const log = getJudgementLog();
+  for (const e of log) {
+    if (!e.finalized || !e.result) continue;
+    if ((e.score || 0) >= 75) continue;
+    const result = isRoughEntry(e);
+    if (!result || !result.isMidRough) continue;
+    const dedupKey = `${e.date}_${e.jcd}_${e.raceNo}`;
+    seen.add(dedupKey);
+    out.push({
+      prediction: {
+        key: e.key,
+        date: e.date,
+        jcd: e.jcd,
+        raceNo: e.raceNo,
+        venue: e.venue,
+        startTime: e.startTime,
+        result: {
+          first: e.result.first,
+          second: e.result.second,
+          third: e.result.third,
+        },
+      },
+      mansyu: {
+        score: e.score,
+        level: e.level,
+        parts: {
+          entry:      { score: e.parts?.entry      ?? 0 },
+          weather:    { score: e.parts?.weather    ?? 0 },
+          leader:     { score: e.parts?.leader     ?? 0 },
+          attackers:  { score: e.parts?.attackers  ?? 0 },
+          exhibition: { score: e.parts?.exhibition ?? 0 },
+          odds:       { score: e.parts?.odds       ?? 0 },
+        },
+        boost: e.boost || 0,
+      },
+      result,
+    });
+  }
+
+  // ② 補助: 旧 predictions に mansyuSnapshot が乗っているケース
   for (const p of Object.values(predictions || {})) {
     if (!p?.result?.first) continue;
     const mansyu = extractMansyuScore(p, racesById);
     if (!mansyu) continue;
-    if (mansyu.score >= 75) continue; // 見立てた分は除外
+    if (mansyu.score >= 75) continue;
     const result = isRoughResult(p);
-    if (!result) continue;
-    if (!result.isMidRough) continue; // 荒れていない分は除外
+    if (!result || !result.isMidRough) continue;
+    const dedupKey = `${p.date}_${p.jcd}_${p.raceNo}`;
+    if (seen.has(dedupKey)) continue; // skipLog 側で既に拾っているのでスキップ
     out.push({ prediction: p, mansyu, result });
   }
+
   // 配当の高い順
   out.sort((a, b) => b.result.trifectaPayout - a.result.trifectaPayout);
   return out;
