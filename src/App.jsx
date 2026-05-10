@@ -61,12 +61,20 @@ import { computeDailyTrend } from "./lib/dailyTrend.js";
 import { defaultSettings, summarizeToday, perRaceCap } from "./lib/money.js";
 import { todayDate, todayKey, startEpoch } from "./lib/format.js";
 import { generateSampleRaces, buildRacesFromSchedule, mergeProgram, mergeOdds, mergeBeforeInfo } from "./lib/sample.js";
-import { isTargetVenue, scoreMansyu, buildMansyuBuyOrders, buildMansyuReason, TARGET_VENUES, setMansyuWeights } from "./lib/mansyu.js";
+import { isTargetVenue, scoreMansyu, buildMansyuBuyOrders, buildMansyuReason, TARGET_VENUES, setMansyuWeights, setVenueWeights } from "./lib/mansyu.js";
 // Round 172/172.5: AI 進化 段階 A — 自動学習サイクル + 自動ロールバック
-import { runLearningCycle, checkAndRollback } from "./lib/mansyuLearningAuto.js";
-import { loadMansyuWeights } from "./lib/mansyuWeights.js";
+// Round 182: AI 進化 段階 B — 場別学習サイクル
+import { runLearningCycle, checkAndRollback, runVenueLearningCycles } from "./lib/mansyuLearningAuto.js";
+import { loadMansyuWeights, loadAllVenueWeightsMap, loadVenueWeights } from "./lib/mansyuWeights.js";
 // 起動時に 1 回だけ「現在の重み」 をモジュールに反映 (以降は MansyuLab の useEffect で都度更新)
 setMansyuWeights(loadMansyuWeights());
+// Round 182: 場別重みも起動時にロード (TARGET_VENUES の各場分)
+{
+  const venueMap = loadAllVenueWeightsMap();
+  for (const [jcd, w] of Object.entries(venueMap || {})) {
+    setVenueWeights(jcd, w);
+  }
+}
 import {
   sendBuyNotification,
   sendResultNotification,
@@ -500,6 +508,23 @@ export default function App() {
       }
     } catch (e) {
       console.warn("[mansyuLearningAuto] checkAndRollback failed:", e);
+    }
+
+    // Round 182: 場別学習サイクル (5 場独立、 1 日 1 回)
+    try {
+      const venueResult = runVenueLearningCycles(predictions, races);
+      if (venueResult.ran) {
+        // 適用された場の重みを mansyu モジュールに即時反映
+        const appliedVenues = (venueResult.results || []).filter((r) => r.kind === "applied");
+        if (appliedVenues.length > 0) {
+          for (const r of appliedVenues) {
+            setVenueWeights(r.jcd, loadVenueWeights(r.jcd));
+          }
+          showToast(`🤖 場別学習: ${appliedVenues.length} 場で重み調整`, "ok");
+        }
+      }
+    } catch (e) {
+      console.warn("[mansyuLearningAuto] runVenueLearningCycles failed:", e);
     }
   }, [races, predictions, showToast]);
 

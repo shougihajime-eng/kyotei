@@ -62,14 +62,21 @@ function extractMansyuScore(prediction, racesById) {
  *
  * Round 166: 主データソースを mansyuSkipLog の確定済エントリに変更。
  * 旧 predictions も 1 件だけある場合は補助的に統合 (互換)。
+ * Round 182: opts.jcd を受け取り、 場別フィルタを掛けて分析できるようにした。
+ *            jcd 未指定 (= undefined) なら従来通り全場混合。
  *
  * @param {object} predictions  互換用 (使わないが API は残す)
  * @param {Array}  races        互換用 (使わないが API は残す)
+ * @param {object} opts         { jcd?: "01"-"24" }
  * @returns {object}
  */
-export function analyzeMansyuLearning(predictions, races = []) {
+export function analyzeMansyuLearning(predictions, races = [], opts = {}) {
+  const jcdFilter = opts?.jcd ? String(opts.jcd).padStart(2, "0") : null;
   // 主データソース: mansyuSkipLog の finalized エントリ
-  const allLog = getJudgementLog();
+  const rawLog = getJudgementLog();
+  const allLog = jcdFilter
+    ? rawLog.filter((e) => String(e.jcd || "").padStart(2, "0") === jcdFilter)
+    : rawLog;
   const finalizedLog = allLog.filter((e) => e.finalized && e.result);
   const totalLog = allLog.length;
 

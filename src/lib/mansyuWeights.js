@@ -100,3 +100,74 @@ function clamp(v) {
 
 export const MANSYU_WEIGHT_DEFAULTS = DEFAULT_WEIGHTS;
 export const MANSYU_WEIGHT_RANGE = { min: MIN_WEIGHT, max: MAX_WEIGHT };
+
+/* ===== Round 182 (SPEC §12 段階 B): 場別重み =====
+ * localStorage キー `mansyuVenueWeights` に { jcd: weights } 形式で保存。
+ * 各場ごとに独立した重みを持てる (戸田は風重視、 江戸川は潮重視 等)。
+ * 場別重みが存在しない場合は全場共通の loadMansyuWeights() にフォールバック。 */
+
+const VENUE_WEIGHTS_KEY = "mansyuVenueWeights";
+
+function loadAllVenueWeights() {
+  try {
+    if (typeof localStorage === "undefined") return {};
+    const raw = localStorage.getItem(VENUE_WEIGHTS_KEY);
+    if (!raw) return {};
+    const obj = JSON.parse(raw);
+    return obj && typeof obj === "object" ? obj : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveAllVenueWeights(map) {
+  try {
+    if (typeof localStorage === "undefined") return false;
+    localStorage.setItem(VENUE_WEIGHTS_KEY, JSON.stringify(map || {}));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** 1 場の重みを取得。 未設定なら全場共通の重みを返す (フォールバック)。 */
+export function loadVenueWeights(jcd) {
+  if (!jcd) return loadMansyuWeights();
+  const all = loadAllVenueWeights();
+  const w = all[jcd];
+  if (!w) return loadMansyuWeights(); // フォールバック
+  const out = { ...DEFAULT_WEIGHTS };
+  for (const k of Object.keys(DEFAULT_WEIGHTS)) {
+    if (typeof w[k] === "number" && isFinite(w[k])) {
+      out[k] = clamp(w[k]);
+    }
+  }
+  return out;
+}
+
+/** 1 場の重みを保存 */
+export function saveVenueWeights(jcd, weights) {
+  if (!jcd) return false;
+  const all = loadAllVenueWeights();
+  const safe = { ...DEFAULT_WEIGHTS };
+  for (const k of Object.keys(DEFAULT_WEIGHTS)) {
+    if (weights && typeof weights[k] === "number" && isFinite(weights[k])) {
+      safe[k] = clamp(weights[k]);
+    }
+  }
+  all[jcd] = safe;
+  return saveAllVenueWeights(all);
+}
+
+/** 1 場の重みをデフォルト (= 場別設定削除 → 全場共通にフォールバック) */
+export function resetVenueWeights(jcd) {
+  if (!jcd) return false;
+  const all = loadAllVenueWeights();
+  delete all[jcd];
+  return saveAllVenueWeights(all);
+}
+
+/** すべての場の重みマップを取得 (デバッグ・UI 表示用) */
+export function loadAllVenueWeightsMap() {
+  return loadAllVenueWeights();
+}

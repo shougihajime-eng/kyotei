@@ -29,8 +29,11 @@ import {
   loadMansyuWeights,
   saveMansyuWeights,
   applyAllRecommendations,
+  loadVenueWeights,
+  saveVenueWeights,
 } from "./mansyuWeights.js";
 import { getJudgementLog } from "./mansyuSkipLog.js";
+import { TARGET_VENUES } from "./mansyu.js";
 
 const HISTORY_KEY = "mansyuLearningHistory";
 const LAST_RUN_KEY = "mansyuLearningLastRun";
@@ -423,7 +426,127 @@ export function clearLearningHistory() {
     if (typeof localStorage === "undefined") return;
     localStorage.removeItem(HISTORY_KEY);
     localStorage.removeItem(LAST_RUN_KEY);
+    localStorage.removeItem(VENUE_LAST_RUN_KEY);
   } catch {
     // ignore
   }
+}
+
+/* ============================================================================
+ * Round 182 (SPEC §12 段階 B): 場別学習サイクル
+ * ----------------------------------------------------------------------------
+ * 5 場 (TARGET_VENUES) それぞれで独立した学習サイクルを 1 日 1 回実行。
+ * 全場共通の runLearningCycle と並行して動く。
+ * 各場の重みは mansyuVenueWeights (jcd → weights) に保存される。
+ * 履歴エントリには jcd フィールド付き ("all" は全場共通、 "01"-"24" は場別)。
+ * ロールバックは現状 全場共通のみ (場別ロールバックは Round 182.5 で別途検討)。
+ * ============================================================================ */
+
+const VENUE_LAST_RUN_KEY = "mansyuLearningVenueLastRun";
+
+function getVenueLastRunDate() {
+  try {
+    return localStorage.getItem(VENUE_LAST_RUN_KEY) || null;
+  } catch {
+    return null;
+  }
+}
+function setVenueLastRunDate(dateStr) {
+  try {
+    localStorage.setItem(VENUE_LAST_RUN_KEY, dateStr);
+  } catch {
+    // ignore
+  }
+}
+
+/** 場別学習を今日まだ実行していないなら true */
+export function shouldRunVenueLearning() {
+  const today = new Date().toISOString().slice(0, 10);
+  return getVenueLastRunDate() !== today;
+}
+
+/**
+ * 場別学習サイクルを 5 場分一括実行 (1 日 1 回)
+ *
+ * @param {object} predictions
+ * @param {Array}  races
+ * @returns {{ ran: boolean, results: Array<{ jcd, kind, message }> }}
+ */
+export function runVenueLearningCycles(predictions, races = []) {
+  if (!shouldRunVenueLearning()) {
+    return { ran: false, results: [], message: "今日は既に場別学習を実行済み" };
+  }
+  const today = new Date().toISOString().slice(0, 10);
+  const results = [];
+  for (const jcd of TARGET_VENUES) {
+    const r = runOneVenueLearning(predictions, races, jcd);
+    results.push({ jcd, ...r });
+  }
+  setVenueLastRunDate(today);
+  return { ran: true, results };
+}
+
+function runOneVenueLearning(predictions, races, jcd) {
+  const analysis = analyzeMansyuLearning(predictions, races, { jcd });
+  if (!analysis.ready || (analysis.sampleSize || 0) < MIN_SAMPLE) {
+    const entry = {
+      ts: new Date().toISOString(),
+      jcd,
+      kind: "venue_skipped",
+      reason: `[場別 ${jcd}] データ不足 (${analysis.sampleSize || 0} / ${MIN_SAMPLE} 件)`,
+      sampleSize: analysis.sampleSize || 0,
+      recommendations: [],
+    };
+    pushHistory(entry);
+    return { kind: "skipped", message: entry.reason };
+  }
+  const recs = analysis.recommendations || [];
+  if (recs.length === 0) {
+    const entry = {
+      ts: new Date().toISOString(),
+      jcd,
+      kind: "venue_skipped",
+      reason: `[場別 ${jcd}] 提案なし (現状の場別重みは妥当)`,
+      sampleSize: analysis.sampleSize,
+      recommendations: [],
+    };
+    pushHistory(entry);
+    return { kind: "skipped", message: entry.reason };
+  }
+
+  const before = loadVenueWeights(jcd);
+  const after = applyAllRecommendations(recs, before);
+  const sameAsBefore = Object.keys(before).every(
+    (k) => Math.abs((before[k] ?? 1) - (after[k] ?? 1)) < 0.001
+  );
+  if (sameAsBefore) {
+    const entry = {
+      ts: new Date().toISOString(),
+      jcd,
+      kind: "venue_skipped",
+      reason: `[場別 ${jcd}] 提案を適用しても変化なし (clamp 上限/下限)`,
+      sampleSize: analysis.sampleSize,
+      recommendations: recs,
+    };
+    pushHistory(entry);
+    return { kind: "skipped", message: entry.reason };
+  }
+  saveVenueWeights(jcd, after);
+  const entry = {
+    ts: new Date().toISOString(),
+    jcd,
+    kind: "venue_applied",
+    reason: `[場別 ${jcd}] ${recs.length} 件の提案を自動適用 (サンプル ${analysis.sampleSize} 件)`,
+    sampleSize: analysis.sampleSize,
+    before,
+    after,
+    recommendations: recs,
+    baseline: {
+      skipCorrectRate: analysis.skipCorrectRate,
+      overHitRate: analysis.overHitRate,
+      sampleSize: analysis.sampleSize,
+    },
+  };
+  pushHistory(entry);
+  return { kind: "applied", message: entry.reason };
 }

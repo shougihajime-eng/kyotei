@@ -257,13 +257,44 @@ export function getMansyuWeights() {
   return _currentMansyuWeights || { entry: 1, weather: 1, leader: 1, attackers: 1, exhibition: 1, odds: 1 };
 }
 
+/* === Round 182 (SPEC §12 段階 B): 場別重み =====
+ * 各場 (jcd) ごとに別の重みを持てる。 setVenueWeights(jcd, weights) で
+ * 個別設定すると、 scoreMansyu が race.jcd に応じて自動で適用する。
+ * 未設定の場は _currentMansyuWeights (全場共通) にフォールバックする。 */
+const _venueMansyuWeights = {}; // { "01": weights, "02": weights, ... }
+
+export function setVenueWeights(jcd, weights) {
+  if (!jcd) return;
+  const k = String(jcd).padStart(2, "0");
+  if (!weights) {
+    delete _venueMansyuWeights[k];
+    return;
+  }
+  _venueMansyuWeights[k] = {
+    entry:      typeof weights.entry      === "number" ? weights.entry      : 1,
+    weather:    typeof weights.weather    === "number" ? weights.weather    : 1,
+    leader:     typeof weights.leader     === "number" ? weights.leader     : 1,
+    attackers:  typeof weights.attackers  === "number" ? weights.attackers  : 1,
+    exhibition: typeof weights.exhibition === "number" ? weights.exhibition : 1,
+    odds:       typeof weights.odds       === "number" ? weights.odds       : 1,
+  };
+}
+
+export function getVenueWeights(jcd) {
+  if (!jcd) return null;
+  const k = String(jcd).padStart(2, "0");
+  return _venueMansyuWeights[k] || null;
+}
+
 /** メイン: race を受け取り 荒れスコア + 詳細を返す
  *  Round 166: 学習補正係数 weights を反映 (各成分スコアに 0.5〜1.5 の係数を掛ける)
  *  weights が省略された場合は setMansyuWeights() で設定した現在値を使う。
  *  まだ何も設定されていなければ 全 1.0 (補正なし) で動作 — 既存呼び出しは無修正で OK */
 export function scoreMansyu(race, weights) {
   if (!race) return null;
-  const w = weights || _currentMansyuWeights || { entry: 1, weather: 1, leader: 1, attackers: 1, exhibition: 1, odds: 1 };
+  // Round 182: 引数 weights > 場別重み (race.jcd) > 全場共通 _currentMansyuWeights > 全 1.0 の優先順
+  const venueW = !weights && race?.jcd ? _venueMansyuWeights[String(race.jcd).padStart(2, "0")] : null;
+  const w = weights || venueW || _currentMansyuWeights || { entry: 1, weather: 1, leader: 1, attackers: 1, exhibition: 1, odds: 1 };
   const entry      = applyWeight(scoreEntry(race),      w.entry);
   const weather    = applyWeight(scoreWeather(race),    w.weather);
   const leader     = applyWeight(scoreLeaderRisk(race), w.leader);
