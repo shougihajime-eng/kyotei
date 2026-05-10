@@ -64,7 +64,8 @@ import { generateSampleRaces, buildRacesFromSchedule, mergeProgram, mergeOdds, m
 import { isTargetVenue, scoreMansyu, buildMansyuBuyOrders, buildMansyuReason, TARGET_VENUES, setMansyuWeights, setVenueWeights } from "./lib/mansyu.js";
 // Round 172/172.5: AI 進化 段階 A — 自動学習サイクル + 自動ロールバック
 // Round 182: AI 進化 段階 B — 場別学習サイクル
-import { runLearningCycle, checkAndRollback, runVenueLearningCycles } from "./lib/mansyuLearningAuto.js";
+// Round 187: シャドー → 本番 昇格チェック
+import { runLearningCycle, checkAndRollback, runVenueLearningCycles, checkAndPromoteShadows } from "./lib/mansyuLearningAuto.js";
 import { loadMansyuWeights, loadAllVenueWeightsMap, loadVenueWeights } from "./lib/mansyuWeights.js";
 // 起動時に 1 回だけ「現在の重み」 をモジュールに反映 (以降は MansyuLab の useEffect で都度更新)
 setMansyuWeights(loadMansyuWeights());
@@ -511,20 +512,32 @@ export default function App() {
     }
 
     // Round 182: 場別学習サイクル (5 場独立、 1 日 1 回)
+    // Round 187: シャドー保存に変更 (本番には即反映しない)
     try {
       const venueResult = runVenueLearningCycles(predictions, races);
       if (venueResult.ran) {
-        // 適用された場の重みを mansyu モジュールに即時反映
-        const appliedVenues = (venueResult.results || []).filter((r) => r.kind === "applied");
-        if (appliedVenues.length > 0) {
-          for (const r of appliedVenues) {
-            setVenueWeights(r.jcd, loadVenueWeights(r.jcd));
-          }
-          showToast(`🤖 場別学習: ${appliedVenues.length} 場で重み調整`, "ok");
+        const shadowVenues = (venueResult.results || []).filter((r) => r.kind === "shadow_applied");
+        if (shadowVenues.length > 0) {
+          showToast(`🤖 場別学習: ${shadowVenues.length} 場でシャドー保存 (7日後本番昇格)`, "ok");
         }
       }
     } catch (e) {
       console.warn("[mansyuLearningAuto] runVenueLearningCycles failed:", e);
+    }
+
+    // Round 187: シャドー → 本番 昇格チェック (1 日 1 回、 7 日経過したら本番昇格)
+    try {
+      const promote = checkAndPromoteShadows();
+      if (promote.ran && promote.results.length > 0) {
+        // 本番に昇格したので mansyu モジュールに即時反映
+        setMansyuWeights(loadMansyuWeights());
+        for (const r of promote.results) {
+          if (r.scope !== "all") setVenueWeights(r.scope, loadVenueWeights(r.scope));
+        }
+        showToast(`🎓 ${promote.results.length} 件のシャドーを本番昇格 (7+ 日検証完了)`, "ok");
+      }
+    } catch (e) {
+      console.warn("[mansyuLearningAuto] checkAndPromoteShadows failed:", e);
     }
   }, [races, predictions, showToast]);
 

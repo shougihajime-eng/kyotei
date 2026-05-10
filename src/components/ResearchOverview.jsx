@@ -130,11 +130,18 @@ function HistoryRow({ entry }) {
 }
 
 const KIND_META = {
-  applied:    { icon: "✅", color: "#67E8F9", label: "自動適用" },
-  rolledback: { icon: "🔄", color: "#FCA5A5", label: "ロールバック" },
-  kept:       { icon: "👍", color: "#86EFAC", label: "効果検証 OK" },
-  skipped:    { icon: "⏭", color: "#94A3B8", label: "スキップ" },
-  stopped:    { icon: "⛔", color: "#FDE68A", label: "学習停止" },
+  applied:                { icon: "✅", color: "#67E8F9", label: "自動適用" },
+  rolledback:             { icon: "🔄", color: "#FCA5A5", label: "ロールバック" },
+  kept:                   { icon: "👍", color: "#86EFAC", label: "効果検証 OK" },
+  skipped:                { icon: "⏭", color: "#94A3B8", label: "スキップ" },
+  stopped:                { icon: "⛔", color: "#FDE68A", label: "学習停止" },
+  /* Round 187: シャドーモード (SPEC §13.3) */
+  shadow_applied:         { icon: "🛡", color: "#A78BFA", label: "シャドー保存" },
+  shadow_promoted:        { icon: "🎓", color: "#86EFAC", label: "本番昇格" },
+  venue_applied:          { icon: "🗺", color: "#67E8F9", label: "場別自動適用" },
+  venue_skipped:          { icon: "🗺⏭", color: "#94A3B8", label: "場別スキップ" },
+  venue_shadow_applied:   { icon: "🗺🛡", color: "#A78BFA", label: "場別シャドー保存" },
+  venue_shadow_promoted:  { icon: "🗺🎓", color: "#86EFAC", label: "場別本番昇格" },
 };
 
 /* ===== Coming soon カード ===== */
@@ -151,9 +158,9 @@ function ComingSoonCard() {
       desc: "ST/コース別/モーター相性/会場相性 を AI 評価したランキング — 「会場巧者」 を発見 (Round 180)",
     },
     {
-      icon: "🛡",
-      title: "本番AI / 検証AI シャドーモード",
-      desc: "学習結果を即本番反映せず、 検証AIで 7-14 日試して成績OKなら昇格 (Round 187)",
+      icon: "📈",
+      title: "シャドー成績比較 (バックテスト連動)",
+      desc: "現在は時間ベースで 7 日後昇格。 厳密な「本番 vs 検証 のバックテスト ROI 比較」 で昇格判定する仕組み (Round 187.5)",
     },
     {
       icon: "🔭",

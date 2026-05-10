@@ -171,3 +171,117 @@ export function resetVenueWeights(jcd) {
 export function loadAllVenueWeightsMap() {
   return loadAllVenueWeights();
 }
+
+/* ===== Round 187 (SPEC §13.3): シャドーモード ===========================
+ * 学習結果は本番 (mansyuWeights / mansyuVenueWeights) に即反映せず、
+ * シャドー (mansyuShadowWeights / mansyuShadowVenueWeights) に保存。
+ * 7 日経過 (= 効果検証期間) を経て本番に昇格する。
+ * shoug 必須要件「学習をいきなり本番反映するな」 に準拠。
+ * ======================================================================= */
+
+const SHADOW_WEIGHTS_KEY = "mansyuShadowWeights";
+const SHADOW_VENUE_WEIGHTS_KEY = "mansyuShadowVenueWeights";
+
+/** 全場共通シャドー重みを取得 (なければ null) */
+export function loadShadowWeights() {
+  try {
+    if (typeof localStorage === "undefined") return null;
+    const raw = localStorage.getItem(SHADOW_WEIGHTS_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw); // { weights, savedDate }
+  } catch {
+    return null;
+  }
+}
+
+/** 全場共通シャドー重みを保存 (savedDate = 今日 YYYY-MM-DD) */
+export function saveShadowWeights(weights) {
+  try {
+    if (typeof localStorage === "undefined") return false;
+    const safe = { ...DEFAULT_WEIGHTS };
+    for (const k of Object.keys(DEFAULT_WEIGHTS)) {
+      if (weights && typeof weights[k] === "number" && isFinite(weights[k])) {
+        safe[k] = clamp(weights[k]);
+      }
+    }
+    const today = new Date().toISOString().slice(0, 10);
+    localStorage.setItem(SHADOW_WEIGHTS_KEY, JSON.stringify({ weights: safe, savedDate: today }));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** 全場共通シャドーをクリア (昇格 or 破棄後に呼ぶ) */
+export function clearShadowWeights() {
+  try {
+    if (typeof localStorage === "undefined") return false;
+    localStorage.removeItem(SHADOW_WEIGHTS_KEY);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** 1 場のシャドー重みを取得 */
+export function loadShadowVenueWeights(jcd) {
+  if (!jcd) return null;
+  try {
+    if (typeof localStorage === "undefined") return null;
+    const raw = localStorage.getItem(SHADOW_VENUE_WEIGHTS_KEY);
+    if (!raw) return null;
+    const all = JSON.parse(raw);
+    return all && all[jcd] ? all[jcd] : null; // { weights, savedDate }
+  } catch {
+    return null;
+  }
+}
+
+/** 1 場のシャドー重みを保存 */
+export function saveShadowVenueWeights(jcd, weights) {
+  if (!jcd) return false;
+  try {
+    if (typeof localStorage === "undefined") return false;
+    const raw = localStorage.getItem(SHADOW_VENUE_WEIGHTS_KEY);
+    const all = raw ? JSON.parse(raw) : {};
+    const safe = { ...DEFAULT_WEIGHTS };
+    for (const k of Object.keys(DEFAULT_WEIGHTS)) {
+      if (weights && typeof weights[k] === "number" && isFinite(weights[k])) {
+        safe[k] = clamp(weights[k]);
+      }
+    }
+    const today = new Date().toISOString().slice(0, 10);
+    all[jcd] = { weights: safe, savedDate: today };
+    localStorage.setItem(SHADOW_VENUE_WEIGHTS_KEY, JSON.stringify(all));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** 1 場のシャドーをクリア */
+export function clearShadowVenueWeights(jcd) {
+  if (!jcd) return false;
+  try {
+    if (typeof localStorage === "undefined") return false;
+    const raw = localStorage.getItem(SHADOW_VENUE_WEIGHTS_KEY);
+    if (!raw) return true;
+    const all = JSON.parse(raw);
+    delete all[jcd];
+    localStorage.setItem(SHADOW_VENUE_WEIGHTS_KEY, JSON.stringify(all));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** 全シャドー (デバッグ・UI 表示用) */
+export function loadAllShadowVenueWeightsMap() {
+  try {
+    if (typeof localStorage === "undefined") return {};
+    const raw = localStorage.getItem(SHADOW_VENUE_WEIGHTS_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}

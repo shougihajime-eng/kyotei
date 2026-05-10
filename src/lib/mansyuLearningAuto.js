@@ -31,9 +31,23 @@ import {
   applyAllRecommendations,
   loadVenueWeights,
   saveVenueWeights,
+  loadShadowWeights,
+  saveShadowWeights,
+  clearShadowWeights,
+  loadShadowVenueWeights,
+  saveShadowVenueWeights,
+  clearShadowVenueWeights,
+  loadAllShadowVenueWeightsMap,
 } from "./mansyuWeights.js";
 import { getJudgementLog } from "./mansyuSkipLog.js";
 import { TARGET_VENUES } from "./mansyu.js";
+
+/* === Round 187 (SPEC §13.3): シャドー昇格ルール ===
+ * 学習結果は本番に即反映せず、 シャドーに保存。
+ * SHADOW_PROMOTION_DAYS 日経過したら本番に昇格 (時間ベース・最低限版)。
+ * 厳密なバックテスト比較による昇格は Round 187.5 で別途実装。 */
+const SHADOW_PROMOTION_DAYS = 7;
+const PROMOTE_CHECK_KEY = "mansyuShadowPromoteLastCheck";
 
 const HISTORY_KEY = "mansyuLearningHistory";
 const LAST_RUN_KEY = "mansyuLearningLastRun";
@@ -191,19 +205,18 @@ export function runLearningCycle(predictions, races = []) {
     return { ran: true, kind: "skipped", message: entry.reason, history: entry };
   }
 
-  saveMansyuWeights(after);
+  /* Round 187: 即本番反映ではなく、 シャドーに保存。 7 日経過後に昇格 (checkAndPromoteShadows) */
+  saveShadowWeights(after);
   setLastRunDate(today);
   const entry = {
     ts: new Date().toISOString(),
-    appliedDate: today, // ロールバック計算用 (today = YYYY-MM-DD)
-    kind: "applied",
-    reason: `${recs.length} 件の提案を自動適用 (サンプル ${analysis.sampleSize} 件)`,
+    appliedDate: today,
+    kind: "shadow_applied",
+    reason: `${recs.length} 件の提案をシャドー保存 (サンプル ${analysis.sampleSize} 件、 ${SHADOW_PROMOTION_DAYS} 日後に本番昇格判定)`,
     sampleSize: analysis.sampleSize,
     before,
     after,
     recommendations: recs,
-    /* Round 172.5: ロールバック判定用ベースライン
-       適用後 7-14 日でこの数値と再集計値を比較する */
     baseline: {
       skipCorrectRate: analysis.skipCorrectRate,
       overHitRate: analysis.overHitRate,
@@ -211,7 +224,7 @@ export function runLearningCycle(predictions, races = []) {
     },
   };
   pushHistory(entry);
-  return { ran: true, kind: "applied", message: entry.reason, history: entry };
+  return { ran: true, kind: "shadow_applied", message: entry.reason, history: entry };
 }
 
 /* ============================================================================
@@ -531,12 +544,13 @@ function runOneVenueLearning(predictions, races, jcd) {
     pushHistory(entry);
     return { kind: "skipped", message: entry.reason };
   }
-  saveVenueWeights(jcd, after);
+  /* Round 187: 場別もシャドーに保存 (7 日後に本番昇格判定) */
+  saveShadowVenueWeights(jcd, after);
   const entry = {
     ts: new Date().toISOString(),
     jcd,
-    kind: "venue_applied",
-    reason: `[場別 ${jcd}] ${recs.length} 件の提案を自動適用 (サンプル ${analysis.sampleSize} 件)`,
+    kind: "venue_shadow_applied",
+    reason: `[場別 ${jcd}] ${recs.length} 件の提案をシャドー保存 (サンプル ${analysis.sampleSize} 件)`,
     sampleSize: analysis.sampleSize,
     before,
     after,
@@ -548,5 +562,84 @@ function runOneVenueLearning(predictions, races, jcd) {
     },
   };
   pushHistory(entry);
-  return { kind: "applied", message: entry.reason };
+  return { kind: "shadow_applied", message: entry.reason };
+}
+
+/* ============================================================================
+ * Round 187: シャドー → 本番 昇格チェック
+ * ----------------------------------------------------------------------------
+ * 1 日 1 回チェック。 シャドーの savedDate から SHADOW_PROMOTION_DAYS 日経過したら
+ * 本番に昇格 + シャドーをクリア。
+ * 厳密な「本番 vs 検証 のバックテスト比較」 による昇格は Round 187.5 で実装予定。
+ * 現状は時間ベースの最低限版 (= 「即反映を防ぐ」 安全装置のみ)。
+ * ============================================================================ */
+function getPromoteLastCheck() {
+  try {
+    return localStorage.getItem(PROMOTE_CHECK_KEY) || null;
+  } catch {
+    return null;
+  }
+}
+function setPromoteLastCheck(d) {
+  try {
+    localStorage.setItem(PROMOTE_CHECK_KEY, d);
+  } catch {
+    // ignore
+  }
+}
+
+export function checkAndPromoteShadows() {
+  const today = new Date().toISOString().slice(0, 10);
+  if (getPromoteLastCheck() === today) {
+    return { ran: false, kind: "already_checked_today", results: [] };
+  }
+  setPromoteLastCheck(today);
+  const results = [];
+
+  // 全場共通シャドー
+  const shadow = loadShadowWeights();
+  if (shadow && shadow.savedDate) {
+    const days = daysBetween(shadow.savedDate, today);
+    if (days >= SHADOW_PROMOTION_DAYS) {
+      // 本番に昇格
+      saveMansyuWeights(shadow.weights);
+      clearShadowWeights();
+      const entry = {
+        ts: new Date().toISOString(),
+        kind: "shadow_promoted",
+        reason: `シャドー (${shadow.savedDate} 保存、 ${days} 日経過) を本番に昇格`,
+        promotedWeights: shadow.weights,
+      };
+      pushHistory(entry);
+      results.push({ scope: "all", kind: "promoted", days });
+    }
+  }
+
+  // 場別シャドー
+  const allShadowVenue = loadAllShadowVenueWeightsMap();
+  for (const [jcd, sv] of Object.entries(allShadowVenue || {})) {
+    if (!sv?.savedDate) continue;
+    const days = daysBetween(sv.savedDate, today);
+    if (days >= SHADOW_PROMOTION_DAYS) {
+      saveVenueWeights(jcd, sv.weights);
+      clearShadowVenueWeights(jcd);
+      const entry = {
+        ts: new Date().toISOString(),
+        jcd,
+        kind: "venue_shadow_promoted",
+        reason: `[場別 ${jcd}] シャドー (${sv.savedDate} 保存、 ${days} 日経過) を本番に昇格`,
+        promotedWeights: sv.weights,
+      };
+      pushHistory(entry);
+      results.push({ scope: jcd, kind: "promoted", days });
+    }
+  }
+
+  return { ran: true, kind: results.length > 0 ? "promoted" : "none", results };
+}
+
+function daysBetween(fromDateStr, toDateStr) {
+  const a = new Date(`${fromDateStr}T00:00:00`);
+  const b = new Date(`${toDateStr}T00:00:00`);
+  return Math.floor((b - a) / (1000 * 60 * 60 * 24));
 }
