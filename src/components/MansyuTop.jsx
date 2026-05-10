@@ -543,19 +543,35 @@ function RaceCard({ race, result, close, onPickRace }) {
               <DetailLink label="🌊 直前情報" race={race} kind="beforeinfo" />
               <DetailLink label="🏁 結果" race={race} kind="result" />
               {onPickRace && (
-                <button
-                  onClick={() => onPickRace("list")}
-                  style={{
-                    padding: "10px 14px", minHeight: 44, borderRadius: 10,
-                    background: "rgba(34, 211, 238, 0.12)",
-                    border: "1.5px solid rgba(34, 211, 238, 0.40)",
-                    color: "#67E8F9", fontSize: 13, fontWeight: 700,
-                    cursor: "pointer",
-                    WebkitTapHighlightColor: "transparent",
-                    touchAction: "manipulation",
-                  }}>
-                  📊 一覧で見る
-                </button>
+                <>
+                  {/* Round 166 (Phase 2.5): 荒れスコアの詳細 (レーダーチャート) を開く */}
+                  <button
+                    onClick={() => onPickRace(race.id)}
+                    style={{
+                      padding: "10px 14px", minHeight: 44, borderRadius: 10,
+                      background: "rgba(251, 191, 36, 0.14)",
+                      border: "1.5px solid rgba(251, 191, 36, 0.45)",
+                      color: "#FCD34D", fontSize: 13, fontWeight: 700,
+                      cursor: "pointer",
+                      WebkitTapHighlightColor: "transparent",
+                      touchAction: "manipulation",
+                    }}>
+                    🔬 詳しく見る
+                  </button>
+                  <button
+                    onClick={() => onPickRace("list")}
+                    style={{
+                      padding: "10px 14px", minHeight: 44, borderRadius: 10,
+                      background: "rgba(34, 211, 238, 0.12)",
+                      border: "1.5px solid rgba(34, 211, 238, 0.40)",
+                      color: "#67E8F9", fontSize: 13, fontWeight: 700,
+                      cursor: "pointer",
+                      WebkitTapHighlightColor: "transparent",
+                      touchAction: "manipulation",
+                    }}>
+                    📊 一覧で見る
+                  </button>
+                </>
               )}
             </div>
           </div>

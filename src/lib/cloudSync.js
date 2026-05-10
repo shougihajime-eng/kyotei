@@ -70,6 +70,9 @@ export function toRow(userId, p) {
     predictionType: p.predictionType ?? null,
     // ラベル管理 (Round 63)
     labelOverride: p.labelOverride ?? null,
+    // Round 166 (Phase 2.5): 万舟研究所 — 荒れスコアスナップショット + 「もし買っていたら」
+    mansyuSnapshot: p.mansyuSnapshot ?? null,
+    whatIfBuy: p.whatIfBuy ?? null,
   };
   return {
     user_id: userId,
@@ -164,6 +167,9 @@ export function fromRow(r) {
     closingTime: d.closingTime ?? undefined,
     predictionType: d.predictionType ?? undefined,
     labelOverride: d.labelOverride ?? undefined,
+    // Round 166: 万舟スナップショット + whatIfBuy
+    mansyuSnapshot: d.mansyuSnapshot ?? undefined,
+    whatIfBuy: d.whatIfBuy ?? undefined,
   };
 }
 

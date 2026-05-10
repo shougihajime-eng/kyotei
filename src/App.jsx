@@ -12,6 +12,8 @@ const Stats = lazy(() => import("./components/Stats.jsx"));
 const LossAnalysis = lazy(() => import("./components/LossAnalysis.jsx"));
 // Round 164 (Phase 2): 「研究所」 タブ — 万舟向け学習 + 取りこぼし分析
 const MansyuLab = lazy(() => import("./components/MansyuLab.jsx"));
+// Round 166 (Phase 2.5): 1 レース深掘り画面 (荒れスコアのレーダーチャート)
+const MansyuDetail = lazy(() => import("./components/MansyuDetail.jsx"));
 const Settings = lazy(() => import("./components/Settings.jsx"));
 
 function LazyFallback() {
@@ -53,7 +55,10 @@ import { computeDailyTrend } from "./lib/dailyTrend.js";
 import { defaultSettings, summarizeToday, perRaceCap } from "./lib/money.js";
 import { todayDate, todayKey, startEpoch } from "./lib/format.js";
 import { generateSampleRaces, buildRacesFromSchedule, mergeProgram, mergeOdds, mergeBeforeInfo } from "./lib/sample.js";
-import { isTargetVenue, scoreMansyu, buildMansyuBuyOrders, buildMansyuReason, TARGET_VENUES } from "./lib/mansyu.js";
+import { isTargetVenue, scoreMansyu, buildMansyuBuyOrders, buildMansyuReason, TARGET_VENUES, setMansyuWeights } from "./lib/mansyu.js";
+import { loadMansyuWeights } from "./lib/mansyuWeights.js";
+// 起動時に 1 回だけ「現在の重み」 をモジュールに反映 (以降は MansyuLab の useEffect で都度更新)
+setMansyuWeights(loadMansyuWeights());
 import {
   sendBuyNotification,
   sendResultNotification,
@@ -2025,6 +2030,12 @@ export default function App() {
             onRefresh={refreshAll}
             isSampleMode={isSampleMode}
             onPickRace={(t) => {
+              // Round 166: 引数がレース ID (race-XXXXX) ならば detail タブ、 タブキーなら setTab
+              if (typeof t === "string" && t.startsWith("race-")) {
+                setSelectedRaceId(t);
+                setTab("detail");
+                return;
+              }
               if (t === "stats:ai") {
                 setStatsInitialTab("ai");
                 setTab("stats");
@@ -2043,23 +2054,29 @@ export default function App() {
         )}
         {tab === "detail" && (
           <Suspense fallback={<LazyFallback />}>
-          <RaceDetail
-            race={selectedRace}
-            evalRes={selectedRace ? evals[selectedRace.id] : null}
-            recommendation={selectedRace ? recommendations[selectedRace.id] : null}
-            allStyleRecs={selectedRace ? {
-              steady: allStyleRecommendations.steady?.[selectedRace.id],
-              balanced: allStyleRecommendations.balanced?.[selectedRace.id],
-              aggressive: allStyleRecommendations.aggressive?.[selectedRace.id],
-            } : null}
-            currentStyle={settings.riskProfile}
-            currentPrediction={selectedRace ? (
-              predictions[`${(selectedRace.date || "").replace(/-/g, "")}_${selectedRace.id}_${settings.riskProfile}`]
-            ) : null}
-            onRecord={handleRecord}
-            onBack={() => setTab("list")}
-            virtualMode={settings.virtualMode}
-          />
+            {/* Round 166 (Phase 2.5): MansyuDetail を上段に表示 (荒れスコアのレーダーチャート + 成分別の理由)。
+                既存の RaceDetail (旧 EV ベース) は併設 — 手動記録機能などはまだ RaceDetail に残置。 */}
+            <MansyuDetail
+              race={selectedRace}
+              onClose={() => setTab("home")}
+            />
+            <RaceDetail
+              race={selectedRace}
+              evalRes={selectedRace ? evals[selectedRace.id] : null}
+              recommendation={selectedRace ? recommendations[selectedRace.id] : null}
+              allStyleRecs={selectedRace ? {
+                steady: allStyleRecommendations.steady?.[selectedRace.id],
+                balanced: allStyleRecommendations.balanced?.[selectedRace.id],
+                aggressive: allStyleRecommendations.aggressive?.[selectedRace.id],
+              } : null}
+              currentStyle={settings.riskProfile}
+              currentPrediction={selectedRace ? (
+                predictions[`${(selectedRace.date || "").replace(/-/g, "")}_${selectedRace.id}_${settings.riskProfile}`]
+              ) : null}
+              onRecord={handleRecord}
+              onBack={() => setTab("list")}
+              virtualMode={settings.virtualMode}
+            />
           </Suspense>
         )}
         {tab === "verify" && (
