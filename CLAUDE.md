@@ -8,8 +8,11 @@
 - ✅ Phase 2 (Round 164): **🔬 万舟向け学習 + 研究所タブ** — ① **`mansyuLearning.js` 新規** (荒れスコアの精度集計 / 各成分 entry/weather/leader/attackers/exhibition/odds の階級別 荒れ率 / 重み補正提案 boost/reduce/inverse / `findMissedRoughRaces` で取りこぼし抽出)、② **`MansyuLab.jsx` 新規** (KPI 3 box: 見立て的中率 / 見送り正答率 / 取りこぼし件数 / 重み補正提案 / 成分別 荒れ率テーブル / 取りこぼしレース一覧 配当順)、③ 「分析」 タブを **「研究所」 (🔬)** にリネーム → MansyuLab 最上段 + 既存 LossAnalysis を併設。 / 直前 Phase 1+1.5+1.6: アプリ名・5 場限定・荒れスコア 100 点・MansyuTop・30 秒自動更新・タップ反応・レスポンシブ・UI 細部調整 (フォント大型化 + コントラスト強化) + Supabase manfune_lab スキーマ分離。
 - ✅ Round 166 続き — Phase 2.5 完了: **🎬 MansyuDetail + Supabase 同期** — ① **`MansyuDetail.jsx` 新規** (1 レース深掘り画面: recharts レーダーチャート 6 成分 0-100% / 各成分の理由一覧 / 買い目 / 公式リンク 5 種 / 気象・水面)、② App.jsx の detail タブに上段 MansyuDetail / 下段 RaceDetail 併設、 MansyuTop の RaceCard に「🔬 詳しく見る」 ボタン追加、③ **Supabase 同期拡張**: `cloudSync.js` の details JSONB に `mansyuSnapshot` / `whatIfBuy` を追加 — `manfune_lab` スキーマで端末間共有可能。
 - ✅ Round 167 — **見送りログのクラウド同期** (Phase 2.5 補完): ① Supabase に `manfune_lab.skip_log` テーブル新規作成 (RLS 4 ポリシー / auth.users CASCADE / 19 カラム)、② `src/lib/skipLogSync.js` 新規 (toRow / fromRow / pushSkipLog / pullSkipLog / mergeSkipLogs / fullSyncSkipLog / lightPushSkipLog — finalized 行は cloud で上書きされない保護)、③ `mansyuSkipLog.js` に `replaceLog()` 追加 (cloud から merge 結果を localStorage に書き戻すための入口)、④ App.jsx に同期 useEffect 2 つ追加 (ログイン直後の fullSync / races 更新ごとの lightPush 1.5s debounce)、⑤ `findMissedRoughRaces` を skipLog 主データ化 (predictions だけだったバグも合わせて修正)。 → これで端末をまたいでも見送りログ・万舟見逃しが共有され、 学習データの母数が伸びる。
+- ✅ Round 168 — スタイル 3 択 UI (steady/balanced/aggressive) 全廃止 (4 箇所)、 内部 balanced 固定。
+- ✅ Round 168.5 — 最終仕様書 docs/SPEC.md 確定 (shoug 4 項目レビュー反映)。
+- ✅ Round 169 — 金額入力 UI 削除 (Settings 4 入力欄 + セーフティ ON/OFF + Onboarding 3 入力欄)、 起動時に金額を 5,000 円固定で強制矯正 (App.jsx)。 Onboarding は同意 2 項目のみに簡素化。
 - 🟡 進行中: なし
-- 🔜 次の一歩: **`docs/SPEC.md` (2026-05-10 確定) に従って Round 169 から順番に実装**。 ① Round 169: 金額入力 UI 削除 + 1 レース 5,000 円固定 → ② Round 170: 数字バッジ整理 → ③ Round 171: 「📋 一覧」 タブ完全廃止 → ④ Round 172: 買い目 5,000 円配分統一 → ⑤ Round 173: 「⚙️ 設定」 タブ 4 項目化 → ⑥ Round 174: ホーム強化 → ⑦ Round 175: 「🔬 研究所」 タブ整理。 各 Round 完了後 `docs/SPEC.md §8` の 100 点チェックを進める。
+- 🔜 次の一歩: **SPEC §9 ロードマップに従って Round 170 から実装**。 ① Round 170: 数字バッジ整理 (📡 監視中 / 🤐 見送り / 😱 万舟見逃し をユーザー画面から撤去、 内部記録は残す) → ② Round 171: 「📋 一覧」 タブ完全廃止 (RaceList コンポーネント削除 + ナビから除去) → ③ Round 172: 買い目 5,000 円配分統一 → ④ Round 173: 「⚙️ 設定」 タブ 4 項目化 (ログイン/ログアウト/データ削除/通知 ON/OFF) → ⑤ Round 174: ホーム強化 → ⑥ Round 175: 「🔬 研究所」 タブ整理。
 
 ## 🌐 本番URL
 

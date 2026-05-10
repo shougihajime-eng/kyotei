@@ -1,20 +1,12 @@
 import { useState } from "react";
-import { yen } from "../lib/format.js";
 
 /**
- * Round 104: Onboarding redesign — 第一印象 premium 化
- *
- * ・グラスモーフィズムのカード
- * ・ステップ感のあるレイアウト (タイトル・資金 3 項目・スタイル・同意・実行)
- * ・スタイル選択は Header と同じデザイン (3 列 / accent カラー / 浮上)
- * ・同意ボックスを refined warning card で
+ * Onboarding (2026-05-10 Round 169 簡素化)
+ * SPEC §2-3 に従いユーザー入力を全廃止。 残るのは 20 歳以上 + 自己責任の同意 2 項目のみ。
+ *  ・金額入力 (現在の資金 / 1 日予算 / 1 レース上限) → 削除 (アプリ側 5,000 円固定)
+ *  ・スタイル選択 (3 択) → Round 168 で削除済 (balanced 固定)
  */
 export default function Onboarding({ settings, setSettings, onClose }) {
-  const [bankroll, setBankroll] = useState(settings.bankroll || 50000);
-  const [dailyBudget, setDailyBudget] = useState(settings.dailyBudget || 2500);
-  const [perRace, setPerRace] = useState(settings.perRaceLimit || 1000);
-  // 2026-05-10: スタイル選択 UI 廃止。 常に balanced 固定。
-  const risk = "balanced";
   const [agreedAge, setAgreedAge] = useState(false);
   const [agreedNoGuarantee, setAgreedNoGuarantee] = useState(false);
 
@@ -22,10 +14,7 @@ export default function Onboarding({ settings, setSettings, onClose }) {
     if (!agreedAge || !agreedNoGuarantee) return;
     setSettings({
       ...settings,
-      bankroll: +bankroll || 0,
-      dailyBudget: +dailyBudget || 0,
-      perRaceLimit: +perRace || 0,
-      riskProfile: risk,
+      // 金額 / スタイルは App.jsx の起動時強制矯正で確定するため、 ここでは触らない
       onboardingDone: true,
       agreedAt: new Date().toISOString(),
       agreedAge: true,
@@ -34,7 +23,6 @@ export default function Onboarding({ settings, setSettings, onClose }) {
     onClose && onClose();
   }
 
-  const ratio = bankroll > 0 ? ((dailyBudget / bankroll) * 100).toFixed(1) : "—";
   const canStart = agreedAge && agreedNoGuarantee;
 
   return (
@@ -93,26 +81,29 @@ export default function Onboarding({ settings, setSettings, onClose }) {
           </div>
         </div>
 
-        {/* === 資金管理 3 項目 === */}
-        <div style={{ display: "grid", gap: 12, marginBottom: 18 }}>
-          <Field label="現在の資金 (円)" value={bankroll} onChange={setBankroll} placeholder="50000" />
-          <Field
-            label="1日の予算 (円)"
-            sublabel={`推奨: 資金の 5% — 現在 約 ${ratio}%`}
-            value={dailyBudget} onChange={setDailyBudget} placeholder="2500"
-          />
-          <Field
-            label="1レースの上限 (円)"
-            sublabel="推奨: 1日予算の 1/2〜1/3"
-            value={perRace} onChange={setPerRace} placeholder="1000"
-          />
+        {/* === アプリ側で固定する内容のお知らせ === */}
+        <div style={{
+          padding: "14px 16px",
+          borderRadius: 12,
+          background: "rgba(251, 191, 36, 0.08)",
+          border: "1px solid rgba(251, 191, 36, 0.30)",
+          marginBottom: 18,
+          fontSize: 12.5, lineHeight: 1.7,
+          color: "#FCD34D",
+        }}>
+          このアプリは設定不要です。 アプリ側がすべて決めます。
+          <ul style={{ margin: "8px 0 0 0", paddingLeft: 18, color: "#fef3c7", fontSize: 12 }}>
+            <li>1 レースの購入額: <b>5,000 円固定</b></li>
+            <li>監視対象: 5 場 (戸田・江戸川・平和島・鳴門・桐生)</li>
+            <li>表示: 荒れスコア 75 点以上のレースだけ</li>
+          </ul>
         </div>
 
-        {/* 旧「予想スタイル」 3 択は 2026-05-10 に廃止 — 常に balanced 固定。 */}
+        {/* 旧 資金 3 項目入力 / スタイル 3 択は 2026-05-10 (Round 168-169) に廃止。 */}
 
         {/* === 注意 (cyan info) === */}
         <div className="alert-info" style={{ fontSize: 11.5, marginBottom: 16, lineHeight: 1.55, padding: "10px 14px" }}>
-          このアプリは買い目提案 · EV · オッズの表示のみ。<br/>
+          このアプリは買い目提案 · 荒れスコア · オッズの表示のみ。<br/>
           購入判断は最終的にユーザーが行います (自動停止機能なし)。
         </div>
 
@@ -173,25 +164,6 @@ export default function Onboarding({ settings, setSettings, onClose }) {
           </button>
         </div>
       </div>
-    </div>
-  );
-}
-
-/* === 入力フィールド === */
-function Field({ label, sublabel, value, onChange, placeholder }) {
-  return (
-    <div>
-      <label style={{ fontSize: 11.5, fontWeight: 600, color: "var(--text-secondary)", letterSpacing: "0.01em" }}>
-        {label}
-      </label>
-      {sublabel && (
-        <div style={{ fontSize: 10, color: "var(--text-tertiary)", marginTop: 1 }}>
-          {sublabel}
-        </div>
-      )}
-      <input className="input num" type="number" value={value} placeholder={placeholder}
-        style={{ marginTop: 6, fontSize: 14, fontWeight: 600 }}
-        onChange={(e) => onChange(e.target.value)} />
     </div>
   );
 }

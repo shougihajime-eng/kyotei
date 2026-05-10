@@ -3,9 +3,12 @@ import { yen } from "../lib/format.js";
 import { getStorageStats, estimateStorageSize, getLastSaveStatus } from "../lib/storage.js";
 
 /**
- * 設定 — 資金管理 + リスク感覚 + 仮想モード切替 + リセット + 保存ステータス
+ * 設定 (2026-05-10 Round 169 簡素化)
+ * SPEC §6.2 に従い 4 項目のみ:
+ *   ① ログイン (Supabase) ② ログアウト ③ データ削除 ④ 通知 ON/OFF (将来)
+ * 削除済 (Round 168-169): スタイル 3 択 / 資金 4 入力欄 / セーフティ買い ON/OFF
  */
-export default function Settings({ settings, setSettings, switchVirtualMode, switchProfile, onReset, predictions, visiblePredictions, versionInfo, onPurgeLegacy, authUser, onOpenLogin, onLogout, onManualSync, syncStatus }) {
+export default function Settings({ settings, setSettings, switchVirtualMode, onReset, predictions, visiblePredictions, versionInfo, onPurgeLegacy, authUser, onOpenLogin, onLogout, onManualSync, syncStatus }) {
   // Round 94: フレッシュスタート オプション
   const [includeCloud, setIncludeCloud] = useState(false);
   const [keepSettings, setKeepSettings] = useState(true);
@@ -17,23 +20,6 @@ export default function Settings({ settings, setSettings, switchVirtualMode, swi
     if (virtual === isVirtual) return;
     if (switchVirtualMode) switchVirtualMode(virtual);
     else setSettings((prev) => ({ ...prev, virtualMode: virtual }));
-  }
-  function handleProfileChange(p) {
-    if (settings.riskProfile === p) return;
-    if (switchProfile) switchProfile(p);
-    else setSettings((prev) => ({ ...prev, riskProfile: p }));
-  }
-  function field(key, label) {
-    return (
-      <div>
-        <label className="text-xs opacity-80">{label}</label>
-        <input className="input mt-1 num" type="number" value={settings[key] ?? 0}
-          onChange={(e) => {
-            const v = +e.target.value || 0;
-            setSettings((prev) => ({ ...prev, [key]: v })); // functional: stale closure 撃退
-          }} />
-      </div>
-    );
   }
 
   return (
@@ -79,47 +65,11 @@ export default function Settings({ settings, setSettings, switchVirtualMode, swi
         )}
       </section>
 
-      <section className="card" style={{ padding: 18 }}>
-        <h2 style={{ fontSize: 15, fontWeight: 700, marginBottom: 4, letterSpacing: "0.01em" }}>💼 資金 (表示・参考)</h2>
-        <div style={{ fontSize: 11.5, color: "var(--text-tertiary)", marginBottom: 12, lineHeight: 1.5 }}>
-          1 レース上限・1 日予算を超えても警告のみ (自動停止なし)
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {field("bankroll", "現在の資金 (円)")}
-          {field("dailyBudget", "1日の予算 (円)")}
-          {field("perRaceLimit", "1レース上限 (円)")}
-          {field("evMin", "最小EV (1.10 推奨)")}
-        </div>
+      {/* 旧「💼 資金 (表示・参考)」セクション (4 入力欄 + セーフティ買い ON/OFF) は
+         2026-05-10 (Round 169) に SPEC §3, §6.2 に従って全削除。
+         金額系は 5,000 円固定 / セーフティは OFF 固定 (App.jsx で強制矯正済み)。 */}
 
-        {/* Round 157: セーフティ買い (5 件保証) ON/OFF */}
-        <div style={{
-          marginTop: 14, padding: "12px 14px",
-          borderRadius: 10, background: "rgba(34,211,238,0.06)",
-          border: "1px solid rgba(34,211,238,0.20)",
-        }}>
-          <label style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer" }}>
-            <input
-              type="checkbox"
-              checked={!settings.disableSafetyBuy}
-              onChange={(e) => setSettings((prev) => ({ ...prev, disableSafetyBuy: !e.target.checked }))}
-              style={{ marginTop: 3, width: 18, height: 18, cursor: "pointer" }}
-            />
-            <div>
-              <div style={{ fontSize: 13.5, fontWeight: 700, color: "#67E8F9" }}>
-                🛟 セーフティ買い (5 件保証) を使う
-              </div>
-              <div style={{ fontSize: 11.5, color: "var(--text-tertiary)", marginTop: 4, lineHeight: 1.6 }}>
-                通常の買い候補が 5 件未満の日は、 期待値 1.0 以上の 「見送りレース」 から
-                上位を救済して買い候補に格上げします (grade=C 固定 / 🛟 マーク付き)。<br />
-                <b>OFF にすると</b>: 買い候補が 0 件の日も無理に救済しません。
-                「世界一の精度」 を厳守したい上級者向け。
-              </div>
-            </div>
-          </label>
-        </div>
-      </section>
-
-      {/* 旧「🎯 戦略 (買い目の方向性)」セクション (3 択) は 2026-05-10 に非表示化。
+      {/* 旧「🎯 戦略 (買い目の方向性)」セクション (3 択) は Round 168 に非表示化。
          内部は balanced 固定。 */}
 
       <section className="card" style={{ padding: 18 }}>

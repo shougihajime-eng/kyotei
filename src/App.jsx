@@ -124,11 +124,19 @@ export default function App() {
 
   /* === Persistent state === */
   const initial = loadState() || {};
-  // 2026-05-10: スタイル選択 (steady/balanced/aggressive) UI を廃止。
-  // 既存ユーザーで steady / aggressive のまま保存されている場合に備え、起動時に balanced に強制矯正する。
+  // 2026-05-10: SPEC §2-3 に従い、ユーザー入力 UI を全廃止。 既存ユーザーで他の値が
+  // 保存されていても起動時に強制矯正する (スタイル balanced 固定 + 金額 5,000 円固定)。
   const [settings, setSettings] = useState(() => {
     const merged = { ...defaultSettings(), ...(initial.settings || {}) };
-    return { ...merged, riskProfile: "balanced" };
+    return {
+      ...merged,
+      riskProfile: "balanced",
+      fixedRaceStake: 5000,    // 1 レース固定額
+      perRaceLimit: 5000,      // 上限 = 固定額
+      dailyBudget: 1000000,    // 1 日上限は実質無効化 (5,000 × N の合算に上限を設けない)
+      disableSafetyBuy: true,  // セーフティ買いは SPEC §3 で OFF 固定
+      evMin: 1.10,             // 最小 EV は内部固定 (UI から消す)
+    };
   });
   // Round 43: 起動時に 90 日以上前の AI スナップショットを GC (手動記録は永続)
   const initialPredictions = useMemo(() => {
