@@ -91,10 +91,13 @@ export default function MansyuTop({
   const alarms = scored.filter((x) => x.result.level === "alarm");
   const warns  = scored.filter((x) => x.result.level === "warn");
 
-  // 最優先 1 件 = alarms 先頭 (= 締切最短)、 なければ warns 先頭
-  // 残り = それ以外を締切順に並べる
-  const primary = alarms[0] || warns[0] || null;
-  const rest = scored.filter((x) => x !== primary);
+  /* Round 190: 「本日の勝負レース」 を TOP3 並列に拡張。
+     alarms (激荒れ 85+) を優先、 次に warns (荒れ注意 75-84)。 締切が近い順。
+     - 1 件: 全幅大判 / 2 件: PC 2 列 / 3 件以上: PC 3 列・4 件目以降は「そのほか」 へ */
+  const prioritized = [...alarms, ...warns]; // すでに締切順 (scored は close で sort 済)
+  const top3 = prioritized.slice(0, 3);
+  const top3Ids = new Set(top3.map((x) => x.race.id));
+  const rest = scored.filter((x) => !top3Ids.has(x.race.id));
   const todayDate = useMemo(() => new Date().toISOString().slice(0, 10), []);
 
   return (
@@ -121,7 +124,7 @@ export default function MansyuTop({
           荒れる時だけ・5場限定
         </div>
         <div style={{ flex: 1 }} />
-        {primary && (
+        {top3.length > 0 && (
           <div style={{
             fontSize: 12, color: "#FCA5A5", fontWeight: 700,
             padding: "3px 10px", borderRadius: 999,
@@ -145,20 +148,45 @@ export default function MansyuTop({
         todayDate={todayDate}
       />
 
-      {/* ===== 本日の勝負レース (超大判) ===== */}
-      {primary && (
-        <PrimaryBattleCard
-          race={primary.race}
-          result={primary.result}
-          close={primary.close}
-          onPickRace={onPickRace}
-        />
+      {/* ===== 本日の勝負レース TOP3 ===== */}
+      {top3.length > 0 && (
+        <div style={{
+          marginBottom: 14,
+        }}>
+          {/* セクションヘッダー */}
+          <div style={{ marginBottom: 8, padding: "0 4px", display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+            <div style={{ fontSize: 19, fontWeight: 800, color: "#f1f5f9", letterSpacing: "0.02em" }}>
+              🎯 本日の勝負レース
+            </div>
+            <div style={{ fontSize: 12.5, color: "#cbd5e1" }}>
+              {top3.length === 1 ? "1 レース・締切が近い順" : `TOP ${top3.length} レース・締切が近い順`}
+            </div>
+          </div>
+          {/* TOP3 grid: 1 件なら全幅、 2 件で 2 列、 3 件で 3 列 (PC ワイド時) / スマホは縦並び */}
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: top3.length === 1
+              ? "1fr"
+              : "repeat(auto-fit, minmax(min(100%, 420px), 1fr))",
+            gap: 12,
+          }}>
+            {top3.map((x) => (
+              <PrimaryBattleCard
+                key={x.race.id}
+                race={x.race}
+                result={x.result}
+                close={x.close}
+                onPickRace={onPickRace}
+              />
+            ))}
+          </div>
+        </div>
       )}
 
-      {/* ===== 残りの勝負レース ===== */}
+      {/* ===== そのほかの勝負レース (4 件目以降) ===== */}
       {rest.length > 0 && (
         <Section
-          title={primary ? "📋 そのほかの勝負レース" : "📋 勝負レース"}
+          title={top3.length > 0 ? "📋 そのほかの勝負レース" : "📋 勝負レース"}
           subtitle={`残り ${rest.length} レース — 締切が近い順`}>
           <CardGrid>
             {rest.map((x) => (
