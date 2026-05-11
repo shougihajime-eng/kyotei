@@ -754,6 +754,13 @@ a[href]:active {
 .mansyu-pulse { animation: mansyu-pulse 1.4s ease-in-out infinite; }
 .mansyu-blink { animation: mansyu-blink 0.9s ease-in-out infinite; }
 .mansyu-glow  { animation: mansyu-glow  2.2s ease-in-out infinite; }
+
+/* Round 188: 監視中 LED 呼吸アニメ (MonitorStatusBar) */
+@keyframes mansyu-led {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.55; transform: scale(0.9); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .mansyu-pulse, .mansyu-blink, .mansyu-glow { animation: none; }
 }
