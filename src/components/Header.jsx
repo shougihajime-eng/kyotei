@@ -9,10 +9,12 @@ import { yen } from "../lib/format.js";
 import { cloudEnabled } from "../lib/supabaseClient.js";
 
 /* タブ構成 (SPEC §6):
-   Round 171: 「📋 一覧」 タブを完全廃止 (全 12 レース機械的並べは禁止思想)。
+   Round 190.5: ユーザー要望で「📋 一覧」 を復活 (Round 171 で削除した一覧を新仕様で再導入)。
+   ホーム = 勝負レースのみ大判 / 一覧 = 全レース横並びの予想ビュー。
    旧タブ ("verify", "stats") はキー自体残置 (URL / 旧 setTab 呼び出し互換)。 */
 const TABS = [
   { k: "home",     label: "ホーム",   icon: "🏠" },
+  { k: "list",     label: "一覧",     icon: "📋" },
   { k: "analysis", label: "研究所",   icon: "🔬" },
   { k: "settings", label: "設定",     icon: "⚙️" },
 ];

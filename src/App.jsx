@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState, useCallback, useRef, startTransition, lazy, Suspense } from "react";
 import Header from "./components/Header.jsx";
 import MansyuTop from "./components/MansyuTop.jsx";
-// Round 171: RaceList (「📋 一覧」 タブ) は SPEC §6 に従って完全廃止。 ファイル削除済。
+// Round 190.5: 「📋 一覧」 タブを新仕様で復活 (Round 171 で削除した旧版は別物)。
+// 全レース横並びの軽量ビュー — ホームの「勝負レース大判」 と棲み分け。
+import RaceList from "./components/RaceList.jsx";
 import Onboarding from "./components/Onboarding.jsx";
 import ComplianceFooter from "./components/ComplianceFooter.jsx";
 
@@ -2173,7 +2175,17 @@ export default function App() {
             }}
           />
         )}
-        {/* Round 171: tab === "list" ブロックは SPEC §6 に従って完全廃止。 */}
+        {/* Round 190.5: 「📋 一覧」 タブ復活 — 全レース横並びの予想ビュー。
+            ホーム (MansyuTop) は「荒れる時だけ大判」 のままで、 一覧は「自分で全件確認したい」 ユーザー向け。 */}
+        {tab === "list" && (
+          <RaceList
+            races={races}
+            onPickRace={(rid) => {
+              setSelectedRaceId(rid);
+              setTab("detail");
+            }}
+          />
+        )}
         {tab === "detail" && (
           <Suspense fallback={<LazyFallback />}>
             {/* Round 166 (Phase 2.5): MansyuDetail を上段に表示 (荒れスコアのレーダーチャート + 成分別の理由)。
