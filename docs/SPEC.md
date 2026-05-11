@@ -259,6 +259,13 @@
 | **Round 185** | **第 1 層: 学習データの完全保存** (mansyuSkipLog にスナップショット追加) | §13.1 |
 | **Round 186** | **第 2 層: バックテスト機能** (過去データで再評価 + 集計 UI) | §13.2 |
 | **Round 187** | **第 3 層: 本番/検証 AI シャドーモード** (mansyuShadowWeights + 昇格ロジック) | §13.3 |
+| ✅ Round 188 (済) | ホーム UI 大改修 (本日の勝負レース大判カード + 監視ステータスバー) | §0.1, §4, §8 |
+| **Round 189** | **常時監視 設計フェーズ** (`docs/ROADMAP-ALWAYS-ON.md` 起案・SPEC §14 確定) | §14 |
+| **Round 190** | **Vercel Cron 基盤** (`/api/cron/scan-races` + `/api/cron/finalize` + `cron_log` テーブル) | §14.1 |
+| **Round 191** | **クラウド主データ化** (Supabase `skip_log` を主・localStorage はキャッシュへ) | §14.1 |
+| **Round 192** | **Web Push 基盤** (Service Worker + VAPID + `push_subscriptions` テーブル) | §14.1 |
+| **Round 193** | **通知配信ロジック** (cron で 85+ 初検出 → 全端末へ Push) | §14.1 |
+| **Round 194** | **通知タップ → 該当レースへ** (URL クエリで該当 race を最上部表示) | §14.5 |
 | Round 200 想定 | **AI 進化 段階 C: ディープラーニング導入** (TensorFlow.js or Vercel Functions サーバ推論) | §12 段階 C |
 
 各 Round 完了後、 §8 のチェックリストを進める。 全項目チェックで「100 点到達」 と認定。
@@ -412,6 +419,44 @@ shoug 思想:「固定ルールだけのアプリにしない。 使うほど賢
 #### UI
 - 🔬 研究所タブ「学習履歴」 にシャドー評価ステータス追加
 - 「現在検証中の重み (試用 N 日目)」 「過去の昇格 / 破棄履歴」
+
+---
+
+## 14. 常時監視 + Web Push (アプリを閉じてても動く) (Round 189-194)
+
+「ブラウザを開いていないと監視が止まる」 を解消する設計。 詳細は `docs/ROADMAP-ALWAYS-ON.md` に分離。 ここには SPEC として必須の合意事項だけを置く。
+
+### 14.1 構成 (3 つの柱)
+
+1. **Vercel Cron + Serverless API** — 5 分ごとに `/api/cron/scan-races` がサーバ側で 5 場を巡回。 15 分ごとに `/api/cron/finalize` が結果を取り込み収支確定。
+2. **Supabase 主データ化** — `manfune_lab.skip_log` を真実の保管場所にし、 localStorage はキャッシュに格下げ。 サーバが書いた予想をクライアントが読む。
+3. **Web Push** — Service Worker + VAPID。 激荒れスコア 85+ を初検出した瞬間にスマホへ Push。 通知タップ → 該当レースの大判カードを最上部に。
+
+### 14.2 必須条件
+
+- **Vercel Pro プラン課金 ($20/月)**: Hobby は 1 日 2 回しか cron が動かないので不可。
+- **VAPID 秘密鍵を Vercel 環境変数のみで管理** — git にコミット禁止。
+- **iOS Safari 利用時は PWA インストール導線** — Web Push 受信に必須 (16.4 以降)。
+
+### 14.3 新規テーブル (manfune_lab スキーマ)
+
+- `push_subscriptions` (user_id / endpoint / p256dh_key / auth_key / enabled) RLS 4 ポリシー
+- `cron_log` (job / started_at / finished_at / races_scanned / alarms_found / notifications_sent / error)
+- `skip_log` に `notified_at` カラム追加 (重複通知防止)
+
+### 14.4 やらないこと (今回も対象外)
+
+- 自動購入 / 自動ログイン (規約違反 + CLAUDE.md 禁止事項)
+- ネイティブアプリ化 (App Store 申請)
+- 競艇場映像のリアルタイム連携
+
+### 14.5 完成イメージ
+
+- スマホがロックされた状態で「🚨 戸田 9R 激荒れ警報 スコア 92 / 締切 8 分」 がプッシュ通知
+- タップ → アプリが開く → 該当レースの大判カードが先頭表示 + 買い目 5,000 円配分も即見える
+- レース終了後、 寝てる間に結果と仮想収支 (緑/赤) が反映済み
+
+詳細フェーズ分け・コスト試算・リスクは `docs/ROADMAP-ALWAYS-ON.md` 参照。
 
 ---
 
