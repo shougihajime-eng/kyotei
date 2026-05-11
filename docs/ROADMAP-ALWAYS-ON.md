@@ -238,9 +238,12 @@ for (const race of newAlarms) {
 1. **Vercel Pro 課金 ($20/月)** を承認する必要がある。
    - 課金タイミング: Round 190 開始時
    - 解約: いつでも (月単位)
+   - 🟡 **2026-05-11 時点: shoug さん「まだ決められない・保留」**。 OK になったら Round 190 から着手。
 2. **VAPID 秘密鍵** は git にコミット禁止。 Vercel 環境変数のみ。
 3. **`shougi.hajime@gmail.com`** を通知発信元として使う (VAPID の `subject`)。
-4. **iOS Safari (Web Push)** は 16.4 以降 + ホーム画面追加 (PWA) 必須。 これを許容するか、 Android のみで進めるかを後で決める。
+4. **iOS Safari (Web Push)** は 16.4 以降 + ホーム画面追加 (PWA) 必須。
+   - ✅ **2026-05-11 時点: shoug さん「iPhone でも通知を受けたい」** → PWA インストール導線を Round 192 で実装する前提。
+   - 実装内容: 設定タブに「📱 ホーム画面に追加する手順 (iPhone のみ表示)」 のガイドカード。 Safari の共有ボタンから 3 タップで完了する手順を画像付きで。
 
 ---
 
